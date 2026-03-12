@@ -127,17 +127,74 @@
 
 ## Traceability
 
-Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated after roadmap) | | |
+| SETUP-01 | Phase 1: Project Scaffolding | Pending |
+| SETUP-02 | Phase 1: Project Scaffolding | Pending |
+| SETUP-03 | Phase 1: Project Scaffolding | Pending |
+| SETUP-04 | Phase 1: Project Scaffolding | Pending |
+| SETUP-05 | Phase 1: Project Scaffolding | Pending |
+| COORD-01 | Phase 1: Project Scaffolding | Pending |
+| COORD-02 | Phase 1: Project Scaffolding | Pending |
+| COORD-03 | Phase 1: Project Scaffolding | Pending |
+| COORD-04 | Phase 1: Project Scaffolding | Pending |
+| COORD-05 | Phase 1: Project Scaffolding | Pending |
+| PAN-01 | Phase 2: Binaural Panning Core | Pending |
+| PAN-02 | Phase 2: Binaural Panning Core | Pending |
+| PAN-03 | Phase 2: Binaural Panning Core | Pending |
+| PAN-04 | Phase 2: Binaural Panning Core | Pending |
+| PAN-05 | Phase 2: Binaural Panning Core | Pending |
+| DEPTH-01 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-02 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-03 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-04 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-05 | Phase 3: Depth and Elevation | Pending |
+| ELEV-01 | Phase 3: Depth and Elevation | Pending |
+| ELEV-02 | Phase 3: Depth and Elevation | Pending |
+| ELEV-03 | Phase 3: Depth and Elevation | Pending |
+| ELEV-04 | Phase 3: Depth and Elevation | Pending |
+| ELEV-05 | Phase 3: Depth and Elevation | Pending |
+| DIST-01 | Phase 4: Distance Processing | Pending |
+| DIST-02 | Phase 4: Distance Processing | Pending |
+| DIST-03 | Phase 4: Distance Processing | Pending |
+| DIST-04 | Phase 4: Distance Processing | Pending |
+| DIST-05 | Phase 4: Distance Processing | Pending |
+| DIST-06 | Phase 4: Distance Processing | Pending |
+| DIST-07 | Phase 4: Distance Processing | Pending |
+| VERB-01 | Phase 5: Creative Tools | Pending |
+| VERB-02 | Phase 5: Creative Tools | Pending |
+| VERB-03 | Phase 5: Creative Tools | Pending |
+| VERB-04 | Phase 5: Creative Tools | Pending |
+| LFO-01 | Phase 5: Creative Tools | Pending |
+| LFO-02 | Phase 5: Creative Tools | Pending |
+| LFO-03 | Phase 5: Creative Tools | Pending |
+| LFO-04 | Phase 5: Creative Tools | Pending |
+| LFO-05 | Phase 5: Creative Tools | Pending |
+| PARAM-01 | Phase 6: UI and Parameter System | Pending |
+| PARAM-02 | Phase 6: UI and Parameter System | Pending |
+| PARAM-03 | Phase 6: UI and Parameter System | Pending |
+| PARAM-04 | Phase 6: UI and Parameter System | Pending |
+| PARAM-05 | Phase 6: UI and Parameter System | Pending |
+| UI-01 | Phase 6: UI and Parameter System | Pending |
+| UI-02 | Phase 6: UI and Parameter System | Pending |
+| UI-03 | Phase 6: UI and Parameter System | Pending |
+| UI-04 | Phase 6: UI and Parameter System | Pending |
+| UI-05 | Phase 6: UI and Parameter System | Pending |
+| UI-06 | Phase 6: UI and Parameter System | Pending |
+| UI-07 | Phase 6: UI and Parameter System | Pending |
+| INFRA-01 | Phase 7: Integration and Validation | Pending |
+| INFRA-02 | Phase 7: Integration and Validation | Pending |
+| INFRA-03 | Phase 7: Integration and Validation | Pending |
+| INFRA-04 | Phase 7: Integration and Validation | Pending |
+| INFRA-05 | Phase 7: Integration and Validation | Pending |
+| INFRA-06 | Phase 7: Integration and Validation | Pending |
+| INFRA-07 | Phase 7: Integration and Validation | Pending |
 
 **Coverage:**
-- v1 requirements: 49 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 49
+- v1 requirements: 60 total
+- Mapped to phases: 60
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 after initial definition*
+*Last updated: 2026-03-12 after roadmap creation*
