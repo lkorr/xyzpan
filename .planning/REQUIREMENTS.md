@@ -9,9 +9,9 @@
 
 - [x] **SETUP-01**: CMake project builds JUCE plugin (VST3 + Standalone) on Windows with MSVC
 - [x] **SETUP-02**: Pure C++ engine exists as separate static library with no JUCE headers
-- [ ] **SETUP-03**: JUCE PluginProcessor calls engine for all audio processing
+- [x] **SETUP-03**: JUCE PluginProcessor calls engine for all audio processing
 - [x] **SETUP-04**: Unit test target builds and runs via CTest (Catch2)
-- [ ] **SETUP-05**: pluginval validation passes at strictness level 5
+- [x] **SETUP-05**: pluginval validation passes at strictness level 5
 
 ### Coordinate System (COORD)
 
@@ -131,9 +131,9 @@
 |-------------|-------|--------|
 | SETUP-01 | Phase 1: Project Scaffolding | Complete |
 | SETUP-02 | Phase 1: Project Scaffolding | Complete |
-| SETUP-03 | Phase 1: Project Scaffolding | Pending |
+| SETUP-03 | Phase 1: Project Scaffolding | Complete |
 | SETUP-04 | Phase 1: Project Scaffolding | Complete |
-| SETUP-05 | Phase 1: Project Scaffolding | Pending |
+| SETUP-05 | Phase 1: Project Scaffolding | Complete |
 | COORD-01 | Phase 1: Project Scaffolding | Complete |
 | COORD-02 | Phase 1: Project Scaffolding | Complete |
 | COORD-03 | Phase 1: Project Scaffolding | Complete |
