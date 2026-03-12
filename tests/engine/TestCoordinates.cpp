@@ -104,6 +104,14 @@ TEST_CASE("Coordinate conversion - boundary clamping", "[coordinates]") {
         REQUIRE_THAT(s.elevation, WithinAbs(sExpected.elevation, 0.001f));
         REQUIRE_THAT(s.distance,  WithinAbs(sExpected.distance,  0.001f));
     }
+
+    SECTION("Y-axis overrange (0,5,0) clamps to same as (0,1,0)") {
+        auto sOver  = toSpherical(0.0f, 5.0f, 0.0f);
+        auto sExact = toSpherical(0.0f, 1.0f, 0.0f);
+        REQUIRE_THAT(sOver.azimuth,   WithinAbs(sExact.azimuth,   0.001f));
+        REQUIRE_THAT(sOver.elevation, WithinAbs(sExact.elevation, 0.001f));
+        REQUIRE_THAT(sOver.distance,  WithinAbs(sExact.distance,  0.001f));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +140,15 @@ TEST_CASE("Coordinate conversion - diagonal positions", "[coordinates]") {
         auto s = toSpherical(1.0f, 0.0f, 1.0f);
         REQUIRE_THAT(s.azimuth,   WithinAbs(kPi / 2.0f, 0.001f));
         REQUIRE_THAT(s.elevation, WithinAbs(kPi / 4.0f, 0.001f));
+    }
+
+    SECTION("Full corner (1,1,1): azimuth=PI/4, elevation=atan2(1,sqrt(2))") {
+        // atan2(X, Y) = atan2(1, 1) = PI/4
+        // elevation = atan2(Z, sqrt(X^2+Y^2)) = atan2(1, sqrt(2))
+        auto s = toSpherical(1.0f, 1.0f, 1.0f);
+        REQUIRE_THAT(s.azimuth,   WithinAbs(kPi / 4.0f, 0.001f));
+        REQUIRE_THAT(s.elevation, WithinAbs(std::atan2(1.0f, std::sqrt(2.0f)), 0.001f));
+        REQUIRE_THAT(s.distance,  WithinAbs(std::sqrt(3.0f), 0.001f));
     }
 }
 
