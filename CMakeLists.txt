@@ -13,6 +13,10 @@ CPMAddPackage("gh:juce-framework/JUCE#8.0.12")
 CPMAddPackage("gh:catchorg/Catch2@3.7.1")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 
+# Enable CTest at the root so the top-level CTestTestfile.cmake is generated
+# and ctest --test-dir build works from the project root.
+enable_testing()
+
 # Subdirectories (order matters: engine must come before plugin and tests)
 add_subdirectory(engine)
 add_subdirectory(plugin)

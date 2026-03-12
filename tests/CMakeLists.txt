@@ -9,9 +9,9 @@ target_link_libraries(XYZPanTests
     # NO juce:: targets here — this enforces the engine isolation invariant (SETUP-02)
 )
 
-# Enable CTest and Catch2 test discovery
-# Catch2 extras (CatchAddTests, Catch cmake modules) are in the Catch2 source extras dir
+# Catch2 test discovery via CTest
+# enable_testing() is called at the root CMakeLists.txt; include(CTest) not needed here.
+# Catch2 extras (Catch.cmake module with catch_discover_tests) are in the source extras dir.
 list(APPEND CMAKE_MODULE_PATH "${Catch2_SOURCE_DIR}/extras")
-include(CTest)
 include(Catch)
 catch_discover_tests(XYZPanTests)
