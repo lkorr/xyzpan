@@ -1,0 +1,22 @@
+{
+  "workflow": {
+    "mode": "interactive",
+    "granularity": "standard",
+    "parallelization": true,
+    "gitTracking": "per-task"
+  },
+  "agents": {
+    "research": true,
+    "planCheck": true,
+    "verifier": true,
+    "profile": "quality"
+  },
+  "models": {
+    "researcher": "opus",
+    "planner": "opus",
+    "executor": "opus",
+    "verifier": "sonnet",
+    "planChecker": "sonnet"
+  },
+  "created": "2026-03-12"
+}
