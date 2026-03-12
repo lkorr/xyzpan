@@ -28,6 +28,11 @@ cmake-build-*/
 # Uncomment to exclude from repo if desired:
 # _deps/
 
+# Tools (downloaded binaries, not source-controlled)
+tools/pluginval*.exe
+tools/pluginval*.zip
+tools/pluginval_output/
+
 # OS
 .DS_Store
 Thumbs.db

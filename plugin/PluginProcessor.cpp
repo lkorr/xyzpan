@@ -41,12 +41,15 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.y = yParam->load();
     params.z = zParam->load();
 
-    // Build input channel pointer array
+    // Build input channel pointer array.
+    // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which
+    // returns total channel slots (inputs + outputs). For mono-in/stereo-out, the buffer
+    // has 2 channels but only channel 0 is valid input; channel 1 is uninitialized output.
+    const int numIn = getTotalNumInputChannels();
     const float* inputs[2] = {
-        buffer.getNumChannels() > 0 ? buffer.getReadPointer(0) : nullptr,
-        buffer.getNumChannels() > 1 ? buffer.getReadPointer(1) : nullptr
+        numIn > 0 ? buffer.getReadPointer(0) : nullptr,
+        numIn > 1 ? buffer.getReadPointer(1) : nullptr
     };
-    const int numIn = buffer.getNumChannels();
 
     // Output channel pointers (buffer has stereo output per bus layout)
     float* outL = buffer.getWritePointer(0);
