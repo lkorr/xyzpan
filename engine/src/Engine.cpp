@@ -1,4 +1,5 @@
 #include "xyzpan/Engine.h"
+#include "xyzpan/Coordinates.h"
 #include <algorithm>
 #include <cstring>
 
@@ -36,6 +37,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         outL[i] = monoIn[i];
         outR[i] = monoIn[i];
     }
+
+    // Validate coordinate conversion is wired in (result unused in Phase 1).
+    // Proves SETUP-03: engine has access to coordinate conversion.
+    // Phase 2+ will use this to drive panning/delay/filtering.
+    auto spherical = toSpherical(currentParams.x, currentParams.y, currentParams.z);
+    (void)spherical;
 }
 
 void XYZPanEngine::reset() {

@@ -21,7 +21,7 @@ void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 }
 
 void XYZPanProcessor::releaseResources() {
-    // Nothing to release in Phase 1
+    engine.reset();
 }
 
 bool XYZPanProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
