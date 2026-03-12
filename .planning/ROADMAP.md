@@ -35,8 +35,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: CMake build system with JUCE, engine static library, and Catch2 test target
-- [ ] 01-02: Coordinate converter (XYZ to azimuth/elevation/distance) with unit tests
+- [x] 01-01: CMake build system with JUCE, engine static library, and Catch2 test target
+- [x] 01-02: Coordinate converter (XYZ to azimuth/elevation/distance) with unit tests
 - [ ] 01-03: Engine-to-PluginProcessor bridge, parameter stubs, and pluginval pass
 
 ### Phase 2: Binaural Panning Core
@@ -144,7 +144,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Scaffolding | 1/3 | In Progress|  |
+| 1. Project Scaffolding | 2/3 | In Progress |  |
 | 2. Binaural Panning Core | 0/2 | Not started | - |
 | 3. Depth and Elevation | 0/3 | Not started | - |
 | 4. Distance Processing | 0/2 | Not started | - |

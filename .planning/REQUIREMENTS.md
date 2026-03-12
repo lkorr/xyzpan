@@ -16,10 +16,10 @@
 ### Coordinate System (COORD)
 
 - [x] **COORD-01**: Plugin accepts X, Y, Z position inputs normalized -1.0 to 1.0
-- [ ] **COORD-02**: XYZ converted to azimuth angle (from X and Y)
-- [ ] **COORD-03**: XYZ converted to elevation angle (from azimuth and Z)
-- [ ] **COORD-04**: Euclidean distance computed from X, Y, Z for distance processing
-- [ ] **COORD-05**: All coordinate conversions are sample-rate independent
+- [x] **COORD-02**: XYZ converted to azimuth angle (from X and Y)
+- [x] **COORD-03**: XYZ converted to elevation angle (from azimuth and Z)
+- [x] **COORD-04**: Euclidean distance computed from X, Y, Z for distance processing
+- [x] **COORD-05**: All coordinate conversions are sample-rate independent
 
 ### Binaural Panning (PAN)
 
@@ -135,10 +135,10 @@
 | SETUP-04 | Phase 1: Project Scaffolding | Complete |
 | SETUP-05 | Phase 1: Project Scaffolding | Pending |
 | COORD-01 | Phase 1: Project Scaffolding | Complete |
-| COORD-02 | Phase 1: Project Scaffolding | Pending |
-| COORD-03 | Phase 1: Project Scaffolding | Pending |
-| COORD-04 | Phase 1: Project Scaffolding | Pending |
-| COORD-05 | Phase 1: Project Scaffolding | Pending |
+| COORD-02 | Phase 1: Project Scaffolding | Complete |
+| COORD-03 | Phase 1: Project Scaffolding | Complete |
+| COORD-04 | Phase 1: Project Scaffolding | Complete |
+| COORD-05 | Phase 1: Project Scaffolding | Complete |
 | PAN-01 | Phase 2: Binaural Panning Core | Pending |
 | PAN-02 | Phase 2: Binaural Panning Core | Pending |
 | PAN-03 | Phase 2: Binaural Panning Core | Pending |
