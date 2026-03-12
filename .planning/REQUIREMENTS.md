@@ -1,0 +1,143 @@
+# Requirements: XYZPan
+
+**Defined:** 2026-03-12
+**Core Value:** Accurate real-time binaural rendering of 3D spatial audio positioning
+
+## v1 Requirements
+
+### Project Setup (SETUP)
+
+- [ ] **SETUP-01**: CMake project builds JUCE plugin (VST3 + Standalone) on Windows with MSVC
+- [ ] **SETUP-02**: Pure C++ engine exists as separate static library with no JUCE headers
+- [ ] **SETUP-03**: JUCE PluginProcessor calls engine for all audio processing
+- [ ] **SETUP-04**: Unit test target builds and runs via CTest (Catch2)
+- [ ] **SETUP-05**: pluginval validation passes at strictness level 5
+
+### Coordinate System (COORD)
+
+- [ ] **COORD-01**: Plugin accepts X, Y, Z position inputs normalized -1.0 to 1.0
+- [ ] **COORD-02**: XYZ converted to azimuth angle (from X and Y)
+- [ ] **COORD-03**: XYZ converted to elevation angle (from azimuth and Z)
+- [ ] **COORD-04**: Euclidean distance computed from X, Y, Z for distance processing
+- [ ] **COORD-05**: All coordinate conversions are sample-rate independent
+
+### Binaural Panning (PAN)
+
+- [ ] **PAN-01**: Interaural time difference (ITD) applies up to 0.7ms delay to opposite ear based on azimuth X component
+- [ ] **PAN-02**: Head shadow filter applied to opposite ear based on azimuth X component
+- [ ] **PAN-03**: Mono input split to stereo L/R at the panning stage
+- [ ] **PAN-04**: Stereo input accepted and summed to mono before processing
+- [ ] **PAN-05**: Panning is smooth and click-free during parameter automation
+
+### Depth Processing (DEPTH)
+
+- [ ] **DEPTH-01**: ~10 comb filters in series model front/back depth perception
+- [ ] **DEPTH-02**: Comb filter delays range 0ms to 1.5ms (arbitrary per filter)
+- [ ] **DEPTH-03**: Comb filter dry/wet scales from 0% (Y=0) to 30% max (Y=-1)
+- [ ] **DEPTH-04**: Comb filter feedback hard-clamped to prevent instability
+- [ ] **DEPTH-05**: All comb filter parameters (count, delays, wet amounts) tuneable via dev panel
+
+### Elevation Processing (ELEV)
+
+- [ ] **ELEV-01**: Pinna notch filter: -15dB notch at 8kHz at elevation 0, smoothly to +5dB at elevation 1.0, with +3dB high shelf at 4kHz+ at elevation 1.0
+- [ ] **ELEV-02**: Pinna filter stays at elevation-0 values between -1 and 0; high shelf removes 3dB scaling from 0 to -1
+- [ ] **ELEV-03**: Chest bounce: parallel filtered delay (4x highpass at 700Hz, 1x 6dB/oct lowpass at 1kHz), delay 0ms at -1 to 2ms at 1, volume -8dB at -1 to -inf at 1
+- [ ] **ELEV-04**: Floor bounce: parallel delayed copy at -5dB at -1 to -inf at 1, delay 0ms at -1 to 20ms at 1
+- [ ] **ELEV-05**: All elevation filter parameters tuneable via dev panel
+
+### Distance Processing (DIST)
+
+- [ ] **DIST-01**: Gain attenuation follows inverse-square law (every distance doubling removes 6dB)
+- [ ] **DIST-02**: Low-pass filter rolls off from 22kHz (closest) to 8kHz (furthest) at 6dB/octave
+- [ ] **DIST-03**: Distance delay ranges 0ms (closest) to 300ms (furthest) — not latency-compensated, applied as creative effect
+- [ ] **DIST-04**: Doppler shift occurs naturally from delay modulation over time when distance changes
+- [ ] **DIST-05**: Doppler shift is toggleable (off = no distance delay applied)
+- [ ] **DIST-06**: Delay line uses cubic (Hermite) interpolation to avoid artifacts during modulation
+- [ ] **DIST-07**: All distance parameters tuneable via dev panel
+
+### Reverb (VERB)
+
+- [ ] **VERB-01**: Algorithmic reverb applied at end of signal chain
+- [ ] **VERB-02**: Pre-delay scales with distance: 0ms (closest) to 50ms (furthest)
+- [ ] **VERB-03**: Reverb parameters (size, decay, damping, wet/dry) exposed as plugin parameters
+- [ ] **VERB-04**: Reverb is sparse and mix-friendly (not convolution)
+
+### LFO Modulation (LFO)
+
+- [ ] **LFO-01**: One LFO per axis (X, Y, Z) — 3 total
+- [ ] **LFO-02**: Each LFO has selectable waveform: sine, triangle, saw, square
+- [ ] **LFO-03**: Each LFO has rate, depth, and phase controls
+- [ ] **LFO-04**: LFOs modulate position offset (add/subtract around fixed position)
+- [ ] **LFO-05**: LFO rate syncs to host tempo (optional) or free-running Hz
+
+### Parameter System (PARAM)
+
+- [ ] **PARAM-01**: All DSP parameters exposed as VST automation parameters
+- [ ] **PARAM-02**: Dev panel exposes all internal constants (filter frequencies, delay ranges, dB values, comb tunings)
+- [ ] **PARAM-03**: Parameter changes are smoothed to prevent zipper noise (no clicks on automation)
+- [ ] **PARAM-04**: Plugin state saves and restores correctly across DAW sessions
+- [ ] **PARAM-05**: Factory presets demonstrating spatial positions and LFO patterns
+
+### User Interface (UI)
+
+- [ ] **UI-01**: Custom OpenGL renderer showing 2D projection of 3D space
+- [ ] **UI-02**: Listener node centered in the view
+- [ ] **UI-03**: Object node draggable in X/Y, with Z shown as size change (depth perspective)
+- [ ] **UI-04**: LFO controls visible per axis (waveform, rate, depth, phase)
+- [ ] **UI-05**: Dev panel toggleable showing all tuneable DSP constants
+- [ ] **UI-06**: All parameter controls also accessible as standard UI elements (not just the 3D view)
+- [ ] **UI-07**: UI updates at display rate, not audio rate (double-buffer pattern for audio→GL)
+
+### Plugin Infrastructure (INFRA)
+
+- [ ] **INFRA-01**: Builds as VST3 on Windows
+- [ ] **INFRA-02**: Builds as Standalone on Windows
+- [ ] **INFRA-03**: Adapts to DAW session sample rate (recalculates all coefficients on prepareToPlay)
+- [ ] **INFRA-04**: Zero memory allocations on audio thread (all pre-allocated in prepareToPlay)
+- [ ] **INFRA-05**: Passes pluginval at strictness level 5
+- [ ] **INFRA-06**: Works correctly in Ableton, FL Studio, and Reaper
+- [ ] **INFRA-07**: Multiple instances can run simultaneously without interference
+
+## v2 Requirements
+
+### Cross-Platform (XPLAT)
+
+- **XPLAT-01**: Builds on macOS (AU + VST3)
+- **XPLAT-02**: Metal rendering fallback for macOS (OpenGL deprecated)
+
+### Extended Features (EXT)
+
+- **EXT-01**: AAX format support (Pro Tools)
+- **EXT-02**: CLAP format support (when JUCE 9 ships)
+- **EXT-03**: Head tracking via OSC input
+- **EXT-04**: Preset browser with categories
+- **EXT-05**: Undo/redo for parameter changes
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| HRTF database / SOFA file loading | Undermines parametric approach; adds CPU cost and coloration |
+| Multi-format output (5.1, 7.1, Ambisonics) | Binaural stereo only — do one thing well |
+| Multiple sound objects per instance | Use multiple instances; keeps DSP pipeline simple |
+| Convolution reverb | CPU-heavy, latency-inducing; algorithmic is sufficient |
+| Complex 3D room visualization | Scope creep; simple 2D projection with depth indicator suffices |
+| Stereo width processing | Different product category; user can apply their own tools |
+| Mobile/embedded targets | Desktop DAW plugin only |
+
+## Traceability
+
+Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| (populated after roadmap) | | |
+
+**Coverage:**
+- v1 requirements: 49 total
+- Mapped to phases: 0 (pending roadmap)
+- Unmapped: 49
+
+---
+*Requirements defined: 2026-03-12*
+*Last updated: 2026-03-12 after initial definition*
