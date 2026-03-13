@@ -7,6 +7,7 @@ XYZPanProcessor::XYZPanProcessor()
                          .withInput("Input",   juce::AudioChannelSet::mono(),   true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "XYZPanState", createParameterLayout()) {
+    // Spatial position (Phase 1)
     xParam = apvts.getRawParameterValue(ParamID::X);
     yParam = apvts.getRawParameterValue(ParamID::Y);
     zParam = apvts.getRawParameterValue(ParamID::Z);
@@ -14,6 +15,23 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(xParam != nullptr);
     jassert(yParam != nullptr);
     jassert(zParam != nullptr);
+
+    // Dev panel: binaural panning tuning (Phase 2)
+    itdMaxParam       = apvts.getRawParameterValue(ParamID::ITD_MAX_MS);
+    headShadowHzParam = apvts.getRawParameterValue(ParamID::HEAD_SHADOW_HZ);
+    ildMaxDbParam     = apvts.getRawParameterValue(ParamID::ILD_MAX_DB);
+    rearShadowHzParam = apvts.getRawParameterValue(ParamID::REAR_SHADOW_HZ);
+    smoothItdParam    = apvts.getRawParameterValue(ParamID::SMOOTH_ITD_MS);
+    smoothFilterParam = apvts.getRawParameterValue(ParamID::SMOOTH_FILTER_MS);
+    smoothGainParam   = apvts.getRawParameterValue(ParamID::SMOOTH_GAIN_MS);
+
+    jassert(itdMaxParam       != nullptr);
+    jassert(headShadowHzParam != nullptr);
+    jassert(ildMaxDbParam     != nullptr);
+    jassert(rearShadowHzParam != nullptr);
+    jassert(smoothItdParam    != nullptr);
+    jassert(smoothFilterParam != nullptr);
+    jassert(smoothGainParam   != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -37,9 +55,18 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // Snapshot current parameter values from APVTS atomics (safe on audio thread)
     xyzpan::EngineParams params;
+    // Spatial position
     params.x = xParam->load();
     params.y = yParam->load();
     params.z = zParam->load();
+    // Dev panel: binaural panning tuning
+    params.maxITD_ms       = itdMaxParam->load();
+    params.headShadowMinHz = headShadowHzParam->load();
+    params.ildMaxDb        = ildMaxDbParam->load();
+    params.rearShadowMinHz = rearShadowHzParam->load();
+    params.smoothMs_ITD    = smoothItdParam->load();
+    params.smoothMs_Filter = smoothFilterParam->load();
+    params.smoothMs_Gain   = smoothGainParam->load();
 
     // Build input channel pointer array.
     // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which

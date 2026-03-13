@@ -41,9 +41,19 @@ private:
     xyzpan::XYZPanEngine engine;
 
     // Raw parameter value pointers (thread-safe atomics managed by APVTS)
+    // Spatial position (Phase 1)
     std::atomic<float>* xParam = nullptr;
     std::atomic<float>* yParam = nullptr;
     std::atomic<float>* zParam = nullptr;
+
+    // Dev panel: binaural panning tuning (Phase 2)
+    std::atomic<float>* itdMaxParam       = nullptr;
+    std::atomic<float>* headShadowHzParam = nullptr;
+    std::atomic<float>* ildMaxDbParam     = nullptr;
+    std::atomic<float>* rearShadowHzParam = nullptr;
+    std::atomic<float>* smoothItdParam    = nullptr;
+    std::atomic<float>* smoothFilterParam = nullptr;
+    std::atomic<float>* smoothGainParam   = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };
