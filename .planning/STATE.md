@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: "Completed Phase 5 Plan 02: LFO System + APVTS Wiring"
-last_updated: "2026-03-13T06:58:38.141Z"
+stopped_at: Completed 06-01-PLAN.md (R param + PositionBridge + XYZPanPluginTests)
+last_updated: "2026-03-13T08:50:56.692Z"
 last_activity: 2026-03-13 -- Completed plan 05-02 (LFO system + APVTS wiring, all 64 tests green)
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 16
+  completed_plans: 13
   percent: 100
 ---
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100%
 | Phase 04-distance-processing P02 | 2 | 1 tasks | 4 files |
 | Phase 05-creative-tools P01 | 11 | 3 tasks | 8 files |
 | Phase 05-creative-tools P02 | 13 | 3 tasks | 12 files |
+| Phase 06-ui-and-parameter-system P01 | 10 | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,9 @@ Recent decisions affecting current work:
 - [Phase 05-creative-tools]: Triangle LFO formula peaks at half-cycle (acc=0.5), not quarter — 1.0 - 4.0*|acc-0.5| formula confirmed
 - [Phase 05-creative-tools]: LFO per-sample binaural target recomputation from modX enables true audio-rate spatial modulation
 - [Phase 05-creative-tools]: lfoXPhase applied only at reset (not per-block) to avoid phase-jump clicks in running LFO
+- [Phase 06-01]: XYZPanPluginTests links XYZPan CMake target (not XYZPan_SharedCode string) — JUCE names the .lib output XYZPan_SharedCode.lib but the CMake target is XYZPan
+- [Phase 06-01]: juce::juce_audio_utils must be linked explicitly to XYZPanPluginTests to propagate JUCE include paths — XYZPan target alone does not propagate them to test executables
+- [Phase 06-01]: rSmooth_ processes at block rate (not per-sample) — R multiplies position coordinates not audio; per-block smoothing eliminates zipper noise with negligible cost
 
 ### Pending Todos
 
@@ -126,6 +130,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T06:54:18.118Z
-Stopped at: Completed Phase 5 Plan 02: LFO System + APVTS Wiring
+Last session: 2026-03-13T08:50:56.688Z
+Stopped at: Completed 06-01-PLAN.md (R param + PositionBridge + XYZPanPluginTests)
 Resume file: None
