@@ -104,6 +104,27 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     }
     floorGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     floorGainSmooth_.reset(0.0f);
+
+    // -------------------------------------------------------------------------
+    // Phase 4: Distance Processing
+    // -------------------------------------------------------------------------
+    {
+        // Size delay lines for kDistDelayMaxMs at 192kHz (worst case sample rate).
+        int distDelayCap = static_cast<int>(kDistDelayMaxMs * 0.001f * 192000.0f) + 8;
+        distDelayL_.prepare(distDelayCap);
+        distDelayR_.prepare(distDelayCap);
+        distDelayL_.reset();
+        distDelayR_.reset();
+    }
+    airLPF_L_.setCoefficients(kAirAbsMaxHz, sr);
+    airLPF_R_.setCoefficients(kAirAbsMaxHz, sr);
+    airLPF_L_.reset();
+    airLPF_R_.reset();
+    distDelaySmooth_.prepare(kDistSmoothMs, sr);
+    distDelaySmooth_.reset(2.0f);
+    distGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    distGainSmooth_.reset(1.0f);
+    lastDistSmoothMs_ = kDistSmoothMs;
 }
 
 // ============================================================================
@@ -169,25 +190,30 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float z    = currentParams.z;
     const float dist = computeDistance(x, y, z);
 
+    // Proximity: 1 at kMinDistance (closest), 0 at kSqrt3 (max distance).
+    // Computed early so ITD, head shadow, and ILD can all scale with it.
+    const float proximity  = std::clamp(1.0f - (dist - kMinDistance) / (kSqrt3 - kMinDistance),
+                                        0.0f, 1.0f);
+
     // ITD: sinusoidal scaling from |x| (Woodworth-inspired; only far ear delayed).
     // At X=0: 0 delay; at X=±1: maxITD_ms delay on the far ear.
+    // MODIFIED (Phase 4): scales with proximity so close sources hardpan more than distant.
     // Note: using X directly as sin-proxy since X = sin(azimuth) when Y=0.
     // When Y≠0, this underestimates lateral angle slightly — intentional creative choice.
     const float itdTarget = currentParams.maxITD_ms
                             * std::sin(std::abs(x) * (3.14159265f / 2.0f))
+                            * proximity
                             * sr / 1000.0f;
 
     // Head shadow: linear interpolation from fully open to minimum cutoff.
     // At X=0: kHeadShadowFullOpenHz (inaudible). At X=±1: headShadowMinHz.
+    // MODIFIED (Phase 4): scales with proximity so close sources have stronger head shadow.
     const float shadowCutoffTarget = kHeadShadowFullOpenHz
                                    + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz)
-                                   * std::abs(x);
+                                   * std::abs(x) * proximity;
 
     // ILD: proximity-weighted far-ear attenuation.
-    // proximity=1 at kMinDistance (closest), proximity=0 at kSqrt3 (max distance).
     // Both azimuth and proximity must be non-zero for ILD to apply.
-    const float proximity  = std::clamp(1.0f - (dist - kMinDistance) / (kSqrt3 - kMinDistance),
-                                        0.0f, 1.0f);
     const float ildLinear  = std::pow(10.0f, -currentParams.ildMaxDb / 20.0f);
     const float ildTarget  = 1.0f - (1.0f - ildLinear) * std::abs(x) * proximity;
 
@@ -241,6 +267,35 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                                   * currentParams.floorDelayMaxMs;
     const float floorDelaySamp  = floorDelayMs * 0.001f * sr;
     const float floorLinearTarget = std::pow(10.0f, currentParams.floorGainDb / 20.0f) * floorElevNorm;
+
+    // -------------------------------------------------------------------------
+    // Phase 4: per-block distance processing targets
+    // -------------------------------------------------------------------------
+
+    // Re-prepare distDelaySmooth_ if distSmoothMs param changed from dev panel.
+    if (currentParams.distSmoothMs != lastDistSmoothMs_) {
+        distDelaySmooth_.prepare(currentParams.distSmoothMs, sr);
+        lastDistSmoothMs_ = currentParams.distSmoothMs;
+    }
+
+    // distFrac: 0 at kMinDistance (closest), 1 at kSqrt3 (furthest corner).
+    const float distFrac = (dist - kMinDistance) / (kSqrt3 - kMinDistance);
+
+    // Inverse-square gain: kMinDistance/dist gives 0.5x at double distance (DIST-01).
+    const float distGainTarget = std::clamp(kMinDistance / dist, 0.0f, 1.0f);
+
+    // Propagation delay: linearly maps distFrac to [0, distDelayMaxMs] (DIST-03).
+    const float delayTargetMs = distFrac * currentParams.distDelayMaxMs;
+    const float delayTargetSamples = std::max(2.0f,
+        delayTargetMs * 0.001f * static_cast<float>(sampleRate));
+
+    // Air absorption LPF cutoff: lerps from airAbsMaxHz at min to airAbsMinHz at max (DIST-02).
+    const float airCutoffTarget = currentParams.airAbsMaxHz
+        + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * distFrac;
+    airLPF_L_.setCoefficients(airCutoffTarget, static_cast<float>(sampleRate));
+    airLPF_R_.setCoefficients(airCutoffTarget, static_cast<float>(sampleRate));
+
+    const bool dopplerOn = currentParams.dopplerEnabled;
 
     // -------------------------------------------------------------------------
     // Per-sample loop: smooth parameters and apply binaural pipeline
@@ -371,6 +426,37 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             }
         }
 
+        // ----------------------------------------------------------------
+        // Phase 4: Distance Processing (DIST-01 through DIST-06)
+        // Signal chain order: gain -> delay+doppler -> air absorption LPF
+        // Gain first (quieter signal into delay line), then delay, then LPF
+        // (air absorption filters the arriving signal after doppler shift).
+        // ----------------------------------------------------------------
+
+        // DIST-01: Inverse-square gain attenuation
+        const float distGain = distGainSmooth_.process(distGainTarget);
+        dL *= distGain;
+        dR *= distGain;
+
+        // DIST-03, DIST-04, DIST-05, DIST-06: Propagation delay + doppler
+        distDelayL_.push(dL);
+        distDelayR_.push(dR);
+        if (dopplerOn) {
+            // Smooth delay target — ramping delay creates doppler pitch shift (DIST-04)
+            const float delaySamp = std::max(2.0f, distDelaySmooth_.process(delayTargetSamples));
+            dL = distDelayL_.read(delaySamp);
+            dR = distDelayR_.read(delaySamp);
+        } else {
+            // DIST-05: Doppler off — keep smoother state valid, read at minimum delay
+            distDelaySmooth_.process(2.0f);
+            dL = distDelayL_.read(2.0f);
+            dR = distDelayR_.read(2.0f);
+        }
+
+        // DIST-02: Air absorption LPF (after doppler so shifted signal gets filtered)
+        dL = airLPF_L_.process(dL);
+        dR = airLPF_R_.process(dR);
+
         outL[i] = dL;
         outR[i] = dR;
     }
@@ -420,6 +506,14 @@ void XYZPanEngine::reset() {
     floorDelayL_.reset();
     floorDelayR_.reset();
     floorGainSmooth_.reset(0.0f);
+
+    // Phase 4: distance processing
+    distDelayL_.reset();
+    distDelayR_.reset();
+    airLPF_L_.reset();
+    airLPF_R_.reset();
+    distDelaySmooth_.reset(2.0f);
+    distGainSmooth_.reset(1.0f);
 }
 
 } // namespace xyzpan

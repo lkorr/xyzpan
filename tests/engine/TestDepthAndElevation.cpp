@@ -356,7 +356,16 @@ static EngineOutput runEngine(const EngineParams& params, float freqHz, int N,
                                float sampleRate = kSampleRate) {
     XYZPanEngine engine;
     engine.prepare(static_cast<double>(sampleRate), N);
-    engine.setParams(params);
+
+    // Phase 4: disable distance delay for Phase 3 DSP tests.
+    // These tests verify comb/pinna/elevation behavior; the long distance delay
+    // would cause the delay smoother to ramp during the output window, producing
+    // near-zero output. Setting dopplerEnabled=false ensures the signal passes
+    // through with only gain attenuation and air LPF (both position-consistent
+    // for ratio-based comparisons).
+    EngineParams p = params;
+    p.dopplerEnabled = false;
+    engine.setParams(p);
 
     // Generate sine input
     std::vector<float> input(static_cast<size_t>(N));

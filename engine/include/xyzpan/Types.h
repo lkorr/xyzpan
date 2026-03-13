@@ -49,6 +49,15 @@ struct EngineParams {
     float chestGainDb      = kChestGainDb;        // -8 dB  — chest bounce attenuation
     float floorDelayMaxMs  = kFloorDelayMaxMs;    // 20.0 ms — floor bounce max delay
     float floorGainDb      = kFloorGainDb;        // -5 dB  — floor bounce attenuation
+
+    // =========================================================================
+    // Phase 4: Distance Processing (DIST-01 through DIST-06)
+    // =========================================================================
+    float distDelayMaxMs = kDistDelayMaxMs;   // 300.0f — max propagation delay
+    float distSmoothMs   = kDistSmoothMs;     // 30.0f  — delay smoother time constant
+    bool  dopplerEnabled = true;              // DIST-05: toggle delay+doppler
+    float airAbsMaxHz    = kAirAbsMaxHz;      // 22000.0f — LPF cutoff at min distance
+    float airAbsMinHz    = kAirAbsMinHz;      // 8000.0f  — LPF cutoff at max distance
 };
 
 // Result of XYZ-to-spherical coordinate conversion.

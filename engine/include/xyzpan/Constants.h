@@ -107,4 +107,22 @@ constexpr float kFloorDelayMaxMs  = 20.0f;
 // Floor bounce attenuation at Z=-1 (maximum bounce contribution)
 constexpr float kFloorGainDb      = -5.0f;
 
+// ============================================================================
+// Phase 4: Distance Processing (DIST-01 through DIST-06)
+// ============================================================================
+
+// Maximum propagation delay for distance effect (DIST-03).
+// At the unit-cube corner (sqrt(3) away), the source has a 300ms delay offset.
+constexpr float kDistDelayMaxMs = 300.0f;
+
+// Delay smoother time constant — controls doppler feel during movement.
+// Longer = smoother pitch glide, shorter = tighter tracking.
+constexpr float kDistSmoothMs = 30.0f;
+
+// Air absorption LPF cutoff range (DIST-02).
+// At minimum distance: LPF fully open (no absorption).
+// At maximum distance: LPF at minimum cutoff (strong HF rolloff).
+constexpr float kAirAbsMaxHz = 22000.0f;  // LPF cutoff at min distance (no absorption)
+constexpr float kAirAbsMinHz = 8000.0f;   // LPF cutoff at max distance (full absorption)
+
 } // namespace xyzpan

@@ -263,6 +263,7 @@ TEST_CASE("Engine ITD delay: X=-1 delays right ear relative to left", "[Integrat
 
     EngineParams p;
     p.x = -1.0f; p.y = 1.0f; p.z = 0.0f;
+    p.dopplerEnabled = false;  // Phase 4: disable distance delay so impulse peak is visible
     settle(eng, p, 44100); // settle fully (1 second of silence)
 
     // Process an impulse and find peak in each channel
@@ -293,6 +294,7 @@ TEST_CASE("Engine ITD delay: X=+1 delays left ear relative to right", "[Integrat
 
     EngineParams p;
     p.x = 1.0f; p.y = 1.0f; p.z = 0.0f;
+    p.dopplerEnabled = false;  // Phase 4: disable distance delay so impulse peak is visible
     settle(eng, p, 44100);
 
     const int N = 4096;
@@ -508,6 +510,7 @@ TEST_CASE("Engine mono to stereo: X=0.5 produces L != R", "[Integration][PAN-03]
 
     EngineParams p;
     p.x = 0.5f; p.y = 1.0f; p.z = 0.0f;
+    p.dopplerEnabled = false;  // Phase 4: disable distance delay to allow signal through
     settle(eng, p, 44100); // let smoothers reach steady state
 
     const int N = 4096;

@@ -26,13 +26,14 @@ namespace xyzpan {
 //   - Always produces 2-channel (stereo) output.
 //   - No allocation inside process(); all buffers pre-allocated in prepare().
 //
-// Phase 3 signal flow (per sample):
+// Phase 4 signal flow (per sample):
 //   1. Stereo-to-mono sum (Phase 1)
 //   2. Comb bank (series) with Y-driven dry/wet blend [DEPTH]
 //   3. Pinna notch EQ + high shelf (Z-driven) [ELEV-01, ELEV-02]
-//   4. ITD/ILD binaural split (Phase 2)
+//   4. ITD/ILD binaural split (Phase 2) — with proximity-scaled ITD and head shadow
 //   5. Chest bounce: parallel filtered+delayed copy added to both ears [ELEV-03]
 //   6. Floor bounce: parallel delayed copy added to both ears [ELEV-04]
+//   7. Distance processing: gain attenuation + delay+doppler + air absorption LPF [DIST-01 through DIST-06]
 class XYZPanEngine {
 public:
     XYZPanEngine() = default;
@@ -121,6 +122,17 @@ private:
     dsp::FractionalDelayLine floorDelayL_;   // per-ear floor bounce delay
     dsp::FractionalDelayLine floorDelayR_;
     dsp::OnePoleSmooth       floorGainSmooth_;  // smooth floor gain transitions
+
+    // =========================================================================
+    // Phase 4: Distance Processing (DIST-01 through DIST-06)
+    // =========================================================================
+    dsp::FractionalDelayLine distDelayL_;     // propagation delay + doppler, left
+    dsp::FractionalDelayLine distDelayR_;     // propagation delay + doppler, right
+    dsp::OnePoleLP           airLPF_L_;       // air absorption LPF, left
+    dsp::OnePoleLP           airLPF_R_;       // air absorption LPF, right
+    dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
+    dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
+    float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
 };
 
 } // namespace xyzpan
