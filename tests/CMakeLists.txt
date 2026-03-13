@@ -19,3 +19,31 @@ target_link_libraries(XYZPanTests
 list(APPEND CMAKE_MODULE_PATH "${Catch2_SOURCE_DIR}/extras")
 include(Catch)
 catch_discover_tests(XYZPanTests)
+
+# ---------------------------------------------------------------------------
+# XYZPanPluginTests — plugin-layer unit tests (require JUCE)
+# Links XYZPan_SharedCode, which is the JUCE-generated shared code target
+# created by juce_add_plugin(XYZPan ...) in plugin/CMakeLists.txt.
+# Separate from XYZPanTests to preserve SETUP-02 engine isolation invariant.
+# ---------------------------------------------------------------------------
+add_executable(XYZPanPluginTests
+    plugin/TestParameterLayout.cpp
+    plugin/TestPositionBridge.cpp
+    plugin/TestPresets.cpp
+)
+
+target_link_libraries(XYZPanPluginTests
+    PRIVATE
+        XYZPan
+        xyzpan_ui
+        xyzpan_engine
+        juce::juce_audio_utils
+        Catch2::Catch2WithMain
+)
+
+target_include_directories(XYZPanPluginTests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/plugin
+)
+
+catch_discover_tests(XYZPanPluginTests)

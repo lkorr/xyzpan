@@ -1,3 +1,6 @@
-# Phase 1 placeholder: xyzpan_ui is an INTERFACE library with no sources.
-# Phase 6 will add OpenGL rendering sources and JUCE OpenGL dependency here.
+# xyzpan_ui: INTERFACE library (no sources yet — OpenGL sources added in Plan 06-02)
+# PositionBridge.h is header-only; expose ui/ directory for #include "PositionBridge.h"
 add_library(xyzpan_ui INTERFACE)
+target_include_directories(xyzpan_ui
+    INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}
+)
