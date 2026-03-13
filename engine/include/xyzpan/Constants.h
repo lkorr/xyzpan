@@ -125,4 +125,16 @@ constexpr float kDistSmoothMs = 30.0f;
 constexpr float kAirAbsMaxHz = 22000.0f;  // LPF cutoff at min distance (no absorption)
 constexpr float kAirAbsMinHz = 8000.0f;   // LPF cutoff at max distance (full absorption)
 
+// ============================================================================
+// Phase 5: Reverb (VERB-01 through VERB-04)
+// ============================================================================
+constexpr float kVerbDefaultSize      = 0.5f;
+constexpr float kVerbDefaultDecay     = 0.5f;
+constexpr float kVerbDefaultDamping   = 0.5f;
+constexpr float kVerbDefaultWet       = 0.0f;   // reverb off by default
+constexpr float kVerbPreDelayMaxMs    = 50.0f;
+constexpr float kVerbMaxDecayT60_s    = 5.0f;   // maximum T60 at decay=1.0
+// FDN delay lengths in ms at 44100 Hz — mutually prime, scaled in prepare()
+constexpr float kFDNDelayMs[4]        = { 30.98f, 42.40f, 51.95f, 63.45f };
+
 } // namespace xyzpan

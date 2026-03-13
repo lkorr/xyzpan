@@ -58,6 +58,15 @@ struct EngineParams {
     bool  dopplerEnabled = true;              // DIST-05: toggle delay+doppler
     float airAbsMaxHz    = kAirAbsMaxHz;      // 22000.0f — LPF cutoff at min distance
     float airAbsMinHz    = kAirAbsMinHz;      // 8000.0f  — LPF cutoff at max distance
+
+    // =========================================================================
+    // Phase 5: Reverb (VERB-01 through VERB-04)
+    // =========================================================================
+    float verbSize        = kVerbDefaultSize;
+    float verbDecay       = kVerbDefaultDecay;
+    float verbDamping     = kVerbDefaultDamping;
+    float verbWet         = kVerbDefaultWet;
+    float verbPreDelayMax = kVerbPreDelayMaxMs;
 };
 
 // Result of XYZ-to-spherical coordinate conversion.
