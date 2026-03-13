@@ -73,7 +73,7 @@
 ### Parameter System (PARAM)
 
 - [x] **PARAM-01**: All DSP parameters exposed as VST automation parameters
-- [ ] **PARAM-02**: Dev panel exposes all internal constants (filter frequencies, delay ranges, dB values, comb tunings)
+- [x] **PARAM-02**: Dev panel exposes all internal constants (filter frequencies, delay ranges, dB values, comb tunings)
 - [x] **PARAM-03**: Parameter changes are smoothed to prevent zipper noise (no clicks on automation)
 - [x] **PARAM-04**: Plugin state saves and restores correctly across DAW sessions
 - [ ] **PARAM-05**: Factory presets demonstrating spatial positions and LFO patterns
@@ -83,9 +83,9 @@
 - [x] **UI-01**: Custom OpenGL renderer showing 2D projection of 3D space
 - [x] **UI-02**: Listener node centered in the view
 - [x] **UI-03**: Object node draggable in X/Y, with Z shown as size change (depth perspective)
-- [ ] **UI-04**: LFO controls visible per axis (waveform, rate, depth, phase)
-- [ ] **UI-05**: Dev panel toggleable showing all tuneable DSP constants
-- [ ] **UI-06**: All parameter controls also accessible as standard UI elements (not just the 3D view)
+- [x] **UI-04**: LFO controls visible per axis (waveform, rate, depth, phase)
+- [x] **UI-05**: Dev panel toggleable showing all tuneable DSP constants
+- [x] **UI-06**: All parameter controls also accessible as standard UI elements (not just the 3D view)
 - [x] **UI-07**: UI updates at display rate, not audio rate (double-buffer pattern for audio→GL)
 
 ### Plugin Infrastructure (INFRA)
@@ -171,16 +171,16 @@
 | LFO-04 | Phase 5: Creative Tools | Complete |
 | LFO-05 | Phase 5: Creative Tools | Complete |
 | PARAM-01 | Phase 6: UI and Parameter System | Complete |
-| PARAM-02 | Phase 6: UI and Parameter System | Pending |
+| PARAM-02 | Phase 6: UI and Parameter System | Complete |
 | PARAM-03 | Phase 6: UI and Parameter System | Complete |
 | PARAM-04 | Phase 6: UI and Parameter System | Complete |
 | PARAM-05 | Phase 6: UI and Parameter System | Pending |
 | UI-01 | Phase 6: UI and Parameter System | Complete |
 | UI-02 | Phase 6: UI and Parameter System | Complete |
 | UI-03 | Phase 6: UI and Parameter System | Complete |
-| UI-04 | Phase 6: UI and Parameter System | Pending |
-| UI-05 | Phase 6: UI and Parameter System | Pending |
-| UI-06 | Phase 6: UI and Parameter System | Pending |
+| UI-04 | Phase 6: UI and Parameter System | Complete |
+| UI-05 | Phase 6: UI and Parameter System | Complete |
+| UI-06 | Phase 6: UI and Parameter System | Complete |
 | UI-07 | Phase 6: UI and Parameter System | Complete |
 | INFRA-01 | Phase 7: Integration and Validation | Pending |
 | INFRA-02 | Phase 7: Integration and Validation | Pending |
