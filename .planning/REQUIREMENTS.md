@@ -26,7 +26,7 @@
 - [x] **PAN-01**: Interaural time difference (ITD) applies up to 0.7ms delay to opposite ear based on azimuth X component
 - [x] **PAN-02**: Head shadow filter applied to opposite ear based on azimuth X component
 - [x] **PAN-03**: Mono input split to stereo L/R at the panning stage
-- [ ] **PAN-04**: Stereo input accepted and summed to mono before processing
+- [x] **PAN-04**: Stereo input accepted and summed to mono before processing
 - [x] **PAN-05**: Panning is smooth and click-free during parameter automation
 
 ### Depth Processing (DEPTH)
@@ -142,7 +142,7 @@
 | PAN-01 | Phase 2: Binaural Panning Core | Complete |
 | PAN-02 | Phase 2: Binaural Panning Core | Complete |
 | PAN-03 | Phase 2: Binaural Panning Core | Complete |
-| PAN-04 | Phase 2: Binaural Panning Core | Pending |
+| PAN-04 | Phase 2: Binaural Panning Core | Complete |
 | PAN-05 | Phase 2: Binaural Panning Core | Complete |
 | DEPTH-01 | Phase 3: Depth and Elevation | Pending |
 | DEPTH-02 | Phase 3: Depth and Elevation | Pending |

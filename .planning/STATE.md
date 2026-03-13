@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in_progress
-stopped_at: "Completed Phase 2 Plan 01: Binaural Panning DSP Pipeline"
-last_updated: "2026-03-13T00:37:00.000Z"
-last_activity: "2026-03-13 -- Completed plan 02-01 (binaural ITD/ILD/head-shadow pipeline, 27 tests pass)"
+status: completed
+stopped_at: "Completed Phase 2 Plan 02: APVTS Parameter Wiring"
+last_updated: "2026-03-13T00:41:08.366Z"
+last_activity: 2026-03-13 -- Completed plan 02-02 (7 APVTS dev panel parameters wired to EngineParams, pluginval strictness-5 pass)
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
   percent: 22
 ---
 
@@ -26,35 +26,36 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 2 of 7 (Binaural Panning Core) -- in progress
-Plan: 1 of 3 in current phase -- completed
-Status: Plan 02-01 complete, 2 plans remaining in phase 2
-Last activity: 2026-03-13 -- Completed plan 02-01 (binaural ITD/ILD/head-shadow pipeline, 27 tests pass)
+Plan: 2 of 3 in current phase -- completed
+Status: Plan 02-02 complete, 1 plan remaining in phase 2
+Last activity: 2026-03-13 -- Completed plan 02-02 (7 APVTS dev panel parameters wired to EngineParams)
 
-Progress: [██░░░░░░░░] 22%
+Progress: [███░░░░░░░] 28%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 11 min
-- Total execution time: 0.73 hours
+- Total plans completed: 5
+- Average duration: 10 min
+- Total execution time: 0.87 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | Phase 1: Project Scaffolding | 3/3 | 26 min | 9 min |
-| Phase 2: Binaural Panning Core | 1/3 | 18 min | 18 min |
+| Phase 2: Binaural Panning Core | 2/3 | 26 min | 13 min |
 
 **Recent Trend:**
-- Last 5 plans: 14 min, 8 min, 4 min, 18 min
-- Trend: Stable (phase 2 plans are more complex)
+- Last 5 plans: 8 min, 4 min, 18 min, 8 min
+- Trend: Stable
 
 *Updated after each plan completion*
 | Phase 01-project-scaffolding P01 | 14 | 3 tasks | 22 files |
 | Phase 01-project-scaffolding P02 | 8 | 2 tasks | 1 file |
 | Phase 01-project-scaffolding P03 | 4 | 2 tasks | 3 files |
 | Phase 02-binaural-panning-core P01 | 18 | 2 tasks | 9 files |
+| Phase 02-binaural-panning-core P02 | 8 | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,7 @@ Recent decisions affecting current work:
 - [Phase 02-binaural-panning-core]: kHeadShadowFullOpenHz = 16000 Hz (not 20000): SVF g=6.3 at 20kHz/44100Hz causes state transients >1.5x input during per-sample coefficient changes; 16000 Hz gives g=2.25 — safe and inaudible
 - [Phase 02-binaural-panning-core]: kMinDelay = 2.0f in Engine process(): Hermite C and D points at base+1/base+2 read future ring buffer positions when delay<2; minimum 2-sample offset ensures all 4 Hermite points are valid past samples
 - [Phase 02-binaural-panning-core]: OnePoleSmooth::prepare() does NOT reset z_ — allows live time constant changes without audible click; reset(value) is the separate "snap to value" API
+- [Phase 02-binaural-panning-core]: NormalisableRange skew 0.3 for Hz parameters (HEAD_SHADOW_HZ, REAR_SHADOW_HZ) gives log-like generic editor feel without custom UI
 
 ### Pending Todos
 
@@ -94,6 +96,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T00:37:00.000Z
-Stopped at: "Completed Phase 2 Plan 01: Binaural Panning DSP Pipeline"
-Resume file: .planning/phases/02-binaural-panning-core/02-01-SUMMARY.md
+Last session: 2026-03-13T00:41:08.362Z
+Stopped at: Completed Phase 2 Plan 02: APVTS Parameter Wiring
+Resume file: None
