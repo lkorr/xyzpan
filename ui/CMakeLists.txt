@@ -6,6 +6,9 @@ add_library(xyzpan_ui STATIC
     Mesh.cpp
     AlchemyLookAndFeel.cpp
     XYZPanGLView.cpp
+    LFOWaveformButton.cpp   # Phase 6-03
+    LFOStrip.cpp            # Phase 6-03
+    DevPanelComponent.cpp   # Phase 6-03
 )
 
 target_include_directories(xyzpan_ui
