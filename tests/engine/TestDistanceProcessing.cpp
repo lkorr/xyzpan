@@ -118,46 +118,51 @@ static StereoOut settleAndProcess(const EngineParams& params,
 // DIST-01: Inverse-square gain attenuation
 // ---------------------------------------------------------------------------
 TEST_CASE("DIST-01: Inverse-square gain attenuation", "[distance][DIST-01]") {
-    // At minimum distance (dist = kMinDistance = 0.1): distGain = 1.0 (unity).
-    // At double distance (dist = 2*kMinDistance = 0.2): distGain = 0.5.
-    // So far-to-near RMS ratio should be ~0.5.
+    // Formula: distGain = clamp(kDistGainRef / dist, 0, kDistGainMax)
+    // At dist=1.0 (Y=1, default position): distGain = 1.0/1.0 = 1.0 (unity).
+    // At dist=0.5 (Y=0.5): distGain = 1.0/0.5 = 2.0 (clamped to kDistGainMax).
+    // So closer-to-reference ratio should be ~2.0 (closer is louder).
     //
-    // Both tests use dopplerEnabled=false so the distance delay does not shift
-    // the signal outside the measurement window.
+    // Test: X=0, Z=0 for both (no ILD, no floor/chest bounce, combWet=0 at Y>0)
+    // Compare "close" (Y=0.5) vs "reference" (Y=1.0).
+    // dopplerEnabled=false so the delay does not shift the signal outside the window.
 
     constexpr int N = 4096;
     constexpr int skip = 512;  // skip smoother transient
 
     auto noise = makeNoise(N, 99991u);
 
-    // Near: x=0, y=kMinDistance (dist = kMinDistance exactly)
-    EngineParams near;
-    near.x = 0.0f;
-    near.y = kMinDistance;   // dist = kMinDistance
-    near.z = 0.0f;
-    near.dopplerEnabled = false;
+    // Reference: x=0, y=1.0, z=0 (dist=1.0 → distGain = 1.0 = unity at default position)
+    EngineParams ref;
+    ref.x = 0.0f;
+    ref.y = 1.0f;    // dist = 1.0, distGain = 1.0
+    ref.z = 0.0f;
+    ref.dopplerEnabled = false;
 
-    // Far: x=0, y=2*kMinDistance (dist = 2*kMinDistance)
-    EngineParams far;
-    far.x = 0.0f;
-    far.y = 2.0f * kMinDistance;  // dist = 2*kMinDistance
-    far.z = 0.0f;
-    far.dopplerEnabled = false;
+    // Close: x=0, y=0.5, z=0 (dist=0.5 → distGain = 1.0/0.5 = 2.0, clamped to kDistGainMax)
+    EngineParams close;
+    close.x = 0.0f;
+    close.y = 0.5f;  // dist = 0.5, distGain = kDistGainMax = 2.0
+    close.z = 0.0f;
+    close.dopplerEnabled = false;
 
-    auto nearOut = settleAndProcess(near, noise);
-    auto farOut  = settleAndProcess(far,  noise);
+    auto refOut   = settleAndProcess(ref,   noise);
+    auto closeOut = settleAndProcess(close, noise);
 
-    float rmsNear = rmsOf(nearOut.L, skip, N);
-    float rmsFar  = rmsOf(farOut.L,  skip, N);
+    float rmsRef   = rmsOf(refOut.L,   skip, N);
+    float rmsClose = rmsOf(closeOut.L, skip, N);
 
-    // distGain at near = kMinDistance/kMinDistance = 1.0
-    // distGain at far  = kMinDistance/(2*kMinDistance) = 0.5
-    // Expected ratio: ~0.5, tolerance 0.35-0.65 (smoother ramp affects early samples)
-    REQUIRE(rmsNear > 0.0f);
-    REQUIRE(rmsFar  > 0.0f);
-    float ratio = rmsFar / rmsNear;
-    CHECK(ratio >= 0.35f);
-    CHECK(ratio <= 0.65f);
+    // Close source should be louder than reference (closer = louder = gain > 1.0).
+    // Close/ref ratio should be ~kDistGainMax (2.0) ± smoother/binaural tolerance.
+    REQUIRE(rmsRef   > 0.0f);
+    REQUIRE(rmsClose > 0.0f);
+    // Close should be louder than reference (gain ratio > 1.0)
+    CHECK(rmsClose > rmsRef);
+    // Ratio should be in the range [1.1, kDistGainMax+0.3] — the smoother ramp reduces
+    // the close gain slightly since settle converges toward but not exactly kDistGainMax.
+    float ratio = rmsClose / rmsRef;
+    CHECK(ratio >= 1.1f);
+    CHECK(ratio <= kDistGainMax + 0.3f);
 }
 
 // ---------------------------------------------------------------------------

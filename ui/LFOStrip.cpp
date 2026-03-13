@@ -56,40 +56,46 @@ LFOStrip::LFOStrip(char axis, juce::AudioProcessorValueTreeState& apvts)
 
 void LFOStrip::resized()
 {
-    // Layout within the strip:
-    // [WaveBtn] [Rate knob+label] [Depth knob+label] [Phase knob+label] [SYNC]
+    // 2-row layout — fits all controls in a 100px x 120px cell (standard strip size).
     //
-    // The strip is typically 100px wide x 120px tall (from PluginEditor layout).
+    // Row 1 (top half, ~60px):  [WaveBtn ~30px] [Rate knob fills remaining] [SYNC 32px]
+    // Row 2 (bottom half, ~60px): [Depth knob 50%] [Phase knob 50%]
+    //
+    // Each knob gets 40-50px diameter — large enough to grab with a mouse.
 
     auto b = getLocalBounds();
     const int totalW = b.getWidth();
     const int totalH = b.getHeight();
 
-    // Waveform button: left portion, square-ish
-    const int waveW = juce::jmin(28, totalW / 4);
-    const int waveH = juce::jmin(28, totalH - 4);
-    waveBtn_.setBounds(b.getX(), b.getY() + (totalH - waveH) / 2, waveW, waveH);
+    const int row1H = totalH / 2;
+    const int row2H = totalH - row1H;
+    const int row1Y = b.getY();
+    const int row2Y = b.getY() + row1H;
 
-    // Remaining width for knobs + SYNC
-    const int remaining = totalW - waveW - 2;
+    // Row 1 dimensions
+    const int waveW = juce::jmin(30, totalW / 3);
     const int syncW = 32;
-    const int knobAreaW = remaining - syncW;
-    const int knobW = knobAreaW / 3;
+    const int rateAreaW = totalW - waveW - syncW - 2;  // 2px gap between wave and rate
 
-    int x = b.getX() + waveW + 2;
+    // Row 1: Waveform button (left)
+    waveBtn_.setBounds(b.getX(), row1Y + (row1H - waveW) / 2, waveW, waveW);
+
+    // Row 1: Rate knob (fills remaining space between wave and sync)
     const int labelH = 14;
-    const int knobH = totalH - labelH;
+    const int rateKnobH = row1H - labelH;
+    rateKnob_.setBounds(b.getX() + waveW + 2, row1Y, rateAreaW, rateKnobH);
+    rateLabel_.setBounds(b.getX() + waveW + 2, row1Y + rateKnobH, rateAreaW, labelH);
 
-    auto placeKnob = [&](juce::Slider& knob, juce::Label& label) {
-        knob.setBounds(x, b.getY(), knobW, knobH);
-        label.setBounds(x, b.getY() + knobH, knobW, labelH);
-        x += knobW;
-    };
+    // Row 1: SYNC button (right)
+    syncBtn_.setBounds(b.getX() + totalW - syncW, row1Y + (row1H - 20) / 2, syncW, 20);
 
-    placeKnob(rateKnob_,  rateLabel_);
-    placeKnob(depthKnob_, depthLabel_);
-    placeKnob(phaseKnob_, phaseLabel_);
+    // Row 2: Depth and Phase knobs side by side
+    const int halfW = totalW / 2;
+    const int knobH2 = row2H - labelH;
 
-    // SYNC button: right edge, vertically centred
-    syncBtn_.setBounds(x, b.getY() + (totalH - 20) / 2, syncW, 20);
+    depthKnob_.setBounds(b.getX(),          row2Y, halfW, knobH2);
+    depthLabel_.setBounds(b.getX(),          row2Y + knobH2, halfW, labelH);
+
+    phaseKnob_.setBounds(b.getX() + halfW,  row2Y, halfW, knobH2);
+    phaseLabel_.setBounds(b.getX() + halfW,  row2Y + knobH2, halfW, labelH);
 }
