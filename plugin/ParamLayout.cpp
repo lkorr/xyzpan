@@ -230,5 +230,49 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::VERB_PRE_DELAY, 1}, "Verb Pre-Delay Max (ms)",
         NR(0.0f, 100.0f, 0.5f), xyzpan::kVerbPreDelayMaxMs));
 
+    // -------------------------------------------------------------------------
+    // Phase 5: LFO — per axis (LFO-01 through LFO-05)
+    // -------------------------------------------------------------------------
+
+    // X axis
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_RATE, 1}, "LFO X Rate (Hz)",
+        NR(xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate, 0.001f, 0.3f), xyzpan::kLFODefaultRate));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_DEPTH, 1}, "LFO X Depth",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_PHASE, 1}, "LFO X Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_WAVEFORM, 1}, "LFO X Waveform",
+        NR(0.0f, 3.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_BEAT_DIV, 1}, "LFO X Beat Div",
+        NR(0.125f, 8.0f, 0.125f), 1.0f));
+
+    // Y axis
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_RATE, 1}, "LFO Y Rate (Hz)",
+        NR(xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate, 0.001f, 0.3f), xyzpan::kLFODefaultRate));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_DEPTH, 1}, "LFO Y Depth",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_PHASE, 1}, "LFO Y Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_WAVEFORM, 1}, "LFO Y Waveform",
+        NR(0.0f, 3.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_BEAT_DIV, 1}, "LFO Y Beat Div",
+        NR(0.125f, 8.0f, 0.125f), 1.0f));
+
+    // Z axis
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_RATE, 1}, "LFO Z Rate (Hz)",
+        NR(xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate, 0.001f, 0.3f), xyzpan::kLFODefaultRate));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_DEPTH, 1}, "LFO Z Depth",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_PHASE, 1}, "LFO Z Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_WAVEFORM, 1}, "LFO Z Waveform",
+        NR(0.0f, 3.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_BEAT_DIV, 1}, "LFO Z Beat Div",
+        NR(0.125f, 8.0f, 0.125f), 1.0f));
+
+    // Tempo sync (shared across all axes) — AudioParameterBool
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::LFO_TEMPO_SYNC, 1}, "LFO Tempo Sync", false));
+
     return layout;
 }

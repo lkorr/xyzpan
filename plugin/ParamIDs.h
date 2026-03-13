@@ -52,4 +52,24 @@ namespace ParamID {
     constexpr const char* VERB_DAMPING     = "verb_damping";
     constexpr const char* VERB_WET         = "verb_wet";
     constexpr const char* VERB_PRE_DELAY   = "verb_pre_delay";
+
+    // Phase 5: LFO — per axis (LFO-01 through LFO-05)
+    constexpr const char* LFO_X_RATE      = "lfo_x_rate";
+    constexpr const char* LFO_X_DEPTH     = "lfo_x_depth";
+    constexpr const char* LFO_X_PHASE     = "lfo_x_phase";
+    constexpr const char* LFO_X_WAVEFORM  = "lfo_x_waveform";   // float 0-3, step 1
+    constexpr const char* LFO_Y_RATE      = "lfo_y_rate";
+    constexpr const char* LFO_Y_DEPTH     = "lfo_y_depth";
+    constexpr const char* LFO_Y_PHASE     = "lfo_y_phase";
+    constexpr const char* LFO_Y_WAVEFORM  = "lfo_y_waveform";
+    constexpr const char* LFO_Z_RATE      = "lfo_z_rate";
+    constexpr const char* LFO_Z_DEPTH     = "lfo_z_depth";
+    constexpr const char* LFO_Z_PHASE     = "lfo_z_phase";
+    constexpr const char* LFO_Z_WAVEFORM  = "lfo_z_waveform";
+    // Tempo sync (shared)
+    constexpr const char* LFO_TEMPO_SYNC  = "lfo_tempo_sync";   // AudioParameterBool
+    // Beat division per axis (float multiplier: 0.25=1/4, 0.5=1/2, 1.0=quarter, 2.0=half, 4.0=whole)
+    constexpr const char* LFO_X_BEAT_DIV  = "lfo_x_beat_div";
+    constexpr const char* LFO_Y_BEAT_DIV  = "lfo_y_beat_div";
+    constexpr const char* LFO_Z_BEAT_DIV  = "lfo_z_beat_div";
 } // namespace ParamID

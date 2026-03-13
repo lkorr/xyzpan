@@ -84,5 +84,23 @@ private:
     std::atomic<float>* verbWetParam      = nullptr;
     std::atomic<float>* verbPreDelayParam = nullptr;
 
+    // Phase 5: LFO — per axis
+    std::atomic<float>* lfoXRateParam     = nullptr;
+    std::atomic<float>* lfoXDepthParam    = nullptr;
+    std::atomic<float>* lfoXPhaseParam    = nullptr;
+    std::atomic<float>* lfoXWaveformParam = nullptr;
+    std::atomic<float>* lfoYRateParam     = nullptr;
+    std::atomic<float>* lfoYDepthParam    = nullptr;
+    std::atomic<float>* lfoYPhaseParam    = nullptr;
+    std::atomic<float>* lfoYWaveformParam = nullptr;
+    std::atomic<float>* lfoZRateParam     = nullptr;
+    std::atomic<float>* lfoZDepthParam    = nullptr;
+    std::atomic<float>* lfoZPhaseParam    = nullptr;
+    std::atomic<float>* lfoZWaveformParam = nullptr;
+    std::atomic<float>* lfoTempoSyncParam = nullptr;
+    std::atomic<float>* lfoXBeatDivParam  = nullptr;
+    std::atomic<float>* lfoYBeatDivParam  = nullptr;
+    std::atomic<float>* lfoZBeatDivParam  = nullptr;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "ParamIDs.h"
 #include "xyzpan/Types.h"
+#include <cmath>
 
 XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
@@ -85,6 +86,41 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(verbDampingParam  != nullptr);
     jassert(verbWetParam      != nullptr);
     jassert(verbPreDelayParam != nullptr);
+
+    // Phase 5: LFO — per axis (LFO-01 through LFO-05)
+    lfoXRateParam     = apvts.getRawParameterValue(ParamID::LFO_X_RATE);
+    lfoXDepthParam    = apvts.getRawParameterValue(ParamID::LFO_X_DEPTH);
+    lfoXPhaseParam    = apvts.getRawParameterValue(ParamID::LFO_X_PHASE);
+    lfoXWaveformParam = apvts.getRawParameterValue(ParamID::LFO_X_WAVEFORM);
+    lfoYRateParam     = apvts.getRawParameterValue(ParamID::LFO_Y_RATE);
+    lfoYDepthParam    = apvts.getRawParameterValue(ParamID::LFO_Y_DEPTH);
+    lfoYPhaseParam    = apvts.getRawParameterValue(ParamID::LFO_Y_PHASE);
+    lfoYWaveformParam = apvts.getRawParameterValue(ParamID::LFO_Y_WAVEFORM);
+    lfoZRateParam     = apvts.getRawParameterValue(ParamID::LFO_Z_RATE);
+    lfoZDepthParam    = apvts.getRawParameterValue(ParamID::LFO_Z_DEPTH);
+    lfoZPhaseParam    = apvts.getRawParameterValue(ParamID::LFO_Z_PHASE);
+    lfoZWaveformParam = apvts.getRawParameterValue(ParamID::LFO_Z_WAVEFORM);
+    lfoTempoSyncParam = apvts.getRawParameterValue(ParamID::LFO_TEMPO_SYNC);
+    lfoXBeatDivParam  = apvts.getRawParameterValue(ParamID::LFO_X_BEAT_DIV);
+    lfoYBeatDivParam  = apvts.getRawParameterValue(ParamID::LFO_Y_BEAT_DIV);
+    lfoZBeatDivParam  = apvts.getRawParameterValue(ParamID::LFO_Z_BEAT_DIV);
+
+    jassert(lfoXRateParam     != nullptr);
+    jassert(lfoXDepthParam    != nullptr);
+    jassert(lfoXPhaseParam    != nullptr);
+    jassert(lfoXWaveformParam != nullptr);
+    jassert(lfoYRateParam     != nullptr);
+    jassert(lfoYDepthParam    != nullptr);
+    jassert(lfoYPhaseParam    != nullptr);
+    jassert(lfoYWaveformParam != nullptr);
+    jassert(lfoZRateParam     != nullptr);
+    jassert(lfoZDepthParam    != nullptr);
+    jassert(lfoZPhaseParam    != nullptr);
+    jassert(lfoZWaveformParam != nullptr);
+    jassert(lfoTempoSyncParam != nullptr);
+    jassert(lfoXBeatDivParam  != nullptr);
+    jassert(lfoYBeatDivParam  != nullptr);
+    jassert(lfoZBeatDivParam  != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -150,6 +186,36 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.verbDamping     = verbDampingParam->load();
     params.verbWet         = verbWetParam->load();
     params.verbPreDelayMax = verbPreDelayParam->load();
+
+    // Phase 5: LFO (LFO-01 through LFO-05)
+    params.lfoXRate      = lfoXRateParam->load();
+    params.lfoXDepth     = lfoXDepthParam->load();
+    params.lfoXPhase     = lfoXPhaseParam->load();
+    params.lfoXWaveform  = static_cast<int>(std::round(lfoXWaveformParam->load()));
+    params.lfoYRate      = lfoYRateParam->load();
+    params.lfoYDepth     = lfoYDepthParam->load();
+    params.lfoYPhase     = lfoYPhaseParam->load();
+    params.lfoYWaveform  = static_cast<int>(std::round(lfoYWaveformParam->load()));
+    params.lfoZRate      = lfoZRateParam->load();
+    params.lfoZDepth     = lfoZDepthParam->load();
+    params.lfoZPhase     = lfoZPhaseParam->load();
+    params.lfoZWaveform  = static_cast<int>(std::round(lfoZWaveformParam->load()));
+    params.lfoTempoSync  = lfoTempoSyncParam->load() >= 0.5f;
+    params.lfoXBeatDiv   = lfoXBeatDivParam->load();
+    params.lfoYBeatDiv   = lfoYBeatDivParam->load();
+    params.lfoZBeatDiv   = lfoZBeatDivParam->load();
+    // Note: lfoXPhase (and Y/Z) are snapshotted but the engine applies them as initial
+    // accumulator offsets only via lfoX_.reset() in Engine::reset(). Live phase changes
+    // in a running LFO are not applied per-block — intentional for v1 (no phase-jump clicks).
+
+    // Phase 5: Read host BPM for LFO tempo sync (LFO-05)
+    if (auto* ph = getPlayHead()) {
+        if (auto pos = ph->getPosition()) {
+            if (pos->getBpm().hasValue())
+                params.hostBpm = static_cast<float>(*pos->getBpm());
+            // else: hostBpm stays at its EngineParams default (120.0f)
+        }
+    }
 
     // Build input channel pointer array.
     // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which
