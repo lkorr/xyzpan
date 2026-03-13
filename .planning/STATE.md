@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in_progress
-stopped_at: "Completed Phase 3 Plan 02: Engine Phase 3 Integration"
-last_updated: "2026-03-13T03:46:41Z"
+status: completed
+stopped_at: "Completed Phase 3 Plan 03: Phase 3 APVTS Parameter Wiring"
+last_updated: "2026-03-13T03:54:12.604Z"
 last_activity: 2026-03-13 -- Completed plan 03-02 (Phase 3 signal chain in Engine, 47 tests all pass)
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  completed_phases: 3
+  total_plans: 8
+  completed_plans: 8
   percent: 39
 ---
 
@@ -59,6 +59,7 @@ Progress: [████░░░░░░] 39%
 | Phase 02-binaural-panning-core P02 | 8 | 1 tasks | 4 files |
 | Phase 03-depth-and-elevation P01 | 7 | 2 tasks | 8 files |
 | Phase 03-depth-and-elevation P02 | 6 | 2 tasks | 3 files |
+| Phase 03-depth-and-elevation P03 | 2 | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -96,6 +97,8 @@ Recent decisions affecting current work:
 - [Phase 03-depth-and-elevation]: Bounce delay guard uses std::max(2.0f, delaySamp) + gain threshold — plan formula gives 0ms delay at Z=-1 (max gain position); clamping to 2 samples minimum ensures bounce is audible everywhere gain > 0
 - [Phase 03-depth-and-elevation]: Chest bounce uses original mono (not pinna-EQ'd monoEQ) — physical chest reflection bypasses the pinna path
 - [Phase 03-depth-and-elevation]: Per-block biquad setCoefficients() strictly maintained — std::cos/sin/pow/sqrt too expensive at audio rate
+- [Phase 03-depth-and-elevation]: constexpr const char* arrays for COMB_DELAY[10]/COMB_FB[10] in ParamIDs.h namespace safe — only included by two .cpp TUs
+- [Phase 03-depth-and-elevation]: Hz-domain elevation params use NormalisableRange skew 0.3, consistent with Phase 2 HEAD_SHADOW_HZ/REAR_SHADOW_HZ convention
 
 ### Pending Todos
 
@@ -107,6 +110,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T03:46:41Z
-Stopped at: Completed Phase 3 Plan 02: Engine Phase 3 Integration
+Last session: 2026-03-13T03:54:12.600Z
+Stopped at: Completed Phase 3 Plan 03: Phase 3 APVTS Parameter Wiring
 Resume file: None
