@@ -1,5 +1,6 @@
 add_executable(XYZPanTests
     engine/TestCoordinates.cpp
+    engine/TestBinauralPanning.cpp
 )
 
 target_link_libraries(XYZPanTests
