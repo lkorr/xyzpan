@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include "ParamIDs.h"
 #include "xyzpan/Types.h"
 #include <cmath>
@@ -244,10 +245,20 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     engine.setParams(params);
     engine.process(inputs, numIn, outL, outR, buffer.getNumSamples());
+
+    // Phase 6: update PositionBridge with last modulated position (UI-07)
+    // Written here on audio thread; XYZPanGLView reads it on GL thread via bridge_.read()
+    auto mp = engine.getLastModulatedPosition();
+    xyzpan::SourcePositionSnapshot snap;
+    snap.x = mp.x;
+    snap.y = mp.y;
+    snap.z = mp.z;
+    snap.distance = std::sqrt(mp.x * mp.x + mp.y * mp.y + mp.z * mp.z);
+    positionBridge.write(snap);
 }
 
 juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new XYZPanEditor(*this);
 }
 
 void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {

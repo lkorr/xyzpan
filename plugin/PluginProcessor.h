@@ -3,6 +3,7 @@
 #include "xyzpan/Engine.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
 #include "ParamLayout.h"
+#include "PositionBridge.h"
 
 class XYZPanProcessor : public juce::AudioProcessor {
 public:
@@ -38,6 +39,10 @@ public:
 
     // APVTS — public so editor and parameter attachments can access it
     juce::AudioProcessorValueTreeState apvts;
+
+    // Phase 6: PositionBridge for audio-to-GL position transfer (UI-07)
+    // Public so XYZPanEditor / XYZPanGLView can hold a reference
+    xyzpan::PositionBridge positionBridge;
 
 private:
     xyzpan::XYZPanEngine engine;
