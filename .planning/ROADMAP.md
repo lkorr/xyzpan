@@ -121,6 +121,15 @@ Plans:
 - [ ] 06-03-PLAN.md — LFO strips (waveform button + knobs), dev panel overlay (40 DSP constant sliders), reverb controls
 - [ ] 06-04-PLAN.md — Factory presets (5 XML strings + preset buttons), TestPresets unit tests, state save/restore verification
 
+### Phase 06.1: Bug and dsp fixes (INSERTED)
+
+**Goal**: Fix five critical bugs: signal explosion at extreme parameter values (distance gain formula and floor-bounce feedback path), proximity-panning inversion (distance gain miscalibration causing -20dB attenuation at Y=1), doppler glitchiness (smoother too fast for large jumps), missing main-UI doppler toggle, and dev panel / LFO strip layout failures (invisible dev panel, LFO knobs too small to use)
+**Depends on:** Phase 6
+**Plans:** 1 plan
+
+Plans:
+- [ ] 06.1-01-PLAN.md — Fix all five bugs: distance gain formula, floor-bounce feedback, doppler smoother + hard limiter, doppler UI toggle, dev panel bounds, LFO strip width
+
 ### Phase 7: Integration and Validation
 **Goal**: Plugin works reliably across target DAWs, passes validation, and handles edge cases (sample rate changes, multiple instances)
 **Depends on**: Phase 6
