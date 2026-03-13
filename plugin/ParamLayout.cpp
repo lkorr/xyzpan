@@ -216,5 +216,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         xyzpan::kAirAbsMinHz  // 8000.0f
     ));
 
+    // -------------------------------------------------------------------------
+    // Phase 5: Reverb (VERB-03)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_SIZE, 1}, "Verb Size",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultSize));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_DECAY, 1}, "Verb Decay",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultDecay));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_DAMPING, 1}, "Verb Damping",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultDamping));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_WET, 1}, "Verb Wet",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultWet));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_PRE_DELAY, 1}, "Verb Pre-Delay Max (ms)",
+        NR(0.0f, 100.0f, 0.5f), xyzpan::kVerbPreDelayMaxMs));
+
     return layout;
 }

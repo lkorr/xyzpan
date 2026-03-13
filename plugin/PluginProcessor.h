@@ -23,8 +23,8 @@ public:
     bool acceptsMidi() const override  { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.320; }
-    // 300ms distance delay + 20ms floor bounce
+    double getTailLengthSeconds() const override { return 5.37; }
+    // 300ms distance + 20ms floor bounce + 5000ms max reverb T60 + 50ms pre-delay max
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -76,6 +76,13 @@ private:
     std::atomic<float>* dopplerEnabledParam = nullptr;  // AudioParameterBool stores as float 0/1
     std::atomic<float>* airAbsMaxHzParam    = nullptr;
     std::atomic<float>* airAbsMinHzParam    = nullptr;
+
+    // Phase 5: Reverb (VERB-03)
+    std::atomic<float>* verbSizeParam     = nullptr;
+    std::atomic<float>* verbDecayParam    = nullptr;
+    std::atomic<float>* verbDampingParam  = nullptr;
+    std::atomic<float>* verbWetParam      = nullptr;
+    std::atomic<float>* verbPreDelayParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

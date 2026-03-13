@@ -72,6 +72,19 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(dopplerEnabledParam != nullptr);
     jassert(airAbsMaxHzParam    != nullptr);
     jassert(airAbsMinHzParam    != nullptr);
+
+    // Phase 5: Reverb (VERB-03)
+    verbSizeParam     = apvts.getRawParameterValue(ParamID::VERB_SIZE);
+    verbDecayParam    = apvts.getRawParameterValue(ParamID::VERB_DECAY);
+    verbDampingParam  = apvts.getRawParameterValue(ParamID::VERB_DAMPING);
+    verbWetParam      = apvts.getRawParameterValue(ParamID::VERB_WET);
+    verbPreDelayParam = apvts.getRawParameterValue(ParamID::VERB_PRE_DELAY);
+
+    jassert(verbSizeParam     != nullptr);
+    jassert(verbDecayParam    != nullptr);
+    jassert(verbDampingParam  != nullptr);
+    jassert(verbWetParam      != nullptr);
+    jassert(verbPreDelayParam != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -130,6 +143,13 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.dopplerEnabled = dopplerEnabledParam->load() >= 0.5f;  // float->bool conversion
     params.airAbsMaxHz    = airAbsMaxHzParam->load();
     params.airAbsMinHz    = airAbsMinHzParam->load();
+
+    // Phase 5: Reverb (VERB-03)
+    params.verbSize        = verbSizeParam->load();
+    params.verbDecay       = verbDecayParam->load();
+    params.verbDamping     = verbDampingParam->load();
+    params.verbWet         = verbWetParam->load();
+    params.verbPreDelayMax = verbPreDelayParam->load();
 
     // Build input channel pointer array.
     // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which

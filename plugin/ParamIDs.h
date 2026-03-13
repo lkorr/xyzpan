@@ -45,4 +45,11 @@ namespace ParamID {
     constexpr const char* DOPPLER_ENABLED   = "doppler_enabled";
     constexpr const char* AIR_ABS_MAX_HZ    = "air_abs_max_hz";
     constexpr const char* AIR_ABS_MIN_HZ    = "air_abs_min_hz";
+
+    // Phase 5: Reverb (VERB-03)
+    constexpr const char* VERB_SIZE        = "verb_size";
+    constexpr const char* VERB_DECAY       = "verb_decay";
+    constexpr const char* VERB_DAMPING     = "verb_damping";
+    constexpr const char* VERB_WET         = "verb_wet";
+    constexpr const char* VERB_PRE_DELAY   = "verb_pre_delay";
 } // namespace ParamID
