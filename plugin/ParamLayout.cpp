@@ -30,6 +30,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         0.0f
     ));
 
+    // Phase 6: R scale/radius — multiplies XYZ before engine (PARAM-01)
+    // Default 1.0 = unit radius (no scaling). Range 0.0–2.0 allows zoom-in and zoom-out.
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::R, 1 },
+        "R Scale",
+        NR(0.0f, 2.0f, 0.001f),
+        1.0f  // Default: unit radius (no scaling)
+    ));
+
     // -------------------------------------------------------------------------
     // Dev Panel: Binaural panning tuning parameters (Phase 2)
     // These are hidden from the custom UI (Phase 6) but visible in the DAW's

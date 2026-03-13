@@ -9,6 +9,9 @@ namespace ParamID {
     constexpr const char* Y = "y";
     constexpr const char* Z = "z";
 
+    // Phase 6: R scale/radius — multiplies XYZ before engine (PARAM-01)
+    constexpr const char* R = "r";
+
     // Dev panel: binaural panning tuning (Phase 2)
     constexpr const char* ITD_MAX_MS       = "itd_max_ms";
     constexpr const char* HEAD_SHADOW_HZ   = "head_shadow_hz";

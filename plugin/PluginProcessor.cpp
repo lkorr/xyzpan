@@ -17,6 +17,10 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(yParam != nullptr);
     jassert(zParam != nullptr);
 
+    // Phase 6: R scale/radius (PARAM-01)
+    rParam = apvts.getRawParameterValue(ParamID::R);
+    jassert(rParam != nullptr);
+
     // Dev panel: binaural panning tuning (Phase 2)
     itdMaxParam       = apvts.getRawParameterValue(ParamID::ITD_MAX_MS);
     headShadowHzParam = apvts.getRawParameterValue(ParamID::HEAD_SHADOW_HZ);
@@ -125,6 +129,10 @@ XYZPanProcessor::XYZPanProcessor()
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     engine.prepare(sampleRate, samplesPerBlock);
+
+    // Phase 6: prepare R smoother — 20ms matches engine's internal position smoothing window
+    rSmooth_.prepare(20.0f, static_cast<float>(sampleRate));
+    rSmooth_.reset(rParam != nullptr ? rParam->load() : 1.0f);
 }
 
 void XYZPanProcessor::releaseResources() {
@@ -144,10 +152,13 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // Snapshot current parameter values from APVTS atomics (safe on audio thread)
     xyzpan::EngineParams params;
-    // Spatial position
-    params.x = xParam->load();
-    params.y = yParam->load();
-    params.z = zParam->load();
+    // Phase 6: smoothed R multiplier — rSmooth_ prevents zipper noise during automation (PARAM-03)
+    // Process once per block (R multiplies position, not audio; per-block smoothing is sufficient)
+    const float r = rSmooth_.process(rParam->load());
+    // Spatial position — scaled by smoothed R
+    params.x = xParam->load() * r;
+    params.y = yParam->load() * r;
+    params.z = zParam->load() * r;
     // Dev panel: binaural panning tuning
     params.maxITD_ms       = itdMaxParam->load();
     params.headShadowMinHz = headShadowHzParam->load();

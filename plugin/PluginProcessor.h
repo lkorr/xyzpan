@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "xyzpan/Engine.h"
+#include "xyzpan/dsp/OnePoleSmooth.h"
 #include "ParamLayout.h"
 
 class XYZPanProcessor : public juce::AudioProcessor {
@@ -46,6 +47,12 @@ private:
     std::atomic<float>* xParam = nullptr;
     std::atomic<float>* yParam = nullptr;
     std::atomic<float>* zParam = nullptr;
+
+    // Phase 6: R scale/radius (PARAM-01)
+    std::atomic<float>* rParam = nullptr;
+    // Phase 6: R smoother — prevents per-block step clicks during automation (PARAM-03)
+    // R multiplies X/Y/Z before engine; raw rParam->load() would cause zipper noise.
+    xyzpan::dsp::OnePoleSmooth rSmooth_;
 
     // Dev panel: binaural panning tuning (Phase 2)
     std::atomic<float>* itdMaxParam       = nullptr;
