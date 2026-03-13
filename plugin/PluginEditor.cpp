@@ -125,8 +125,17 @@ XYZPanEditor::~XYZPanEditor()
 // ---------------------------------------------------------------------------
 void XYZPanEditor::paint(juce::Graphics& g)
 {
-    // GL view covers most of the window; paint fills the strip area at the bottom
+    // Background for the whole window
     g.fillAll(juce::Colour(xyzpan::AlchemyLookAndFeel::kBackground));
+
+    // Bottom strip: slightly lighter dark-iron tone to visually separate controls from GL view
+    const auto stripRect = getLocalBounds().removeFromBottom(kStripH);
+    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kDarkIron));
+    g.fillRect(stripRect);
+
+    // 1px gold separator line between GL view and strip
+    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze));
+    g.drawHorizontalLine(getHeight() - kStripH, 0.0f, static_cast<float>(getWidth()));
 }
 
 // ---------------------------------------------------------------------------
@@ -155,10 +164,10 @@ void XYZPanEditor::resized()
     // Dev toggle button: top-left of GL area (after snap row has been removed)
     devToggle_.setBounds(glArea.getX() + 4, glArea.getY() + 4, 40, 22);
 
-    // Dev panel overlays right 30% of GL view when visible
+    // Dev panel overlays right 30% of the full editor height when visible.
+    // Must cover full height (not just glArea) so it paints over the knob strip too.
     const int panelW = static_cast<int>(glArea.getWidth() * 0.30f);
-    devPanel_.setBounds(glArea.getRight() - panelW, glArea.getY(),
-                        panelW, glArea.getHeight());
+    devPanel_.setBounds(getWidth() - panelW, 0, panelW, getHeight());
 
     // ----- Bottom strip layout -----
     // Column width for each position knob group
