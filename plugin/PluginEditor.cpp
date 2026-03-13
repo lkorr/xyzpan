@@ -100,9 +100,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
     addAndMakeVisible(devToggle_);
 
-    // Dev panel: always a child component; visibility controls appearance
-    devPanel_.setVisible(false);  // hidden by default
-    addAndMakeVisible(devPanel_);
+    // Dev panel: child of glView_ (not the editor) so it composites on top of the
+    // OpenGL surface. JUCE guarantees software-rendered children of an OpenGL component
+    // paint over the GL output. Bounds are set in resized() in glView_-local coordinates.
+    devPanel_.setVisible(false);
+    glView_.addAndMakeVisible(devPanel_);
 
     // Window sizing (same as Phase 6-02)
     setResizable(true, true);
@@ -164,10 +166,10 @@ void XYZPanEditor::resized()
     // Dev toggle button: top-left of GL area (after snap row has been removed)
     devToggle_.setBounds(glArea.getX() + 4, glArea.getY() + 4, 40, 22);
 
-    // Dev panel overlays right 30% of the full editor height when visible.
-    // Must cover full height (not just glArea) so it paints over the knob strip too.
+    // Dev panel is a child of glView_, so bounds are in glView_-local coordinates.
+    // Use glArea dimensions (already applied to glView_) — right 30%, full GL height.
     const int panelW = static_cast<int>(glArea.getWidth() * 0.30f);
-    devPanel_.setBounds(getWidth() - panelW, 0, panelW, getHeight());
+    devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
 
     // ----- Bottom strip layout -----
     // Column width for each position knob group
