@@ -3,6 +3,7 @@ add_executable(XYZPanTests
     engine/TestBinauralPanning.cpp
     engine/TestDepthAndElevation.cpp
     engine/TestDistanceProcessing.cpp
+    engine/TestCreativeTools.cpp
 )
 
 target_link_libraries(XYZPanTests
