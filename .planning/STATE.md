@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in_progress
-stopped_at: "Completed Phase 5 Plan 01: FDN Reverb Engine"
-last_updated: "2026-03-13T06:35:00Z"
-last_activity: 2026-03-13 -- Completed plan 05-01 (FDN reverb engine, VERB-01/02/03/04 all pass, 59/64 tests green)
+status: completed
+stopped_at: "Completed Phase 5 Plan 02: LFO System + APVTS Wiring"
+last_updated: "2026-03-13T06:54:18.124Z"
+last_activity: 2026-03-13 -- Completed plan 05-02 (LFO system + APVTS wiring, all 64 tests green, Phase 5 complete)
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 92
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 5 of 7 (Creative Tools) -- in progress
-Plan: 1 of 2 in current phase -- completed
-Status: Plan 05-01 complete (FDN reverb engine), Plan 05-02 next (LFO system + APVTS wiring)
-Last activity: 2026-03-13 -- Completed plan 05-01 (FDN reverb engine, VERB-01/02/03/04 all pass, 59/64 tests green)
+Phase: 5 of 7 (Creative Tools) -- completed
+Plan: 2 of 2 in current phase -- completed
+Status: Phase 5 complete (FDN reverb + LFO system + full APVTS wiring), Phase 6 next (custom OpenGL UI)
+Last activity: 2026-03-13 -- Completed plan 05-02 (LFO system + APVTS wiring, all 64 tests green)
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [█████████░] 92%
 | Phase 04-distance-processing P01 | 11 | 2 tasks | 8 files |
 | Phase 04-distance-processing P02 | 2 | 1 tasks | 4 files |
 | Phase 05-creative-tools P01 | 11 | 3 tasks | 8 files |
+| Phase 05-creative-tools P02 | 13 | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Recent decisions affecting current work:
 - [Phase 05-creative-tools]: FDNReverb internal wetGain_ fixed at 1.0; Engine applies smoothed verbWetSmooth_ externally for click-free transitions
 - [Phase 05-creative-tools]: VERB-02 test uses wet-minus-dry subtraction to isolate reverb onset from dry signal (dry path arrives at same time regardless of pre-delay)
 - [Phase 05-creative-tools]: Pre-delay distFrac computed from block-rate dist — consistent with other distance parameters and avoids per-sample distance recomputation
+- [Phase 05-creative-tools]: Triangle LFO formula peaks at half-cycle (acc=0.5), not quarter — 1.0 - 4.0*|acc-0.5| formula confirmed
+- [Phase 05-creative-tools]: LFO per-sample binaural target recomputation from modX enables true audio-rate spatial modulation
+- [Phase 05-creative-tools]: lfoXPhase applied only at reset (not per-block) to avoid phase-jump clicks in running LFO
 
 ### Pending Todos
 
@@ -122,6 +126,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T06:35:00Z
-Stopped at: Completed Phase 5 Plan 01: FDN Reverb Engine
+Last session: 2026-03-13T06:54:18.118Z
+Stopped at: Completed Phase 5 Plan 02: LFO System + APVTS Wiring
 Resume file: None

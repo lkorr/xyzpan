@@ -59,16 +59,16 @@
 
 - [x] **VERB-01**: Algorithmic reverb applied at end of signal chain
 - [x] **VERB-02**: Pre-delay scales with distance: 0ms (closest) to 50ms (furthest)
-- [ ] **VERB-03**: Reverb parameters (size, decay, damping, wet/dry) exposed as plugin parameters
+- [x] **VERB-03**: Reverb parameters (size, decay, damping, wet/dry) exposed as plugin parameters
 - [x] **VERB-04**: Reverb is sparse and mix-friendly (not convolution)
 
 ### LFO Modulation (LFO)
 
-- [ ] **LFO-01**: One LFO per axis (X, Y, Z) — 3 total
-- [ ] **LFO-02**: Each LFO has selectable waveform: sine, triangle, saw, square
-- [ ] **LFO-03**: Each LFO has rate, depth, and phase controls
-- [ ] **LFO-04**: LFOs modulate position offset (add/subtract around fixed position)
-- [ ] **LFO-05**: LFO rate syncs to host tempo (optional) or free-running Hz
+- [x] **LFO-01**: One LFO per axis (X, Y, Z) — 3 total
+- [x] **LFO-02**: Each LFO has selectable waveform: sine, triangle, saw, square
+- [x] **LFO-03**: Each LFO has rate, depth, and phase controls
+- [x] **LFO-04**: LFOs modulate position offset (add/subtract around fixed position)
+- [x] **LFO-05**: LFO rate syncs to host tempo (optional) or free-running Hz
 
 ### Parameter System (PARAM)
 
@@ -163,13 +163,13 @@
 | DIST-07 | Phase 4: Distance Processing | Complete |
 | VERB-01 | Phase 5: Creative Tools | Complete |
 | VERB-02 | Phase 5: Creative Tools | Complete |
-| VERB-03 | Phase 5: Creative Tools | Pending |
+| VERB-03 | Phase 5: Creative Tools | Complete |
 | VERB-04 | Phase 5: Creative Tools | Complete |
-| LFO-01 | Phase 5: Creative Tools | Pending |
-| LFO-02 | Phase 5: Creative Tools | Pending |
-| LFO-03 | Phase 5: Creative Tools | Pending |
-| LFO-04 | Phase 5: Creative Tools | Pending |
-| LFO-05 | Phase 5: Creative Tools | Pending |
+| LFO-01 | Phase 5: Creative Tools | Complete |
+| LFO-02 | Phase 5: Creative Tools | Complete |
+| LFO-03 | Phase 5: Creative Tools | Complete |
+| LFO-04 | Phase 5: Creative Tools | Complete |
+| LFO-05 | Phase 5: Creative Tools | Complete |
 | PARAM-01 | Phase 6: UI and Parameter System | Pending |
 | PARAM-02 | Phase 6: UI and Parameter System | Pending |
 | PARAM-03 | Phase 6: UI and Parameter System | Pending |
