@@ -100,8 +100,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: Algorithmic reverb engine with distance-scaled pre-delay
-- [ ] 05-02: Per-axis LFO system with waveforms, rate/depth/phase, and tempo sync
+- [ ] 05-01-PLAN.md — FDN reverb DSP primitive, engine integration (final stereo stage), distance-scaled pre-delay, and test scaffold
+- [ ] 05-02-PLAN.md — LFO DSP primitive, engine LFO integration, APVTS wiring for all Phase 5 parameters, getTailLengthSeconds update
 
 ### Phase 6: UI and Parameter System
 **Goal**: A custom OpenGL interface for spatial visualization and control, a complete parameter system with automation and state persistence, and a dev panel for DSP constant tuning
