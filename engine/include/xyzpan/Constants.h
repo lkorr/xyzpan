@@ -115,9 +115,21 @@ constexpr float kFloorGainDb      = -5.0f;
 // At the unit-cube corner (sqrt(3) away), the source has a 300ms delay offset.
 constexpr float kDistDelayMaxMs = 300.0f;
 
+// Distance gain reference and maximum (DIST-01 fix).
+// distGainTarget = clamp(kDistGainRef / dist, 0, kDistGainMax)
+// kDistGainRef = 1.0 so that a source at dist=1.0 (Y=1, X=0, Z=0) has unity gain.
+// kDistGainMax = 2.0 allows up to +6dB boost for very close sources.
+constexpr float kDistGainRef = 1.0f;   // unity gain at dist=1.0 (default source position Y=1)
+constexpr float kDistGainMax = 2.0f;   // max +6dB boost for very close sources
+
 // Delay smoother time constant — controls doppler feel during movement.
 // Longer = smoother pitch glide, shorter = tighter tracking.
-constexpr float kDistSmoothMs = 30.0f;
+// 150ms gives ~150ms ramp time for delay changes — audible doppler without glitching.
+constexpr float kDistSmoothMs = 150.0f;
+
+// Maximum per-sample change in doppler delay (samples/sample).
+// Clamps the rate-of-change to prevent extreme pitch artifacts on large position jumps.
+constexpr float kDopplerMaxDeltaSamp = 2.0f;  // max delay change per sample (~±1 octave/sample max)
 
 // Air absorption LPF cutoff range (DIST-02).
 // At minimum distance: LPF fully open (no absorption).

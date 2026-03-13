@@ -286,8 +286,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // distFrac: 0 at kMinDistance (closest), 1 at kSqrt3 (furthest corner).
     const float distFrac = (dist - kMinDistance) / (kSqrt3 - kMinDistance);
 
-    // Inverse-square gain: kMinDistance/dist gives 0.5x at double distance (DIST-01).
-    const float distGainTarget = std::clamp(kMinDistance / dist, 0.0f, 1.0f);
+    // Inverse-square gain: kDistGainRef/dist gives unity at dist=1.0 (Y=1 default position).
+    // kDistGainMax caps the boost at +6dB for very close sources (prevents explosion).
+    const float distGainTarget = std::clamp(kDistGainRef / dist, 0.0f, kDistGainMax);
 
     // Propagation delay: linearly maps distFrac to [0, distDelayMaxMs] (DIST-03).
     const float delayTargetMs = distFrac * currentParams.distDelayMaxMs;
@@ -415,6 +416,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             dR = delayR_.read(kMinDelay);
         }
 
+        // Safety: NaN/Inf guard — if binaural delay output is non-finite, zero it.
+        // Prevents feedback spirals from propagating through all downstream stages.
+        if (!std::isfinite(dL)) dL = 0.0f;
+        if (!std::isfinite(dR)) dR = 0.0f;
+
         // ILD: apply smoothed gain attenuation to far ear only.
         // Near ear remains at unity.
         if (modX > 0.0f)       dL *= ildGain;
@@ -535,8 +541,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             dR += wetGain * wetR;
         }
 
-        outL[i] = dL;
-        outR[i] = dR;
+        // Hard output clamp: prevents NaN/Inf or runaway gain from reaching the DAW.
+        // ±2.0 headroom allows legitimate +6dB boost without hard-clipping normal material.
+        outL[i] = std::clamp(dL, -2.0f, 2.0f);
+        outR[i] = std::clamp(dR, -2.0f, 2.0f);
     }
 }
 
