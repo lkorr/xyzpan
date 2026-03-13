@@ -22,7 +22,15 @@ constexpr float kMaxITDUpperBound_ms   = 5.0f;    // dev panel upper limit (allo
 // Head shadow SVF cutoff range
 // At X=0 (center): LPF fully open — inaudible.
 // At X=±1 (hard pan): far-ear LPF at minimum cutoff — audibly darkened.
-constexpr float kHeadShadowFullOpenHz  = 20000.0f;  // LPF wide open (inaudible)
+//
+// NOTE: kHeadShadowFullOpenHz is set to 16000 Hz rather than 20000 Hz to avoid
+// SVF instability at 44100 Hz sample rate. With cutoff = 20000 Hz, the SVF's g
+// coefficient = tan(pi * 20000/44100) ≈ 6.3, which approaches the Nyquist limit
+// of 0.45 * sampleRate. The TPT SVF requires g to stay well below the Nyquist
+// singularity for stable operation under per-sample coefficient changes. 16000 Hz
+// gives g ≈ 2.25 — safe, stable, and still inaudible to the human ear (most adults
+// cannot hear above 16-18 kHz).
+constexpr float kHeadShadowFullOpenHz  = 16000.0f;  // LPF wide open (inaudible, safe SVF range)
 constexpr float kHeadShadowMinHz       = 1200.0f;   // LPF at full azimuth (~12dB cut by 4kHz)
 
 // ILD (Interaural Level Difference) — distance-dependent far-ear attenuation
@@ -32,7 +40,8 @@ constexpr float kDefaultILDMaxDb       = 8.0f;      // max ILD attenuation in dB
 
 // Rear shadow SVF — both ears, only active when Y < 0 (source behind listener)
 // Provides a subtle front/back cue before Phase 3 comb filters are added.
-constexpr float kRearShadowFullOpenHz  = 20000.0f;  // no rear shadow
+// Full-open value matches kHeadShadowFullOpenHz to avoid Nyquist instability.
+constexpr float kRearShadowFullOpenHz  = 16000.0f;  // no rear shadow (safe SVF range)
 constexpr float kRearShadowMinHz       = 4000.0f;   // subtle HF rolloff at Y=-1
 
 // Parameter smoothing time constants (RC time constant, ~63% rise time)
