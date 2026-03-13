@@ -47,12 +47,12 @@
 
 ### Distance Processing (DIST)
 
-- [ ] **DIST-01**: Gain attenuation follows inverse-square law (every distance doubling removes 6dB)
-- [ ] **DIST-02**: Low-pass filter rolls off from 22kHz (closest) to 8kHz (furthest) at 6dB/octave
-- [ ] **DIST-03**: Distance delay ranges 0ms (closest) to 300ms (furthest) — not latency-compensated, applied as creative effect
-- [ ] **DIST-04**: Doppler shift occurs naturally from delay modulation over time when distance changes
-- [ ] **DIST-05**: Doppler shift is toggleable (off = no distance delay applied)
-- [ ] **DIST-06**: Delay line uses cubic (Hermite) interpolation to avoid artifacts during modulation
+- [x] **DIST-01**: Gain attenuation follows inverse-square law (every distance doubling removes 6dB)
+- [x] **DIST-02**: Low-pass filter rolls off from 22kHz (closest) to 8kHz (furthest) at 6dB/octave
+- [x] **DIST-03**: Distance delay ranges 0ms (closest) to 300ms (furthest) — not latency-compensated, applied as creative effect
+- [x] **DIST-04**: Doppler shift occurs naturally from delay modulation over time when distance changes
+- [x] **DIST-05**: Doppler shift is toggleable (off = no distance delay applied)
+- [x] **DIST-06**: Delay line uses cubic (Hermite) interpolation to avoid artifacts during modulation
 - [ ] **DIST-07**: All distance parameters tuneable via dev panel
 
 ### Reverb (VERB)
@@ -154,12 +154,12 @@
 | ELEV-03 | Phase 3: Depth and Elevation | Complete |
 | ELEV-04 | Phase 3: Depth and Elevation | Complete |
 | ELEV-05 | Phase 3: Depth and Elevation | Complete |
-| DIST-01 | Phase 4: Distance Processing | Pending |
-| DIST-02 | Phase 4: Distance Processing | Pending |
-| DIST-03 | Phase 4: Distance Processing | Pending |
-| DIST-04 | Phase 4: Distance Processing | Pending |
-| DIST-05 | Phase 4: Distance Processing | Pending |
-| DIST-06 | Phase 4: Distance Processing | Pending |
+| DIST-01 | Phase 4: Distance Processing | Complete |
+| DIST-02 | Phase 4: Distance Processing | Complete |
+| DIST-03 | Phase 4: Distance Processing | Complete |
+| DIST-04 | Phase 4: Distance Processing | Complete |
+| DIST-05 | Phase 4: Distance Processing | Complete |
+| DIST-06 | Phase 4: Distance Processing | Complete |
 | DIST-07 | Phase 4: Distance Processing | Pending |
 | VERB-01 | Phase 5: Creative Tools | Pending |
 | VERB-02 | Phase 5: Creative Tools | Pending |

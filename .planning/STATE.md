@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: "Completed Phase 3 Plan 03: Phase 3 APVTS Parameter Wiring"
-last_updated: "2026-03-13T04:00:44.452Z"
+stopped_at: "Completed Phase 4 Plan 01: Distance Processing"
+last_updated: "2026-03-13T05:12:10.307Z"
 last_activity: 2026-03-13 -- Completed plan 03-02 (Phase 3 signal chain in Engine, 47 tests all pass)
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
   percent: 39
 ---
 
@@ -60,6 +60,7 @@ Progress: [████░░░░░░] 39%
 | Phase 03-depth-and-elevation P01 | 7 | 2 tasks | 8 files |
 | Phase 03-depth-and-elevation P02 | 6 | 2 tasks | 3 files |
 | Phase 03-depth-and-elevation P03 | 2 | 1 tasks | 4 files |
+| Phase 04-distance-processing P01 | 11 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,10 @@ Recent decisions affecting current work:
 - [Phase 03-depth-and-elevation]: Per-block biquad setCoefficients() strictly maintained — std::cos/sin/pow/sqrt too expensive at audio rate
 - [Phase 03-depth-and-elevation]: constexpr const char* arrays for COMB_DELAY[10]/COMB_FB[10] in ParamIDs.h namespace safe — only included by two .cpp TUs
 - [Phase 03-depth-and-elevation]: Hz-domain elevation params use NormalisableRange skew 0.3, consistent with Phase 2 HEAD_SHADOW_HZ/REAR_SHADOW_HZ convention
+- [Phase 04-distance-processing]: Proximity scaling applied to ITD and head shadow (itdTarget * proximity, shadowCutoffTarget * proximity) to match ILD's existing proximity behavior — close sources hardpan more than distant
+- [Phase 04-distance-processing]: Signal chain order: gain -> delay+doppler -> air LPF (gain first per physical accuracy, LPF last to filter arriving signal)
+- [Phase 04-distance-processing]: Distance delay lines sized for 192kHz worst case (57608 samples) regardless of runtime sample rate
+- [Phase 04-distance-processing]: Existing Phase 2/3 integration tests updated with dopplerEnabled=false: delay smoother ramp during 2048-4096 sample windows would zero output at y=1 (dist=1.0) positions
 
 ### Pending Todos
 
@@ -110,6 +115,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T03:54:12.600Z
-Stopped at: Completed Phase 3 Plan 03: Phase 3 APVTS Parameter Wiring
+Last session: 2026-03-13T05:12:10.301Z
+Stopped at: Completed Phase 4 Plan 01: Distance Processing
 Resume file: None
