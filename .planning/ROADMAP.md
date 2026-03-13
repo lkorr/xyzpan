@@ -69,7 +69,7 @@ Plans:
 Plans:
 - [x] 03-01-PLAN.md — DSP primitives (FeedbackCombFilter, SVFFilter, BiquadFilter, OnePoleLP), Types/Constants extensions, and unit tests
 - [x] 03-02-PLAN.md — Engine integration: comb bank depth, pinna notch/shelf, chest bounce, floor bounce, and integration tests
-- [ ] 03-03-PLAN.md — APVTS parameter wiring for all Phase 3 dev panel controls
+- [x] 03-03-PLAN.md — APVTS parameter wiring for all Phase 3 dev panel controls
 
 ### Phase 4: Distance Processing
 **Goal**: Distance from the listener produces natural gain rolloff, high-frequency absorption, propagation delay, and optional doppler shift
@@ -84,8 +84,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: Distance gain attenuation, air absorption LPF, and distance delay with Hermite interpolation
-- [ ] 04-02: Doppler shift from delay modulation, toggle control, and dev panel exposure
+- [ ] 04-01-PLAN.md — Engine distance DSP: inverse-square gain, air absorption LPF, propagation delay with Hermite interpolation, doppler via delay modulation, toggle, and integration tests
+- [ ] 04-02-PLAN.md — APVTS parameter wiring for all Phase 4 dev panel controls and getTailLengthSeconds update
 
 ### Phase 5: Creative Tools
 **Goal**: Algorithmic reverb adds spatial depth and per-axis LFOs create automated 3D movement patterns
