@@ -57,10 +57,10 @@
 
 ### Reverb (VERB)
 
-- [ ] **VERB-01**: Algorithmic reverb applied at end of signal chain
-- [ ] **VERB-02**: Pre-delay scales with distance: 0ms (closest) to 50ms (furthest)
+- [x] **VERB-01**: Algorithmic reverb applied at end of signal chain
+- [x] **VERB-02**: Pre-delay scales with distance: 0ms (closest) to 50ms (furthest)
 - [ ] **VERB-03**: Reverb parameters (size, decay, damping, wet/dry) exposed as plugin parameters
-- [ ] **VERB-04**: Reverb is sparse and mix-friendly (not convolution)
+- [x] **VERB-04**: Reverb is sparse and mix-friendly (not convolution)
 
 ### LFO Modulation (LFO)
 
@@ -161,10 +161,10 @@
 | DIST-05 | Phase 4: Distance Processing | Complete |
 | DIST-06 | Phase 4: Distance Processing | Complete |
 | DIST-07 | Phase 4: Distance Processing | Complete |
-| VERB-01 | Phase 5: Creative Tools | Pending |
-| VERB-02 | Phase 5: Creative Tools | Pending |
+| VERB-01 | Phase 5: Creative Tools | Complete |
+| VERB-02 | Phase 5: Creative Tools | Complete |
 | VERB-03 | Phase 5: Creative Tools | Pending |
-| VERB-04 | Phase 5: Creative Tools | Pending |
+| VERB-04 | Phase 5: Creative Tools | Complete |
 | LFO-01 | Phase 5: Creative Tools | Pending |
 | LFO-02 | Phase 5: Creative Tools | Pending |
 | LFO-03 | Phase 5: Creative Tools | Pending |

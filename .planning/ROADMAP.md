@@ -100,7 +100,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — FDN reverb DSP primitive, engine integration (final stereo stage), distance-scaled pre-delay, and test scaffold
+- [x] 05-01-PLAN.md — FDN reverb DSP primitive, engine integration (final stereo stage), distance-scaled pre-delay, and test scaffold
 - [ ] 05-02-PLAN.md — LFO DSP primitive, engine LFO integration, APVTS wiring for all Phase 5 parameters, getTailLengthSeconds update
 
 ### Phase 6: UI and Parameter System
@@ -148,6 +148,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 2. Binaural Panning Core | 2/2 | Complete   | 2026-03-13 |
 | 3. Depth and Elevation | 3/3 | Complete   | 2026-03-13 |
 | 4. Distance Processing | 2/2 | Complete   | 2026-03-13 |
-| 5. Creative Tools | 0/2 | Not started | - |
+| 5. Creative Tools | 1/2 | In progress | - |
 | 6. UI and Parameter System | 0/4 | Not started | - |
 | 7. Integration and Validation | 0/2 | Not started | - |

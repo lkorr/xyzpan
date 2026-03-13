@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: "Completed Phase 4 Plan 02: Distance APVTS Wiring"
-last_updated: "2026-03-13T05:21:28.854Z"
-last_activity: 2026-03-12 -- Completed plan 04-02 (Phase 4 APVTS wiring, 55 tests all pass)
+status: in_progress
+stopped_at: "Completed Phase 5 Plan 01: FDN Reverb Engine"
+last_updated: "2026-03-13T06:35:00Z"
+last_activity: 2026-03-13 -- Completed plan 05-01 (FDN reverb engine, VERB-01/02/03/04 all pass, 59/64 tests green)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
-  percent: 100
+  total_plans: 12
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Accurate real-time binaural rendering of 3D spatial audio positioning
-**Current focus:** Phase 4: Distance Processing -- complete
+**Current focus:** Phase 5: Creative Tools (FDN Reverb + LFO)
 
 ## Current Position
 
-Phase: 4 of 7 (Distance Processing) -- complete
-Plan: 2 of 2 in current phase -- completed
-Status: Plan 04-02 complete, Phase 4 fully complete
-Last activity: 2026-03-12 -- Completed plan 04-02 (Phase 4 APVTS wiring, 55 tests all pass)
+Phase: 5 of 7 (Creative Tools) -- in progress
+Plan: 1 of 2 in current phase -- completed
+Status: Plan 05-01 complete (FDN reverb engine), Plan 05-02 next (LFO system + APVTS wiring)
+Last activity: 2026-03-13 -- Completed plan 05-01 (FDN reverb engine, VERB-01/02/03/04 all pass, 59/64 tests green)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████████] 100%
 | Phase 03-depth-and-elevation P03 | 2 | 1 tasks | 4 files |
 | Phase 04-distance-processing P01 | 11 | 2 tasks | 8 files |
 | Phase 04-distance-processing P02 | 2 | 1 tasks | 4 files |
+| Phase 05-creative-tools P01 | 11 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,9 @@ Recent decisions affecting current work:
 - [Phase 04-distance-processing]: Existing Phase 2/3 integration tests updated with dopplerEnabled=false: delay smoother ramp during 2048-4096 sample windows would zero output at y=1 (dist=1.0) positions
 - [Phase 04-distance-processing]: AudioParameterBool uses getRawParameterValue same as APF — returns std::atomic<float>* with value 0.0f or 1.0f; cast to bool via >= 0.5f in processBlock
 - [Phase 04-distance-processing]: getTailLengthSeconds updated to 0.320 to prevent DAW tail truncation: 300ms max distance delay + 20ms floor bounce
+- [Phase 05-creative-tools]: FDNReverb internal wetGain_ fixed at 1.0; Engine applies smoothed verbWetSmooth_ externally for click-free transitions
+- [Phase 05-creative-tools]: VERB-02 test uses wet-minus-dry subtraction to isolate reverb onset from dry signal (dry path arrives at same time regardless of pre-delay)
+- [Phase 05-creative-tools]: Pre-delay distFrac computed from block-rate dist — consistent with other distance parameters and avoids per-sample distance recomputation
 
 ### Pending Todos
 
@@ -118,6 +122,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T04:16:00Z
-Stopped at: Completed Phase 4 Plan 02: Distance APVTS Wiring
+Last session: 2026-03-13T06:35:00Z
+Stopped at: Completed Phase 5 Plan 01: FDN Reverb Engine
 Resume file: None
