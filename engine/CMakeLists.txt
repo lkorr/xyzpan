@@ -2,6 +2,7 @@ add_library(xyzpan_engine STATIC
     src/Engine.cpp
     src/Coordinates.cpp
     src/FDNReverb.cpp
+    src/LFO.cpp
 )
 
 target_include_directories(xyzpan_engine

@@ -67,6 +67,20 @@ struct EngineParams {
     float verbDamping     = kVerbDefaultDamping;
     float verbWet         = kVerbDefaultWet;
     float verbPreDelayMax = kVerbPreDelayMaxMs;
+
+    // =========================================================================
+    // Phase 5: LFO (LFO-01 through LFO-05)
+    // =========================================================================
+    // Per-axis: rate (Hz), depth (position units [0,1]), phase offset ([0,1]),
+    // waveform int (0=Sine 1=Triangle 2=Saw 3=Square).
+    float lfoXRate      = kLFODefaultRate;  float lfoYRate      = kLFODefaultRate;  float lfoZRate      = kLFODefaultRate;
+    float lfoXDepth     = 0.0f;             float lfoYDepth     = 0.0f;             float lfoZDepth     = 0.0f;
+    float lfoXPhase     = 0.0f;             float lfoYPhase     = 0.0f;             float lfoZPhase     = 0.0f;
+    int   lfoXWaveform  = 0;                int   lfoYWaveform  = 0;                int   lfoZWaveform  = 0;
+    // Tempo sync (shared across all axes)
+    bool  lfoTempoSync  = false;
+    float hostBpm       = 120.0f;           // passed from processBlock AudioPlayHead
+    float lfoXBeatDiv   = 1.0f;             float lfoYBeatDiv   = 1.0f;             float lfoZBeatDiv   = 1.0f;
 };
 
 // Result of XYZ-to-spherical coordinate conversion.

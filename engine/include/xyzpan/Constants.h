@@ -137,4 +137,12 @@ constexpr float kVerbMaxDecayT60_s    = 5.0f;   // maximum T60 at decay=1.0
 // FDN delay lengths in ms at 44100 Hz — mutually prime, scaled in prepare()
 constexpr float kFDNDelayMs[4]        = { 30.98f, 42.40f, 51.95f, 63.45f };
 
+// ============================================================================
+// Phase 5: LFO (LFO-01 through LFO-05)
+// ============================================================================
+constexpr float kLFODefaultRate   = 0.5f;   // Hz, free-running default
+constexpr float kLFOMinRate       = 0.01f;  // Hz minimum
+constexpr float kLFOMaxRate       = 50.0f;  // Hz maximum
+constexpr float kLFOMaxDepth      = 1.0f;   // max depth = full ±1 axis swing
+
 } // namespace xyzpan

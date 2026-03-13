@@ -9,6 +9,7 @@
 #include "xyzpan/dsp/BiquadFilter.h"
 #include "xyzpan/dsp/OnePoleLP.h"
 #include "xyzpan/dsp/FDNReverb.h"
+#include "xyzpan/dsp/LFO.h"
 #include <vector>
 #include <array>
 
@@ -141,6 +142,12 @@ private:
     // =========================================================================
     dsp::FDNReverb   reverb_;
     dsp::OnePoleSmooth verbWetSmooth_;   // smooth wet/dry transitions
+
+    // =========================================================================
+    // Phase 5: LFO (LFO-01 through LFO-05)
+    // =========================================================================
+    dsp::LFO lfoX_, lfoY_, lfoZ_;
+    dsp::OnePoleSmooth lfoDepthXSmooth_, lfoDepthYSmooth_, lfoDepthZSmooth_;
 };
 
 } // namespace xyzpan

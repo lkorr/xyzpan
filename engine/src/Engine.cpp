@@ -140,6 +140,17 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     reverb_.reset();
     verbWetSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     verbWetSmooth_.reset(kVerbDefaultWet);
+
+    // Phase 5: LFO
+    lfoX_.prepare(inSampleRate);
+    lfoY_.prepare(inSampleRate);
+    lfoZ_.prepare(inSampleRate);
+    lfoDepthXSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    lfoDepthYSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    lfoDepthZSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    lfoDepthXSmooth_.reset(0.0f);
+    lfoDepthYSmooth_.reset(0.0f);
+    lfoDepthZSmooth_.reset(0.0f);
 }
 
 // ============================================================================
@@ -205,32 +216,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float z    = currentParams.z;
     const float dist = computeDistance(x, y, z);
 
-    // Proximity: 1 at kMinDistance (closest), 0 at kSqrt3 (max distance).
-    // Computed early so ITD, head shadow, and ILD can all scale with it.
-    const float proximity  = std::clamp(1.0f - (dist - kMinDistance) / (kSqrt3 - kMinDistance),
-                                        0.0f, 1.0f);
-
-    // ITD: sinusoidal scaling from |x| (Woodworth-inspired; only far ear delayed).
-    // At X=0: 0 delay; at X=±1: maxITD_ms delay on the far ear.
-    // MODIFIED (Phase 4): scales with proximity so close sources hardpan more than distant.
-    // Note: using X directly as sin-proxy since X = sin(azimuth) when Y=0.
-    // When Y≠0, this underestimates lateral angle slightly — intentional creative choice.
-    const float itdTarget = currentParams.maxITD_ms
-                            * std::sin(std::abs(x) * (3.14159265f / 2.0f))
-                            * proximity
-                            * sr / 1000.0f;
-
-    // Head shadow: linear interpolation from fully open to minimum cutoff.
-    // At X=0: kHeadShadowFullOpenHz (inaudible). At X=±1: headShadowMinHz.
-    // MODIFIED (Phase 4): scales with proximity so close sources have stronger head shadow.
-    const float shadowCutoffTarget = kHeadShadowFullOpenHz
-                                   + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz)
-                                   * std::abs(x) * proximity;
-
-    // ILD: proximity-weighted far-ear attenuation.
-    // Both azimuth and proximity must be non-zero for ILD to apply.
-    const float ildLinear  = std::pow(10.0f, -currentParams.ildMaxDb / 20.0f);
-    const float ildTarget  = 1.0f - (1.0f - ildLinear) * std::abs(x) * proximity;
+    // NOTE: ITD, head shadow, and ILD targets are now computed per-sample inside the
+    // per-sample loop using the LFO-modulated position (modX). This enables smooth,
+    // audio-rate LFO oscillation of all binaural cues.
+    // The block-level `dist` and `proximity` are still used by downstream stages
+    // (distance processing, reverb pre-delay) which are based on the base position.
 
     // Rear shadow: linear ramp when Y < 0 (source behind listener).
     // At Y=0 to Y=1: no rear shadow. At Y=-1: full rear shadow.
@@ -322,10 +312,53 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // wetGain is smoothed per-sample via verbWetSmooth_ (see process loop below)
 
     // -------------------------------------------------------------------------
+    // Phase 5: LFO — set rate and waveform per block (not per sample).
+    // When tempo sync is on, compute rate from hostBpm; else use free-running rate.
+    // -------------------------------------------------------------------------
+    auto lfoRate = [&](float freeHz, float beatDiv) -> float {
+        if (currentParams.lfoTempoSync && currentParams.hostBpm > 0.0f)
+            return (currentParams.hostBpm / 60.0f) * beatDiv;
+        return freeHz;
+    };
+    lfoX_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoXWaveform);
+    lfoY_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoYWaveform);
+    lfoZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoZWaveform);
+    lfoX_.setRateHz(lfoRate(currentParams.lfoXRate, currentParams.lfoXBeatDiv));
+    lfoY_.setRateHz(lfoRate(currentParams.lfoYRate, currentParams.lfoYBeatDiv));
+    lfoZ_.setRateHz(lfoRate(currentParams.lfoZRate, currentParams.lfoZBeatDiv));
+
+    // -------------------------------------------------------------------------
     // Per-sample loop: smooth parameters and apply binaural pipeline
     // -------------------------------------------------------------------------
     for (int i = 0; i < numSamples; ++i) {
         const float mono = monoIn[i];
+
+        // ----------------------------------------------------------------
+        // Phase 5: LFO — tick once per sample, modulate position BEFORE
+        // coordinate conversion (binaural target recomputation).
+        // ----------------------------------------------------------------
+        const float depthX = lfoDepthXSmooth_.process(currentParams.lfoXDepth);
+        const float depthY = lfoDepthYSmooth_.process(currentParams.lfoYDepth);
+        const float depthZ = lfoDepthZSmooth_.process(currentParams.lfoZDepth);
+        const float modX = std::clamp(currentParams.x + lfoX_.tick() * depthX, -1.0f, 1.0f);
+        const float modY = std::clamp(currentParams.y + lfoY_.tick() * depthY, -1.0f, 1.0f);
+        const float modZ = std::clamp(currentParams.z + lfoZ_.tick() * depthZ, -1.0f, 1.0f);
+
+        // Recompute proximity-scaled binaural targets per-sample from LFO-modulated position.
+        // This ensures all binaural cues (ITD, ILD, head shadow) track the LFO oscillation.
+        const float modDist      = computeDistance(modX, modY, modZ);
+        const float modProximity = std::clamp(
+            1.0f - (modDist - kMinDistance) / (kSqrt3 - kMinDistance), 0.0f, 1.0f);
+        const float itdTargetMod = currentParams.maxITD_ms
+                                   * std::sin(std::abs(modX) * (3.14159265f / 2.0f))
+                                   * modProximity * sr / 1000.0f;
+        const float shadowCutoffTargetMod = kHeadShadowFullOpenHz
+                                          + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz)
+                                          * std::abs(modX) * modProximity;
+        const float ildTargetMod = 1.0f - (1.0f - std::pow(10.0f, -currentParams.ildMaxDb / 20.0f))
+                                   * std::abs(modX) * modProximity;
+        (void)modY; // modY/modZ available for future per-sample use if needed
+        (void)modZ;
 
         // ----------------------------------------------------------------
         // Phase 3: Comb bank (DEPTH) — Y-driven dry/wet blend
@@ -342,10 +375,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         float monoEQ = pinnaNotch_.process(depthOut);
         monoEQ       = pinnaShelf_.process(monoEQ);
 
-        // Smooth parameters (one-pole IIR, audio-rate)
-        const float itdSamples   = itdSmooth_.process(itdTarget);
-        const float shadowCutoff = shadowCutoffSmooth_.process(shadowCutoffTarget);
-        const float ildGain      = ildGainSmooth_.process(ildTarget);
+        // Smooth parameters (one-pole IIR, audio-rate) using LFO-modulated targets.
+        const float itdSamples   = itdSmooth_.process(itdTargetMod);
+        const float shadowCutoff = shadowCutoffSmooth_.process(shadowCutoffTargetMod);
+        const float ildGain      = ildGainSmooth_.process(ildTargetMod);
         const float rearCutoff   = rearCutoffSmooth_.process(rearCutoffTarget);
 
         // Push pinna-EQ'd mono into both binaural delay lines
@@ -363,14 +396,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         constexpr float kMinDelay = 2.0f;
 
         // Read delay lines: far ear gets smoothed ITD delay, near ear reads at kMinDelay.
-        // x > 0 (source right): right ear is near, left ear is far → delay left.
-        // x < 0 (source left):  left ear is near, right ear is far → delay right.
-        // x == 0: both at kMinDelay (no ITD).
+        // modX > 0 (source right): right ear is near, left ear is far → delay left.
+        // modX < 0 (source left):  left ear is near, right ear is far → delay right.
+        // modX == 0: both at kMinDelay (no ITD).
         float dL, dR;
-        if (x > 0.0f) {
+        if (modX > 0.0f) {
             dL = delayL_.read(kMinDelay + itdSamples);
             dR = delayR_.read(kMinDelay);
-        } else if (x < 0.0f) {
+        } else if (modX < 0.0f) {
             dL = delayL_.read(kMinDelay);
             dR = delayR_.read(kMinDelay + itdSamples);
         } else {
@@ -380,15 +413,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // ILD: apply smoothed gain attenuation to far ear only.
         // Near ear remains at unity.
-        if (x > 0.0f)       dL *= ildGain;
-        else if (x < 0.0f)  dR *= ildGain;
+        if (modX > 0.0f)       dL *= ildGain;
+        else if (modX < 0.0f)  dR *= ildGain;
 
         // Head shadow: update SVF coefficients and filter.
         // Far ear gets shadow cutoff; near ear stays wide open.
         // Per-sample coefficient update allows smooth cutoff modulation at audio rate.
         // (std::tan() is called here per sample — correct for smooth modulation;
         //  profile and optimize to per-N-samples if CPU budget is tight.)
-        if (x >= 0.0f) {
+        if (modX >= 0.0f) {
             // Source right or center: left is far
             shadowL_.setCoefficients(shadowCutoff, sr);
             shadowR_.setCoefficients(kHeadShadowFullOpenHz, sr);
@@ -559,6 +592,14 @@ void XYZPanEngine::reset() {
     // Phase 5: reverb
     reverb_.reset();
     verbWetSmooth_.reset(kVerbDefaultWet);
+
+    // Phase 5: LFO
+    lfoX_.reset(0.0f);
+    lfoY_.reset(0.0f);
+    lfoZ_.reset(0.0f);
+    lfoDepthXSmooth_.reset(0.0f);
+    lfoDepthYSmooth_.reset(0.0f);
+    lfoDepthZSmooth_.reset(0.0f);
 }
 
 } // namespace xyzpan
