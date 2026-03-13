@@ -125,7 +125,7 @@ Plans:
 
 **Goal**: Fix five critical bugs: signal explosion at extreme parameter values (distance gain formula and floor-bounce feedback path), proximity-panning inversion (distance gain miscalibration causing -20dB attenuation at Y=1), doppler glitchiness (smoother too fast for large jumps), missing main-UI doppler toggle, and dev panel / LFO strip layout failures (invisible dev panel, LFO knobs too small to use)
 **Depends on:** Phase 6
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 06.1-01-PLAN.md — Fix all five bugs: distance gain formula, floor-bounce feedback, doppler smoother + hard limiter, doppler UI toggle, dev panel bounds, LFO strip width

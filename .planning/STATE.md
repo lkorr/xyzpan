@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-03-PLAN.md (LFO strips + dev panel + reverb UI) — awaiting human verify checkpoint
-last_updated: "2026-03-13T09:29:58.033Z"
+stopped_at: Completed 06.1-01-PLAN.md (Bug and DSP fixes — distance gain, doppler, UI toggle, dev panel z-order, LFO knobs)
+last_updated: "2026-03-13T19:14:12.065Z"
 last_activity: 2026-03-13 -- Completed plan 06-02 (OpenGL spatial view, XYZPanEditor, PositionBridge wiring, 68 tests green)
 progress:
-  total_phases: 7
-  completed_phases: 5
-  total_plans: 16
-  completed_plans: 15
+  total_phases: 8
+  completed_phases: 6
+  total_plans: 17
+  completed_plans: 16
   percent: 83
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 6 of 7 (UI and Parameter System) -- in progress
-Plan: 2 of 3 in current phase -- completed (06-02 done; 06-03 LFO controls next)
-Status: Phase 6 in progress — OpenGL spatial view live, XYZPanEditor built, 06-03 (LFO strip) next
-Last activity: 2026-03-13 -- Completed plan 06-02 (OpenGL spatial view, XYZPanEditor, PositionBridge wiring, 68 tests green)
+Phase: 06.1 of 8 (Bug and DSP Fixes) -- complete (1/1 plans done)
+Plan: 1 of 1 in current phase -- completed (06.1-01 bug fixes done)
+Status: Phase 06.1 complete — distance gain, doppler, UI toggle, dev panel z-order, LFO knobs all fixed
+Last activity: 2026-03-13 -- Completed plan 06.1-01 (distance gain fix, doppler smoothing, doppler toggle UI, dev panel z-order, LFO 2-row layout, 68 tests green)
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -67,8 +67,13 @@ Progress: [████████░░] 83%
 | Phase 06-ui-and-parameter-system P01 | 10 | 2 tasks | 10 files |
 | Phase 06-ui-and-parameter-system P02 | 15 | 2 tasks | 16 files |
 | Phase 06-ui-and-parameter-system P03 | 17 | 1 tasks | 9 files |
+| Phase 06.1-bug-and-dsp-fixes P01 | 9 | 5 tasks | 7 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 06.1 inserted after Phase 6: Bug and dsp fixes (URGENT)
 
 ### Decisions
 
@@ -128,6 +133,11 @@ Recent decisions affecting current work:
 - [Phase 06-ui-and-parameter-system]: Param ID strings duplicated as anonymous-namespace constexpr in ui/*.cpp to avoid plugin/ include dependency in xyzpan_ui STATIC (consistent with XYZPanGLView.cpp pattern from Phase 06-02)
 - [Phase 06-ui-and-parameter-system]: LFOWaveformButton normalizes waveform: getValue()*3 for read (APVTS range [0,3], getValue() returns [0,1]); index/3.0f for setValueNotifyingHost
 - [Phase 06-ui-and-parameter-system]: kStripH changed 80→200 in PluginEditor to accommodate 120px LFO strips below 80px position knobs
+- [Phase 06.1-bug-and-dsp-fixes]: kDistGainRef=1.0 so unity gain at dist=1.0 (default source position Y=1)
+- [Phase 06.1-bug-and-dsp-fixes]: kDistGainMax=2.0 caps close-source boost at +6dB to prevent explosion
+- [Phase 06.1-bug-and-dsp-fixes]: kDistSmoothMs increased 30ms to 150ms; kDopplerMaxDeltaSamp=2.0 per-sample clamp prevents zipper artifacts
+- [Phase 06.1-bug-and-dsp-fixes]: glView_ added FIRST in PluginEditor constructor — JUCE paints later-added children on top (devPanel_ z-order fix)
+- [Phase 06.1-bug-and-dsp-fixes]: LFO strip 2-row layout fits all controls in 100px column width without reducing knobs below 40px diameter
 
 ### Pending Todos
 
@@ -139,6 +149,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T09:29:58.030Z
-Stopped at: Completed 06-03-PLAN.md (LFO strips + dev panel + reverb UI) — awaiting human verify checkpoint
+Last session: 2026-03-13T19:14:12.061Z
+Stopped at: Completed 06.1-01-PLAN.md (Bug and DSP fixes — distance gain, doppler, UI toggle, dev panel z-order, LFO knobs)
 Resume file: None
