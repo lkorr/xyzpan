@@ -57,6 +57,53 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     lastSmoothMs_ITD_    = kDefaultSmoothMs_ITD;
     lastSmoothMs_Filter_ = kDefaultSmoothMs_Filter;
     lastSmoothMs_Gain_   = kDefaultSmoothMs_Gain;
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Comb bank
+    // -------------------------------------------------------------------------
+    for (int i = 0; i < kMaxCombFilters; ++i) {
+        int combCap = static_cast<int>(kCombMaxDelay_ms * 0.001f * sr) + 4;
+        combBank_[i].prepare(combCap);
+        combBank_[i].setDelay(static_cast<int>(kCombDefaultDelays_ms[i] * 0.001f * sr));
+        combBank_[i].setFeedback(kCombDefaultFeedback[i]);
+    }
+    combWetSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    combWetSmooth_.reset(0.0f);
+
+    // Phase 3: Pinna notch + shelf (biquad — no prepare needed, just reset)
+    pinnaNotch_.reset();
+    pinnaShelf_.reset();
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Chest bounce
+    // -------------------------------------------------------------------------
+    for (auto& hp : chestHPF_) {
+        hp.setType(dsp::SVFType::HP);
+        hp.setCoefficients(700.0f, sr);
+        hp.reset();
+    }
+    chestLP_.setCoefficients(1000.0f, sr);
+    chestLP_.reset();
+    {
+        int chestCap = static_cast<int>(kChestDelayMaxMs * 0.001f * sr) + 8;
+        chestDelay_.prepare(chestCap);
+        chestDelay_.reset();
+    }
+    chestGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    chestGainSmooth_.reset(0.0f);
+
+    // -------------------------------------------------------------------------
+    // Phase 3: Floor bounce
+    // -------------------------------------------------------------------------
+    {
+        int floorCap = static_cast<int>(kFloorDelayMaxMs * 0.001f * sr) + 8;
+        floorDelayL_.prepare(floorCap);
+        floorDelayR_.prepare(floorCap);
+        floorDelayL_.reset();
+        floorDelayR_.reset();
+    }
+    floorGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    floorGainSmooth_.reset(0.0f);
 }
 
 // ============================================================================
@@ -119,7 +166,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     const float x    = currentParams.x;
     const float y    = currentParams.y;
-    const float dist = computeDistance(x, y, currentParams.z);
+    const float z    = currentParams.z;
+    const float dist = computeDistance(x, y, z);
 
     // ITD: sinusoidal scaling from |x| (Woodworth-inspired; only far ear delayed).
     // At X=0: 0 delay; at X=±1: maxITD_ms delay on the far ear.
@@ -151,10 +199,69 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                                   * rearAmount;
 
     // -------------------------------------------------------------------------
+    // Phase 3: per-block updates
+    // -------------------------------------------------------------------------
+
+    // Comb bank: update delays and feedback from currentParams.
+    // Per-block only — delay/feedback changes are not audio-rate.
+    for (int c = 0; c < kMaxCombFilters; ++c) {
+        combBank_[c].setDelay(static_cast<int>(currentParams.combDelays_ms[c] * 0.001f * sr));
+        combBank_[c].setFeedback(currentParams.combFeedback[c]);
+    }
+
+    // Comb wet target: scales linearly from 0 at Y=0 to combWetMax at Y=-1.
+    // std::max(0, -y) gives 0 at front/center and 1 at full back.
+    const float combWetTarget = currentParams.combWetMax * std::max(0.0f, -y);
+
+    // Pinna notch + shelf: update biquad coefficients per block.
+    // For Z < 0: freeze pinna at Z=0 values (z_clamped = 0).
+    // For Z >= 0: lerp from -15 dB (Z=0) to +5 dB (Z=1).
+    const float z_clamped    = std::max(0.0f, z);
+    const float pinnaGainDb  = -15.0f + 20.0f * z_clamped;  // lerp(-15, +5, z_clamped)
+    // High shelf: scales from 0 dB (Z=-1) to +3 dB (Z=0 and above), then held at +3dB.
+    // std::clamp(z+1, 0, 1) gives 0 at Z=-1, 1 at Z=0+, so shelf ramps in only below horizon.
+    const float shelfGainDb  = 3.0f * std::clamp(z + 1.0f, 0.0f, 1.0f);
+    pinnaNotch_.setCoefficients(dsp::BiquadType::PeakingEQ,
+        currentParams.pinnaNotchFreqHz, sr, currentParams.pinnaNotchQ, pinnaGainDb);
+    pinnaShelf_.setCoefficients(dsp::BiquadType::HighShelf,
+        currentParams.pinnaShelfFreqHz, sr, 0.7071f, shelfGainDb);
+
+    // Chest bounce: delay and gain computed per block.
+    // Delay: 0 ms at Z=1 (above), chestDelayMaxMs at Z=-1 (below horizon).
+    // Gain: attenuated at Z=-1 and zero at Z=1.
+    const float chestElevNorm   = std::clamp((-z + 1.0f) * 0.5f, 0.0f, 1.0f);
+    const float chestDelayMs    = std::clamp((z + 1.0f) * 0.5f, 0.0f, 1.0f)
+                                  * currentParams.chestDelayMaxMs;
+    const float chestDelaySamp  = chestDelayMs * 0.001f * sr;
+    const float chestLinearTarget = std::pow(10.0f, currentParams.chestGainDb / 20.0f) * chestElevNorm;
+
+    // Floor bounce: delay and gain computed per block.
+    const float floorElevNorm   = std::clamp((-z + 1.0f) * 0.5f, 0.0f, 1.0f);
+    const float floorDelayMs    = std::clamp((z + 1.0f) * 0.5f, 0.0f, 1.0f)
+                                  * currentParams.floorDelayMaxMs;
+    const float floorDelaySamp  = floorDelayMs * 0.001f * sr;
+    const float floorLinearTarget = std::pow(10.0f, currentParams.floorGainDb / 20.0f) * floorElevNorm;
+
+    // -------------------------------------------------------------------------
     // Per-sample loop: smooth parameters and apply binaural pipeline
     // -------------------------------------------------------------------------
     for (int i = 0; i < numSamples; ++i) {
         const float mono = monoIn[i];
+
+        // ----------------------------------------------------------------
+        // Phase 3: Comb bank (DEPTH) — Y-driven dry/wet blend
+        // ----------------------------------------------------------------
+        const float combWet = combWetSmooth_.process(combWetTarget);
+        float combSig = mono;
+        for (int c = 0; c < kMaxCombFilters; ++c)
+            combSig = combBank_[c].process(combSig);
+        const float depthOut = mono * (1.0f - combWet) + combSig * combWet;
+
+        // ----------------------------------------------------------------
+        // Phase 3: Pinna notch + high shelf (ELEV-01, ELEV-02)
+        // ----------------------------------------------------------------
+        float monoEQ = pinnaNotch_.process(depthOut);
+        monoEQ       = pinnaShelf_.process(monoEQ);
 
         // Smooth parameters (one-pole IIR, audio-rate)
         const float itdSamples   = itdSmooth_.process(itdTarget);
@@ -162,9 +269,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float ildGain      = ildGainSmooth_.process(ildTarget);
         const float rearCutoff   = rearCutoffSmooth_.process(rearCutoffTarget);
 
-        // Push mono into both delay lines
-        delayL_.push(mono);
-        delayR_.push(mono);
+        // Push pinna-EQ'd mono into both binaural delay lines
+        delayL_.push(monoEQ);
+        delayR_.push(monoEQ);
 
         // Minimum read delay of 2.0 samples ensures the Hermite interpolation
         // never reads from "future" positions in the ring buffer (the C and D
@@ -220,6 +327,42 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         dL = rearSvfL_.process(dL);
         dR = rearSvfR_.process(dR);
 
+        // ----------------------------------------------------------------
+        // Phase 3: Chest bounce (ELEV-03)
+        // Processes the ORIGINAL mono input (not pinna-EQ'd) — chest bounce
+        // is a physical reflection before the pinna path.
+        // 4x HP cascade (700 Hz) + 1x LP (1 kHz) + delay + gain
+        // ----------------------------------------------------------------
+        {
+            float chestSig = mono;
+            for (auto& hp : chestHPF_)
+                chestSig = hp.process(chestSig);
+            chestSig = chestLP_.process(chestSig);
+            chestDelay_.push(chestSig);
+
+            const float chestGain = chestGainSmooth_.process(chestLinearTarget);
+            if (chestDelaySamp >= 2.0f) {
+                float chestOut = chestDelay_.read(chestDelaySamp) * chestGain;
+                dL += chestOut;
+                dR += chestOut;
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Phase 3: Floor bounce (ELEV-04)
+        // Per-ear delayed copy of the post-binaural stereo signal.
+        // ----------------------------------------------------------------
+        {
+            floorDelayL_.push(dL);
+            floorDelayR_.push(dR);
+
+            const float floorGain = floorGainSmooth_.process(floorLinearTarget);
+            if (floorDelaySamp >= 2.0f) {
+                dL += floorDelayL_.read(floorDelaySamp) * floorGain;
+                dR += floorDelayR_.read(floorDelaySamp) * floorGain;
+            }
+        }
+
         outL[i] = dL;
         outR[i] = dR;
     }
@@ -250,6 +393,25 @@ void XYZPanEngine::reset() {
     lastSmoothMs_ITD_    = kDefaultSmoothMs_ITD;
     lastSmoothMs_Filter_ = kDefaultSmoothMs_Filter;
     lastSmoothMs_Gain_   = kDefaultSmoothMs_Gain;
+
+    // Phase 3: comb bank
+    for (auto& c : combBank_) c.reset();
+    combWetSmooth_.reset(0.0f);
+
+    // Phase 3: pinna EQ
+    pinnaNotch_.reset();
+    pinnaShelf_.reset();
+
+    // Phase 3: chest bounce
+    for (auto& hp : chestHPF_) hp.reset();
+    chestLP_.reset();
+    chestDelay_.reset();
+    chestGainSmooth_.reset(0.0f);
+
+    // Phase 3: floor bounce
+    floorDelayL_.reset();
+    floorDelayR_.reset();
+    floorGainSmooth_.reset(0.0f);
 }
 
 } // namespace xyzpan

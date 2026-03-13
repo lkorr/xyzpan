@@ -4,7 +4,12 @@
 #include "xyzpan/dsp/FractionalDelayLine.h"
 #include "xyzpan/dsp/SVFLowPass.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
+#include "xyzpan/dsp/FeedbackCombFilter.h"
+#include "xyzpan/dsp/SVFFilter.h"
+#include "xyzpan/dsp/BiquadFilter.h"
+#include "xyzpan/dsp/OnePoleLP.h"
 #include <vector>
+#include <array>
 
 namespace xyzpan {
 
@@ -21,13 +26,13 @@ namespace xyzpan {
 //   - Always produces 2-channel (stereo) output.
 //   - No allocation inside process(); all buffers pre-allocated in prepare().
 //
-// Phase 2 signal flow (per sample):
-//   1. Stereo-to-mono sum (already from Phase 1)
-//   2. Push mono into both delay lines (delayL_, delayR_)
-//   3. Read delay lines with smoothed ITD (far ear delayed, near ear at 0)
-//   4. Apply ILD gain attenuation to far ear
-//   5. Apply head shadow SVF to far ear (near ear SVF stays wide open)
-//   6. Apply rear shadow SVF equally to both ears
+// Phase 3 signal flow (per sample):
+//   1. Stereo-to-mono sum (Phase 1)
+//   2. Comb bank (series) with Y-driven dry/wet blend [DEPTH]
+//   3. Pinna notch EQ + high shelf (Z-driven) [ELEV-01, ELEV-02]
+//   4. ITD/ILD binaural split (Phase 2)
+//   5. Chest bounce: parallel filtered+delayed copy added to both ears [ELEV-03]
+//   6. Floor bounce: parallel delayed copy added to both ears [ELEV-04]
 class XYZPanEngine {
 public:
     XYZPanEngine() = default;
@@ -89,6 +94,33 @@ private:
     float lastSmoothMs_ITD_    = kDefaultSmoothMs_ITD;
     float lastSmoothMs_Filter_ = kDefaultSmoothMs_Filter;
     float lastSmoothMs_Gain_   = kDefaultSmoothMs_Gain;
+
+    // =========================================================================
+    // Phase 3: Depth — comb filter bank (series, Y-driven wet/dry)
+    // =========================================================================
+    std::array<dsp::FeedbackCombFilter, kMaxCombFilters> combBank_;
+    dsp::OnePoleSmooth combWetSmooth_;   // smooth wet amount transitions
+
+    // =========================================================================
+    // Phase 3: Elevation — pinna notch and high shelf (mono domain, before binaural split)
+    // =========================================================================
+    dsp::BiquadFilter pinnaNotch_;
+    dsp::BiquadFilter pinnaShelf_;
+
+    // =========================================================================
+    // Phase 3: Elevation — chest bounce (post-binaural, parallel path)
+    // =========================================================================
+    std::array<dsp::SVFFilter, 4> chestHPF_;  // 4x HP cascade at 700Hz
+    dsp::OnePoleLP                chestLP_;    // 1x 6dB/oct LP at 1kHz
+    dsp::FractionalDelayLine      chestDelay_; // 0–2ms delay
+    dsp::OnePoleSmooth            chestGainSmooth_;  // smooth chest gain transitions
+
+    // =========================================================================
+    // Phase 3: Elevation — floor bounce (post-binaural, parallel path)
+    // =========================================================================
+    dsp::FractionalDelayLine floorDelayL_;   // per-ear floor bounce delay
+    dsp::FractionalDelayLine floorDelayR_;
+    dsp::OnePoleSmooth       floorGainSmooth_;  // smooth floor gain transitions
 };
 
 } // namespace xyzpan
