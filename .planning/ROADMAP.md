@@ -116,10 +116,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 06-01: APVTS parameter layout, automation exposure, and state save/restore
-- [ ] 06-02: OpenGL renderer with 3D spatial view, listener node, and draggable source node
-- [ ] 06-03: LFO controls, dev panel UI, and standard parameter controls
-- [ ] 06-04: Factory presets and UI double-buffer pattern for audio-to-GL data flow
+- [ ] 06-01-PLAN.md — R parameter (APVTS + processBlock), PositionBridge header, XYZPanPluginTests CMake target, Wave 0 test scaffolds
+- [ ] 06-02-PLAN.md — xyzpan_ui STATIC library, alchemy-themed OpenGL renderer, XYZPanEditor replacing stub, PositionBridge wired in processBlock
+- [ ] 06-03-PLAN.md — LFO strips (waveform button + knobs), dev panel overlay (40 DSP constant sliders), reverb controls
+- [ ] 06-04-PLAN.md — Factory presets (5 XML strings + preset buttons), TestPresets unit tests, state save/restore verification
 
 ### Phase 7: Integration and Validation
 **Goal**: Plugin works reliably across target DAWs, passes validation, and handles edge cases (sample rate changes, multiple instances)
