@@ -64,6 +64,11 @@ public:
     // Call on transport restart or after silence gaps.
     void reset();
 
+    // Phase 6: Last modulated position (base XYZ + LFO offset) from most recent process() call.
+    // Written on audio thread at end of process(); read via PositionBridge by audio thread.
+    struct ModulatedPosition { float x = 0.0f, y = 1.0f, z = 0.0f; };
+    ModulatedPosition getLastModulatedPosition() const noexcept { return lastModulated_; }
+
 private:
     EngineParams currentParams;
     std::vector<float> monoBuffer;  // pre-allocated in prepare() to maxBlockSize
@@ -148,6 +153,10 @@ private:
     // =========================================================================
     dsp::LFO lfoX_, lfoY_, lfoZ_;
     dsp::OnePoleSmooth lfoDepthXSmooth_, lfoDepthYSmooth_, lfoDepthZSmooth_;
+
+    // Phase 6: Last-sample modulated position from most recent process() call (UI-07).
+    // Audio thread writes after process(); PositionBridge propagates to GL thread.
+    ModulatedPosition lastModulated_;
 };
 
 } // namespace xyzpan

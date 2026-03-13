@@ -360,6 +360,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         (void)modY; // modY/modZ available for future per-sample use if needed
         (void)modZ;
 
+        // Phase 6: capture last-sample modulated position for PositionBridge (UI-07).
+        // Store every sample; the final value after the loop is what the GL thread reads.
+        lastModulated_ = {modX, modY, modZ};
+
         // ----------------------------------------------------------------
         // Phase 3: Comb bank (DEPTH) — Y-driven dry/wet blend
         // ----------------------------------------------------------------
