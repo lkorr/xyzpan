@@ -31,10 +31,10 @@
 
 ### Depth Processing (DEPTH)
 
-- [ ] **DEPTH-01**: ~10 comb filters in series model front/back depth perception
-- [ ] **DEPTH-02**: Comb filter delays range 0ms to 1.5ms (arbitrary per filter)
+- [x] **DEPTH-01**: ~10 comb filters in series model front/back depth perception
+- [x] **DEPTH-02**: Comb filter delays range 0ms to 1.5ms (arbitrary per filter)
 - [ ] **DEPTH-03**: Comb filter dry/wet scales from 0% (Y=0) to 30% max (Y=-1)
-- [ ] **DEPTH-04**: Comb filter feedback hard-clamped to prevent instability
+- [x] **DEPTH-04**: Comb filter feedback hard-clamped to prevent instability
 - [ ] **DEPTH-05**: All comb filter parameters (count, delays, wet amounts) tuneable via dev panel
 
 ### Elevation Processing (ELEV)
@@ -144,10 +144,10 @@
 | PAN-03 | Phase 2: Binaural Panning Core | Complete |
 | PAN-04 | Phase 2: Binaural Panning Core | Complete |
 | PAN-05 | Phase 2: Binaural Panning Core | Complete |
-| DEPTH-01 | Phase 3: Depth and Elevation | Pending |
-| DEPTH-02 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-01 | Phase 3: Depth and Elevation | Complete |
+| DEPTH-02 | Phase 3: Depth and Elevation | Complete |
 | DEPTH-03 | Phase 3: Depth and Elevation | Pending |
-| DEPTH-04 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-04 | Phase 3: Depth and Elevation | Complete |
 | DEPTH-05 | Phase 3: Depth and Elevation | Pending |
 | ELEV-01 | Phase 3: Depth and Elevation | Pending |
 | ELEV-02 | Phase 3: Depth and Elevation | Pending |
