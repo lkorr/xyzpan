@@ -17,6 +17,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     setLookAndFeel(&lookAndFeel_);
     juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel_);
 
+    // ----- GL view — added FIRST so devPanel_ (added later) paints on top of it -----
+    // JUCE paints children in add order: last-added = topmost.
+    // glView_ must be added before devPanel_ so the panel overlays the GL area correctly.
+    addAndMakeVisible(glView_);
+
     // ----- Position knobs (X / Y / Z / R) -----
     for (auto* knob : {&xKnob_, &yKnob_, &zKnob_, &rKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -98,9 +103,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Dev panel: always a child component; visibility controls appearance
     devPanel_.setVisible(false);  // hidden by default
     addAndMakeVisible(devPanel_);
-
-    // ----- GL view -----
-    addAndMakeVisible(glView_);
 
     // Window sizing (same as Phase 6-02)
     setResizable(true, true);
