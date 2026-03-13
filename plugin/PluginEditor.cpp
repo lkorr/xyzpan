@@ -68,6 +68,12 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     for (auto* l : {&verbSizeL_, &verbDecayL_, &verbDampingL_, &verbWetL_})
         addAndMakeVisible(l);
 
+    // ----- Doppler toggle -----
+    dopplerToggle_.setButtonText("Doppler");
+    dopplerToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(dopplerToggle_);
+    dopplerAtt_ = std::make_unique<BA>(p.apvts, ParamID::DOPPLER_ENABLED, dopplerToggle_);
+
     // ----- Snap buttons -----
     snapXY_.onClick = [this] {
         glView_.setSnapView(xyzpan::XYZPanGLView::SnapView::TopDown);
@@ -184,4 +190,7 @@ void XYZPanEditor::resized()
     placeVerbKnob(verbDecay_,   verbDecayL_);
     placeVerbKnob(verbDamping_, verbDampingL_);
     placeVerbKnob(verbWet_,     verbWetL_);
+
+    // Doppler toggle — right of reverb section, vertically centred in strip
+    dopplerToggle_.setBounds(x + 4, strip.getY() + (stripH - 24) / 2, 70, 24);
 }

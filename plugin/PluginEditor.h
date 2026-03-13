@@ -62,6 +62,11 @@ private:
     juce::Label  verbSizeL_, verbDecayL_, verbDampingL_, verbWetL_;
     std::unique_ptr<SA> verbSizeAtt_, verbDecayAtt_, verbDampingAtt_, verbWetAtt_;
 
+    // Doppler toggle — visible in main UI bottom strip (right of reverb section)
+    juce::ToggleButton dopplerToggle_;
+    using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    std::unique_ptr<BA> dopplerAtt_;
+
     // Dev panel toggle + overlay panel
     juce::TextButton devToggle_{"DEV"};
     DevPanelComponent devPanel_;
