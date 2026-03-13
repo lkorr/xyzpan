@@ -23,11 +23,11 @@
 
 ### Binaural Panning (PAN)
 
-- [ ] **PAN-01**: Interaural time difference (ITD) applies up to 0.7ms delay to opposite ear based on azimuth X component
-- [ ] **PAN-02**: Head shadow filter applied to opposite ear based on azimuth X component
-- [ ] **PAN-03**: Mono input split to stereo L/R at the panning stage
+- [x] **PAN-01**: Interaural time difference (ITD) applies up to 0.7ms delay to opposite ear based on azimuth X component
+- [x] **PAN-02**: Head shadow filter applied to opposite ear based on azimuth X component
+- [x] **PAN-03**: Mono input split to stereo L/R at the panning stage
 - [ ] **PAN-04**: Stereo input accepted and summed to mono before processing
-- [ ] **PAN-05**: Panning is smooth and click-free during parameter automation
+- [x] **PAN-05**: Panning is smooth and click-free during parameter automation
 
 ### Depth Processing (DEPTH)
 
@@ -139,11 +139,11 @@
 | COORD-03 | Phase 1: Project Scaffolding | Complete |
 | COORD-04 | Phase 1: Project Scaffolding | Complete |
 | COORD-05 | Phase 1: Project Scaffolding | Complete |
-| PAN-01 | Phase 2: Binaural Panning Core | Pending |
-| PAN-02 | Phase 2: Binaural Panning Core | Pending |
-| PAN-03 | Phase 2: Binaural Panning Core | Pending |
+| PAN-01 | Phase 2: Binaural Panning Core | Complete |
+| PAN-02 | Phase 2: Binaural Panning Core | Complete |
+| PAN-03 | Phase 2: Binaural Panning Core | Complete |
 | PAN-04 | Phase 2: Binaural Panning Core | Pending |
-| PAN-05 | Phase 2: Binaural Panning Core | Pending |
+| PAN-05 | Phase 2: Binaural Panning Core | Complete |
 | DEPTH-01 | Phase 3: Depth and Elevation | Pending |
 | DEPTH-02 | Phase 3: Depth and Elevation | Pending |
 | DEPTH-03 | Phase 3: Depth and Elevation | Pending |
