@@ -59,6 +59,19 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(chestGainDbParam  != nullptr);
     jassert(floorDelayMsParam != nullptr);
     jassert(floorGainDbParam  != nullptr);
+
+    // Dev panel: Distance processing (Phase 4)
+    distDelayMaxMsParam = apvts.getRawParameterValue(ParamID::DIST_DELAY_MAX_MS);
+    distSmoothMsParam   = apvts.getRawParameterValue(ParamID::DIST_SMOOTH_MS);
+    dopplerEnabledParam = apvts.getRawParameterValue(ParamID::DOPPLER_ENABLED);
+    airAbsMaxHzParam    = apvts.getRawParameterValue(ParamID::AIR_ABS_MAX_HZ);
+    airAbsMinHzParam    = apvts.getRawParameterValue(ParamID::AIR_ABS_MIN_HZ);
+
+    jassert(distDelayMaxMsParam != nullptr);
+    jassert(distSmoothMsParam   != nullptr);
+    jassert(dopplerEnabledParam != nullptr);
+    jassert(airAbsMaxHzParam    != nullptr);
+    jassert(airAbsMinHzParam    != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -110,6 +123,13 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.chestGainDb      = chestGainDbParam->load();
     params.floorDelayMaxMs  = floorDelayMsParam->load();
     params.floorGainDb      = floorGainDbParam->load();
+
+    // Dev panel: Distance processing (Phase 4)
+    params.distDelayMaxMs = distDelayMaxMsParam->load();
+    params.distSmoothMs   = distSmoothMsParam->load();
+    params.dopplerEnabled = dopplerEnabledParam->load() >= 0.5f;  // float->bool conversion
+    params.airAbsMaxHz    = airAbsMaxHzParam->load();
+    params.airAbsMinHz    = airAbsMinHzParam->load();
 
     // Build input channel pointer array.
     // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which

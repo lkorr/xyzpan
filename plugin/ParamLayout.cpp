@@ -178,5 +178,43 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         xyzpan::kFloorGainDb  // -5.0f
     ));
 
+    // -------------------------------------------------------------------------
+    // Dev Panel: Distance processing tuning (Phase 4) -- DIST-07
+    // -------------------------------------------------------------------------
+
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::DIST_DELAY_MAX_MS, 1 },
+        "Dist Delay Max (ms)",
+        NR(0.0f, 300.0f, 1.0f),
+        xyzpan::kDistDelayMaxMs  // 300.0f
+    ));
+
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::DIST_SMOOTH_MS, 1 },
+        "Dist Smooth (ms)",
+        NR(1.0f, 200.0f, 1.0f),
+        xyzpan::kDistSmoothMs   // 30.0f
+    ));
+
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ ParamID::DOPPLER_ENABLED, 1 },
+        "Doppler",
+        true  // enabled by default
+    ));
+
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::AIR_ABS_MAX_HZ, 1 },
+        "Air Abs Max Hz",
+        NR(1000.0f, 22000.0f, 100.0f, 0.3f),  // Skew 0.3 for log-like feel (Hz param convention)
+        xyzpan::kAirAbsMaxHz  // 22000.0f
+    ));
+
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::AIR_ABS_MIN_HZ, 1 },
+        "Air Abs Min Hz",
+        NR(500.0f, 22000.0f, 100.0f, 0.3f),  // Skew 0.3 (Hz param convention)
+        xyzpan::kAirAbsMinHz  // 8000.0f
+    ));
+
     return layout;
 }

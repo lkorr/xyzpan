@@ -23,7 +23,8 @@ public:
     bool acceptsMidi() const override  { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 0.320; }
+    // 300ms distance delay + 20ms floor bounce
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -68,6 +69,13 @@ private:
     std::atomic<float>* chestGainDbParam   = nullptr;
     std::atomic<float>* floorDelayMsParam  = nullptr;
     std::atomic<float>* floorGainDbParam   = nullptr;
+
+    // Dev panel: Distance processing (Phase 4)
+    std::atomic<float>* distDelayMaxMsParam = nullptr;
+    std::atomic<float>* distSmoothMsParam   = nullptr;
+    std::atomic<float>* dopplerEnabledParam = nullptr;  // AudioParameterBool stores as float 0/1
+    std::atomic<float>* airAbsMaxHzParam    = nullptr;
+    std::atomic<float>* airAbsMinHzParam    = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

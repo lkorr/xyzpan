@@ -38,4 +38,11 @@ namespace ParamID {
     constexpr const char* CHEST_GAIN_DB  = "chest_gain_db";
     constexpr const char* FLOOR_DELAY_MS = "floor_delay_ms";
     constexpr const char* FLOOR_GAIN_DB  = "floor_gain_db";
+
+    // Dev panel: Distance processing tuning (Phase 4)
+    constexpr const char* DIST_DELAY_MAX_MS = "dist_delay_max_ms";
+    constexpr const char* DIST_SMOOTH_MS    = "dist_smooth_ms";
+    constexpr const char* DOPPLER_ENABLED   = "doppler_enabled";
+    constexpr const char* AIR_ABS_MAX_HZ    = "air_abs_max_hz";
+    constexpr const char* AIR_ABS_MIN_HZ    = "air_abs_min_hz";
 } // namespace ParamID
