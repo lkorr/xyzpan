@@ -116,8 +116,8 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — R parameter (APVTS + processBlock), PositionBridge header, XYZPanPluginTests CMake target, Wave 0 test scaffolds
-- [ ] 06-02-PLAN.md — xyzpan_ui STATIC library, alchemy-themed OpenGL renderer, XYZPanEditor replacing stub, PositionBridge wired in processBlock
+- [x] 06-01-PLAN.md — R parameter (APVTS + processBlock), PositionBridge header, XYZPanPluginTests CMake target, Wave 0 test scaffolds
+- [x] 06-02-PLAN.md — xyzpan_ui STATIC library, alchemy-themed OpenGL renderer, XYZPanEditor replacing stub, PositionBridge wired in processBlock
 - [ ] 06-03-PLAN.md — LFO strips (waveform button + knobs), dev panel overlay (40 DSP constant sliders), reverb controls
 - [ ] 06-04-PLAN.md — Factory presets (5 XML strings + preset buttons), TestPresets unit tests, state save/restore verification
 
@@ -149,5 +149,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 3. Depth and Elevation | 3/3 | Complete   | 2026-03-13 |
 | 4. Distance Processing | 2/2 | Complete   | 2026-03-13 |
 | 5. Creative Tools | 2/2 | Complete   | 2026-03-13 |
-| 6. UI and Parameter System | 1/4 | In Progress|  |
+| 6. UI and Parameter System | 2/4 | In Progress|  |
 | 7. Integration and Validation | 0/2 | Not started | - |

@@ -80,9 +80,9 @@
 
 ### User Interface (UI)
 
-- [ ] **UI-01**: Custom OpenGL renderer showing 2D projection of 3D space
-- [ ] **UI-02**: Listener node centered in the view
-- [ ] **UI-03**: Object node draggable in X/Y, with Z shown as size change (depth perspective)
+- [x] **UI-01**: Custom OpenGL renderer showing 2D projection of 3D space
+- [x] **UI-02**: Listener node centered in the view
+- [x] **UI-03**: Object node draggable in X/Y, with Z shown as size change (depth perspective)
 - [ ] **UI-04**: LFO controls visible per axis (waveform, rate, depth, phase)
 - [ ] **UI-05**: Dev panel toggleable showing all tuneable DSP constants
 - [ ] **UI-06**: All parameter controls also accessible as standard UI elements (not just the 3D view)
@@ -175,9 +175,9 @@
 | PARAM-03 | Phase 6: UI and Parameter System | Complete |
 | PARAM-04 | Phase 6: UI and Parameter System | Complete |
 | PARAM-05 | Phase 6: UI and Parameter System | Pending |
-| UI-01 | Phase 6: UI and Parameter System | Pending |
-| UI-02 | Phase 6: UI and Parameter System | Pending |
-| UI-03 | Phase 6: UI and Parameter System | Pending |
+| UI-01 | Phase 6: UI and Parameter System | Complete |
+| UI-02 | Phase 6: UI and Parameter System | Complete |
+| UI-03 | Phase 6: UI and Parameter System | Complete |
 | UI-04 | Phase 6: UI and Parameter System | Pending |
 | UI-05 | Phase 6: UI and Parameter System | Pending |
 | UI-06 | Phase 6: UI and Parameter System | Pending |
