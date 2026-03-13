@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: "Completed Phase 4 Plan 01: Distance Processing"
-last_updated: "2026-03-13T05:12:10.307Z"
-last_activity: 2026-03-13 -- Completed plan 03-02 (Phase 3 signal chain in Engine, 47 tests all pass)
+stopped_at: "Completed Phase 4 Plan 02: Distance APVTS Wiring"
+last_updated: "2026-03-12T04:16:00Z"
+last_activity: 2026-03-12 -- Completed plan 04-02 (Phase 4 APVTS wiring, 55 tests all pass)
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
-  percent: 39
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-12)
 
 **Core value:** Accurate real-time binaural rendering of 3D spatial audio positioning
-**Current focus:** Phase 3: Depth and Elevation
+**Current focus:** Phase 4: Distance Processing -- complete
 
 ## Current Position
 
-Phase: 3 of 7 (Depth and Elevation) -- in progress
-Plan: 2 of 3 in current phase -- completed
-Status: Plan 03-02 complete, 1 plan remaining in phase 3
-Last activity: 2026-03-13 -- Completed plan 03-02 (Phase 3 signal chain in Engine, 47 tests all pass)
+Phase: 4 of 7 (Distance Processing) -- complete
+Plan: 2 of 2 in current phase -- completed
+Status: Plan 04-02 complete, Phase 4 fully complete
+Last activity: 2026-03-12 -- Completed plan 04-02 (Phase 4 APVTS wiring, 55 tests all pass)
 
-Progress: [████░░░░░░] 39%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [████░░░░░░] 39%
 | Phase 03-depth-and-elevation P02 | 6 | 2 tasks | 3 files |
 | Phase 03-depth-and-elevation P03 | 2 | 1 tasks | 4 files |
 | Phase 04-distance-processing P01 | 11 | 2 tasks | 8 files |
+| Phase 04-distance-processing P02 | 2 | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Recent decisions affecting current work:
 - [Phase 04-distance-processing]: Signal chain order: gain -> delay+doppler -> air LPF (gain first per physical accuracy, LPF last to filter arriving signal)
 - [Phase 04-distance-processing]: Distance delay lines sized for 192kHz worst case (57608 samples) regardless of runtime sample rate
 - [Phase 04-distance-processing]: Existing Phase 2/3 integration tests updated with dopplerEnabled=false: delay smoother ramp during 2048-4096 sample windows would zero output at y=1 (dist=1.0) positions
+- [Phase 04-distance-processing]: AudioParameterBool uses getRawParameterValue same as APF — returns std::atomic<float>* with value 0.0f or 1.0f; cast to bool via >= 0.5f in processBlock
+- [Phase 04-distance-processing]: getTailLengthSeconds updated to 0.320 to prevent DAW tail truncation: 300ms max distance delay + 20ms floor bounce
 
 ### Pending Todos
 
@@ -115,6 +118,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T05:12:10.301Z
-Stopped at: Completed Phase 4 Plan 01: Distance Processing
+Last session: 2026-03-12T04:16:00Z
+Stopped at: Completed Phase 4 Plan 02: Distance APVTS Wiring
 Resume file: None

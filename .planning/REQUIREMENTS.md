@@ -53,7 +53,7 @@
 - [x] **DIST-04**: Doppler shift occurs naturally from delay modulation over time when distance changes
 - [x] **DIST-05**: Doppler shift is toggleable (off = no distance delay applied)
 - [x] **DIST-06**: Delay line uses cubic (Hermite) interpolation to avoid artifacts during modulation
-- [ ] **DIST-07**: All distance parameters tuneable via dev panel
+- [x] **DIST-07**: All distance parameters tuneable via dev panel
 
 ### Reverb (VERB)
 
@@ -160,7 +160,7 @@
 | DIST-04 | Phase 4: Distance Processing | Complete |
 | DIST-05 | Phase 4: Distance Processing | Complete |
 | DIST-06 | Phase 4: Distance Processing | Complete |
-| DIST-07 | Phase 4: Distance Processing | Pending |
+| DIST-07 | Phase 4: Distance Processing | Complete |
 | VERB-01 | Phase 5: Creative Tools | Pending |
 | VERB-02 | Phase 5: Creative Tools | Pending |
 | VERB-03 | Phase 5: Creative Tools | Pending |
