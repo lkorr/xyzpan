@@ -33,17 +33,17 @@
 
 - [x] **DEPTH-01**: ~10 comb filters in series model front/back depth perception
 - [x] **DEPTH-02**: Comb filter delays range 0ms to 1.5ms (arbitrary per filter)
-- [ ] **DEPTH-03**: Comb filter dry/wet scales from 0% (Y=0) to 30% max (Y=-1)
+- [x] **DEPTH-03**: Comb filter dry/wet scales from 0% (Y=0) to 30% max (Y=-1)
 - [x] **DEPTH-04**: Comb filter feedback hard-clamped to prevent instability
-- [ ] **DEPTH-05**: All comb filter parameters (count, delays, wet amounts) tuneable via dev panel
+- [x] **DEPTH-05**: All comb filter parameters (count, delays, wet amounts) tuneable via dev panel
 
 ### Elevation Processing (ELEV)
 
-- [ ] **ELEV-01**: Pinna notch filter: -15dB notch at 8kHz at elevation 0, smoothly to +5dB at elevation 1.0, with +3dB high shelf at 4kHz+ at elevation 1.0
-- [ ] **ELEV-02**: Pinna filter stays at elevation-0 values between -1 and 0; high shelf removes 3dB scaling from 0 to -1
-- [ ] **ELEV-03**: Chest bounce: parallel filtered delay (4x highpass at 700Hz, 1x 6dB/oct lowpass at 1kHz), delay 0ms at -1 to 2ms at 1, volume -8dB at -1 to -inf at 1
-- [ ] **ELEV-04**: Floor bounce: parallel delayed copy at -5dB at -1 to -inf at 1, delay 0ms at -1 to 20ms at 1
-- [ ] **ELEV-05**: All elevation filter parameters tuneable via dev panel
+- [x] **ELEV-01**: Pinna notch filter: -15dB notch at 8kHz at elevation 0, smoothly to +5dB at elevation 1.0, with +3dB high shelf at 4kHz+ at elevation 1.0
+- [x] **ELEV-02**: Pinna filter stays at elevation-0 values between -1 and 0; high shelf removes 3dB scaling from 0 to -1
+- [x] **ELEV-03**: Chest bounce: parallel filtered delay (4x highpass at 700Hz, 1x 6dB/oct lowpass at 1kHz), delay 0ms at -1 to 2ms at 1, volume -8dB at -1 to -inf at 1
+- [x] **ELEV-04**: Floor bounce: parallel delayed copy at -5dB at -1 to -inf at 1, delay 0ms at -1 to 20ms at 1
+- [x] **ELEV-05**: All elevation filter parameters tuneable via dev panel
 
 ### Distance Processing (DIST)
 
@@ -146,14 +146,14 @@
 | PAN-05 | Phase 2: Binaural Panning Core | Complete |
 | DEPTH-01 | Phase 3: Depth and Elevation | Complete |
 | DEPTH-02 | Phase 3: Depth and Elevation | Complete |
-| DEPTH-03 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-03 | Phase 3: Depth and Elevation | Complete |
 | DEPTH-04 | Phase 3: Depth and Elevation | Complete |
-| DEPTH-05 | Phase 3: Depth and Elevation | Pending |
-| ELEV-01 | Phase 3: Depth and Elevation | Pending |
-| ELEV-02 | Phase 3: Depth and Elevation | Pending |
-| ELEV-03 | Phase 3: Depth and Elevation | Pending |
-| ELEV-04 | Phase 3: Depth and Elevation | Pending |
-| ELEV-05 | Phase 3: Depth and Elevation | Pending |
+| DEPTH-05 | Phase 3: Depth and Elevation | Complete |
+| ELEV-01 | Phase 3: Depth and Elevation | Complete |
+| ELEV-02 | Phase 3: Depth and Elevation | Complete |
+| ELEV-03 | Phase 3: Depth and Elevation | Complete |
+| ELEV-04 | Phase 3: Depth and Elevation | Complete |
+| ELEV-05 | Phase 3: Depth and Elevation | Complete |
 | DIST-01 | Phase 4: Distance Processing | Pending |
 | DIST-02 | Phase 4: Distance Processing | Pending |
 | DIST-03 | Phase 4: Distance Processing | Pending |
@@ -197,4 +197,4 @@
 
 ---
 *Requirements defined: 2026-03-12*
-*Last updated: 2026-03-12 after roadmap creation*
+*Last updated: 2026-03-13 after plan 03-02 completion*

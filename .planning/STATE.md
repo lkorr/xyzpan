@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in_progress
-stopped_at: "Completed Phase 3 Plan 01: DSP Primitives"
-last_updated: "2026-03-12T06:16:52Z"
-last_activity: 2026-03-12 -- Completed plan 03-01 (4 Phase 3 DSP headers + 13 unit tests, all 40 tests pass)
+stopped_at: "Completed Phase 3 Plan 02: Engine Phase 3 Integration"
+last_updated: "2026-03-13T03:46:41Z"
+last_activity: 2026-03-13 -- Completed plan 03-02 (Phase 3 signal chain in Engine, 47 tests all pass)
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 33
+  total_plans: 7
+  completed_plans: 7
+  percent: 39
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 3 of 7 (Depth and Elevation) -- in progress
-Plan: 1 of 3 in current phase -- completed
-Status: Plan 03-01 complete, 2 plans remaining in phase 3
-Last activity: 2026-03-12 -- Completed plan 03-01 (4 Phase 3 DSP headers + 13 unit tests, all 40 tests pass)
+Plan: 2 of 3 in current phase -- completed
+Status: Plan 03-02 complete, 1 plan remaining in phase 3
+Last activity: 2026-03-13 -- Completed plan 03-02 (Phase 3 signal chain in Engine, 47 tests all pass)
 
-Progress: [███░░░░░░░] 33%
+Progress: [████░░░░░░] 39%
 
 ## Performance Metrics
 
@@ -45,10 +45,10 @@ Progress: [███░░░░░░░] 33%
 |-------|-------|-------|----------|
 | Phase 1: Project Scaffolding | 3/3 | 26 min | 9 min |
 | Phase 2: Binaural Panning Core | 2/3 | 26 min | 13 min |
-| Phase 3: Depth and Elevation | 1/3 | 7 min | 7 min |
+| Phase 3: Depth and Elevation | 2/3 | 13 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 8 min, 4 min, 18 min, 8 min, 7 min
+- Last 5 plans: 4 min, 18 min, 8 min, 7 min, 6 min
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -58,6 +58,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 02-binaural-panning-core P01 | 18 | 2 tasks | 9 files |
 | Phase 02-binaural-panning-core P02 | 8 | 1 tasks | 4 files |
 | Phase 03-depth-and-elevation P01 | 7 | 2 tasks | 8 files |
+| Phase 03-depth-and-elevation P02 | 6 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,9 @@ Recent decisions affecting current work:
 - [Phase 03-depth-and-elevation]: SVFFilter is a parallel class to SVFLowPass (not a replacement) — Phase 2 engine uses SVFLowPass; changing it would risk regression
 - [Phase 03-depth-and-elevation]: OnePoleLP uses setCoefficients(cutoffHz, sampleRate) API (vs OnePoleSmooth's smoothingMs) — same math kernel, different parameterisation
 - [Phase 03-depth-and-elevation]: EngineParams array defaults hardcoded inline (not referencing constexpr arrays) — C++ disallows constexpr array as default member initializer in struct
+- [Phase 03-depth-and-elevation]: Bounce delay guard uses std::max(2.0f, delaySamp) + gain threshold — plan formula gives 0ms delay at Z=-1 (max gain position); clamping to 2 samples minimum ensures bounce is audible everywhere gain > 0
+- [Phase 03-depth-and-elevation]: Chest bounce uses original mono (not pinna-EQ'd monoEQ) — physical chest reflection bypasses the pinna path
+- [Phase 03-depth-and-elevation]: Per-block biquad setCoefficients() strictly maintained — std::cos/sin/pow/sqrt too expensive at audio rate
 
 ### Pending Todos
 
@@ -103,6 +107,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-12T06:16:52Z
-Stopped at: Completed Phase 3 Plan 01: DSP Primitives
+Last session: 2026-03-13T03:46:41Z
+Stopped at: Completed Phase 3 Plan 02: Engine Phase 3 Integration
 Resume file: None

@@ -68,7 +68,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — DSP primitives (FeedbackCombFilter, SVFFilter, BiquadFilter, OnePoleLP), Types/Constants extensions, and unit tests
-- [ ] 03-02-PLAN.md — Engine integration: comb bank depth, pinna notch/shelf, chest bounce, floor bounce, and integration tests
+- [x] 03-02-PLAN.md — Engine integration: comb bank depth, pinna notch/shelf, chest bounce, floor bounce, and integration tests
 - [ ] 03-03-PLAN.md — APVTS parameter wiring for all Phase 3 dev panel controls
 
 ### Phase 4: Distance Processing
@@ -146,7 +146,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 |-------|----------------|--------|-----------|
 | 1. Project Scaffolding | 3/3 | Complete   | 2026-03-12 |
 | 2. Binaural Panning Core | 2/2 | Complete   | 2026-03-13 |
-| 3. Depth and Elevation | 1/3 | In progress | - |
+| 3. Depth and Elevation | 2/3 | In progress | - |
 | 4. Distance Processing | 0/2 | Not started | - |
 | 5. Creative Tools | 0/2 | Not started | - |
 | 6. UI and Parameter System | 0/4 | Not started | - |
