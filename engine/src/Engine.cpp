@@ -125,6 +125,21 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     distGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     distGainSmooth_.reset(1.0f);
     lastDistSmoothMs_ = kDistSmoothMs;
+
+    // -------------------------------------------------------------------------
+    // Phase 5: Reverb
+    // -------------------------------------------------------------------------
+    reverb_.prepare(inSampleRate, inMaxBlockSize);
+    reverb_.setSize(kVerbDefaultSize);
+    reverb_.setDecay(kVerbDefaultDecay);
+    reverb_.setDamping(kVerbDefaultDamping);
+    // FDNReverb's internal wetGain_ is set to 1.0 so processSample() returns
+    // the raw reverb signal. The Engine applies smoothed wet gain externally
+    // (verbWetSmooth_) so wet/dry transitions are click-free.
+    reverb_.setWetDry(1.0f);
+    reverb_.reset();
+    verbWetSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    verbWetSmooth_.reset(kVerbDefaultWet);
 }
 
 // ============================================================================
@@ -298,6 +313,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const bool dopplerOn = currentParams.dopplerEnabled;
 
     // -------------------------------------------------------------------------
+    // Phase 5: per-block reverb parameter updates
+    // Size is fixed at prepare() time (changing delay lengths causes pitch artifacts).
+    // Only decay and damping vary live at block rate.
+    // -------------------------------------------------------------------------
+    reverb_.setDecay(currentParams.verbDecay);
+    reverb_.setDamping(currentParams.verbDamping);
+    // wetGain is smoothed per-sample via verbWetSmooth_ (see process loop below)
+
+    // -------------------------------------------------------------------------
     // Per-sample loop: smooth parameters and apply binaural pipeline
     // -------------------------------------------------------------------------
     for (int i = 0; i < numSamples; ++i) {
@@ -457,6 +481,23 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         dL = airLPF_L_.process(dL);
         dR = airLPF_R_.process(dR);
 
+        // ----------------------------------------------------------------
+        // Phase 5: FDN Reverb (VERB-01, VERB-02) — final stereo stage.
+        // Pre-delay in samples scales with distance: distFrac * verbPreDelayMax.
+        // distFrac = (distance - kMinDistance) / (kSqrt3 - kMinDistance) clamped [0,1].
+        // ----------------------------------------------------------------
+        {
+            const float reverbDistFrac = std::clamp(
+                (dist - kMinDistance) / (kSqrt3 - kMinDistance), 0.0f, 1.0f);
+            const float preDelaySamp = reverbDistFrac
+                * (currentParams.verbPreDelayMax * static_cast<float>(sampleRate) / 1000.0f);
+            float wetL, wetR;
+            reverb_.processSample(dL, dR, preDelaySamp, wetL, wetR);
+            const float wetGain = verbWetSmooth_.process(currentParams.verbWet);
+            dL += wetGain * wetL;
+            dR += wetGain * wetR;
+        }
+
         outL[i] = dL;
         outR[i] = dR;
     }
@@ -514,6 +555,10 @@ void XYZPanEngine::reset() {
     airLPF_R_.reset();
     distDelaySmooth_.reset(2.0f);
     distGainSmooth_.reset(1.0f);
+
+    // Phase 5: reverb
+    reverb_.reset();
+    verbWetSmooth_.reset(kVerbDefaultWet);
 }
 
 } // namespace xyzpan

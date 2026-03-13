@@ -8,6 +8,7 @@
 #include "xyzpan/dsp/SVFFilter.h"
 #include "xyzpan/dsp/BiquadFilter.h"
 #include "xyzpan/dsp/OnePoleLP.h"
+#include "xyzpan/dsp/FDNReverb.h"
 #include <vector>
 #include <array>
 
@@ -26,7 +27,7 @@ namespace xyzpan {
 //   - Always produces 2-channel (stereo) output.
 //   - No allocation inside process(); all buffers pre-allocated in prepare().
 //
-// Phase 4 signal flow (per sample):
+// Phase 5 signal flow (per sample):
 //   1. Stereo-to-mono sum (Phase 1)
 //   2. Comb bank (series) with Y-driven dry/wet blend [DEPTH]
 //   3. Pinna notch EQ + high shelf (Z-driven) [ELEV-01, ELEV-02]
@@ -34,6 +35,7 @@ namespace xyzpan {
 //   5. Chest bounce: parallel filtered+delayed copy added to both ears [ELEV-03]
 //   6. Floor bounce: parallel delayed copy added to both ears [ELEV-04]
 //   7. Distance processing: gain attenuation + delay+doppler + air absorption LPF [DIST-01 through DIST-06]
+//   8. FDN Reverb (VERB-01, VERB-02) — final stereo stage, with distance-scaled pre-delay
 class XYZPanEngine {
 public:
     XYZPanEngine() = default;
@@ -133,6 +135,12 @@ private:
     dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
     dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
     float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
+
+    // =========================================================================
+    // Phase 5: Reverb (VERB-01 through VERB-04)
+    // =========================================================================
+    dsp::FDNReverb   reverb_;
+    dsp::OnePoleSmooth verbWetSmooth_;   // smooth wet/dry transitions
 };
 
 } // namespace xyzpan
