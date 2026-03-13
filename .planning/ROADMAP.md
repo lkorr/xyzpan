@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01: CMake build system with JUCE, engine static library, and Catch2 test target
 - [x] 01-02: Coordinate converter (XYZ to azimuth/elevation/distance) with unit tests
-- [ ] 01-03: Engine-to-PluginProcessor bridge, parameter stubs, and pluginval pass
+- [x] 01-03: Engine-to-PluginProcessor bridge, parameter stubs, and pluginval pass
 
 ### Phase 2: Binaural Panning Core
 **Goal**: A mono signal placed in 3D space produces a convincing left/right binaural image via ITD and head shadow filtering
@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: ITD fractional delay lines and head shadow filter (mono to stereo split)
-- [ ] 02-02: Stereo-to-mono summing, parameter smoothing, and click-free automation verification
+- [ ] 02-01-PLAN.md — DSP primitives (FractionalDelayLine, SVFLowPass, OnePoleSmooth), binaural pipeline in Engine::process(), and integration tests
+- [ ] 02-02-PLAN.md — Dev panel parameter IDs, APVTS registration, PluginProcessor wiring, and pluginval pass
 
 ### Phase 3: Depth and Elevation
 **Goal**: Front/back depth perception via comb filters and vertical positioning via pinna notch, chest bounce, and floor bounce
