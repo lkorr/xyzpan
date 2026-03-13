@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — DSP primitives (FractionalDelayLine, SVFLowPass, OnePoleSmooth), binaural pipeline in Engine::process(), and integration tests
-- [ ] 02-02-PLAN.md — Dev panel parameter IDs, APVTS registration, PluginProcessor wiring, and pluginval pass
+- [x] 02-01-PLAN.md — DSP primitives (FractionalDelayLine, SVFLowPass, OnePoleSmooth), binaural pipeline in Engine::process(), and integration tests
+- [x] 02-02-PLAN.md — Dev panel parameter IDs, APVTS registration, PluginProcessor wiring, and pluginval pass
 
 ### Phase 3: Depth and Elevation
 **Goal**: Front/back depth perception via comb filters and vertical positioning via pinna notch, chest bounce, and floor bounce
@@ -67,9 +67,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Comb filter array for depth processing with stability safeguards
-- [ ] 03-02: Pinna notch filter and high shelf for elevation
-- [ ] 03-03: Chest bounce and floor bounce parallel delays
+- [ ] 03-01-PLAN.md — DSP primitives (FeedbackCombFilter, SVFFilter, BiquadFilter, OnePoleLP), Types/Constants extensions, and unit tests
+- [ ] 03-02-PLAN.md — Engine integration: comb bank depth, pinna notch/shelf, chest bounce, floor bounce, and integration tests
+- [ ] 03-03-PLAN.md — APVTS parameter wiring for all Phase 3 dev panel controls
 
 ### Phase 4: Distance Processing
 **Goal**: Distance from the listener produces natural gain rolloff, high-frequency absorption, propagation delay, and optional doppler shift
