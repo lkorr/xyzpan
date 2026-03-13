@@ -341,8 +341,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             chestDelay_.push(chestSig);
 
             const float chestGain = chestGainSmooth_.process(chestLinearTarget);
-            if (chestDelaySamp >= 2.0f) {
-                float chestOut = chestDelay_.read(chestDelaySamp) * chestGain;
+            // Use at least 2 samples of delay to ensure valid Hermite read positions.
+            // When the computed delay is near zero (Z near -1), clamp to minimum
+            // so the bounce is still audible at its maximum gain position.
+            const float chestReadSamp = std::max(2.0f, chestDelaySamp);
+            if (chestGain > 1e-6f) {
+                float chestOut = chestDelay_.read(chestReadSamp) * chestGain;
                 dL += chestOut;
                 dR += chestOut;
             }
@@ -357,9 +361,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             floorDelayR_.push(dR);
 
             const float floorGain = floorGainSmooth_.process(floorLinearTarget);
-            if (floorDelaySamp >= 2.0f) {
-                dL += floorDelayL_.read(floorDelaySamp) * floorGain;
-                dR += floorDelayR_.read(floorDelaySamp) * floorGain;
+            // Use at least 2 samples of delay to ensure valid Hermite read positions.
+            // When the computed delay is near zero (Z near -1), clamp to minimum
+            // so the bounce is still audible at its maximum gain position.
+            const float floorReadSamp = std::max(2.0f, floorDelaySamp);
+            if (floorGain > 1e-6f) {
+                dL += floorDelayL_.read(floorReadSamp) * floorGain;
+                dR += floorDelayR_.read(floorReadSamp) * floorGain;
             }
         }
 
