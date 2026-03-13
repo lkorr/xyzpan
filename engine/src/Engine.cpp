@@ -124,7 +124,8 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     distDelaySmooth_.reset(2.0f);
     distGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     distGainSmooth_.reset(1.0f);
-    lastDistSmoothMs_ = kDistSmoothMs;
+    lastDistSmoothMs_    = kDistSmoothMs;
+    lastDistDelaySamp_   = 2.0f;
 
     // -------------------------------------------------------------------------
     // Phase 5: Reverb
@@ -509,13 +510,20 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         distDelayL_.push(dL);
         distDelayR_.push(dR);
         if (dopplerOn) {
-            // Smooth delay target — ramping delay creates doppler pitch shift (DIST-04)
-            const float delaySamp = std::max(2.0f, distDelaySmooth_.process(delayTargetSamples));
+            // Smooth delay target — ramping delay creates doppler pitch shift (DIST-04).
+            // Apply per-sample rate-of-change clamp to prevent extreme pitch artifacts
+            // on large position jumps (e.g., jumping from Y=0.1 to Y=1.7 in one block).
+            const float rawDelay = distDelaySmooth_.process(delayTargetSamples);
+            const float deltaDelay = rawDelay - lastDistDelaySamp_;
+            const float clampedDelta = std::clamp(deltaDelay, -kDopplerMaxDeltaSamp, kDopplerMaxDeltaSamp);
+            lastDistDelaySamp_ += clampedDelta;
+            const float delaySamp = std::max(2.0f, lastDistDelaySamp_);
             dL = distDelayL_.read(delaySamp);
             dR = distDelayR_.read(delaySamp);
         } else {
             // DIST-05: Doppler off — keep smoother state valid, read at minimum delay
             distDelaySmooth_.process(2.0f);
+            lastDistDelaySamp_ = 2.0f;
             dL = distDelayL_.read(2.0f);
             dR = distDelayR_.read(2.0f);
         }
@@ -600,6 +608,7 @@ void XYZPanEngine::reset() {
     airLPF_R_.reset();
     distDelaySmooth_.reset(2.0f);
     distGainSmooth_.reset(1.0f);
+    lastDistDelaySamp_ = 2.0f;
 
     // Phase 5: reverb
     reverb_.reset();

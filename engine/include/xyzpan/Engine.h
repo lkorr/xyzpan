@@ -141,6 +141,7 @@ private:
     dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
     dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
     float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
+    float lastDistDelaySamp_ = 2.0f;          // tracks per-sample delay for rate-of-change clamp
 
     // =========================================================================
     // Phase 5: Reverb (VERB-01 through VERB-04)
