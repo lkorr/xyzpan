@@ -21,6 +21,34 @@ struct EngineParams {
     float smoothMs_ITD      = kDefaultSmoothMs_ITD;    // ITD smoother time constant
     float smoothMs_Filter   = kDefaultSmoothMs_Filter; // SVF cutoff smoother time constant
     float smoothMs_Gain     = kDefaultSmoothMs_Gain;   // ILD gain smoother time constant
+
+    // =========================================================================
+    // Phase 3: Depth (DEPTH-01, DEPTH-02, DEPTH-04, DEPTH-05)
+    // =========================================================================
+    // Per-filter delay times (ms) and feedback gains for the series comb bank.
+    // Defaults mirror kCombDefaultDelays_ms / kCombDefaultFeedback in Constants.h.
+    // Arrays use in-place initializers because constexpr arrays cannot be used
+    // as default member initializers in C++17/20 without extra boilerplate.
+    float combDelays_ms[kMaxCombFilters] = {
+        0.21f, 0.37f, 0.54f, 0.68f, 0.83f,
+        0.97f, 1.08f, 1.23f, 1.38f, 1.50f
+    };
+    float combFeedback[kMaxCombFilters] = {
+        0.15f, 0.14f, 0.16f, 0.13f, 0.15f,
+        0.14f, 0.16f, 0.13f, 0.15f, 0.14f
+    };
+    float combWetMax = kCombMaxWet;  // 0.30f — max wet blend at Y=-1
+
+    // =========================================================================
+    // Phase 3: Elevation (ELEV-01, ELEV-02, ELEV-03, ELEV-04, ELEV-05)
+    // =========================================================================
+    float pinnaNotchFreqHz = kPinnaNotchFreqHz;  // 8000 Hz — pinna notch center
+    float pinnaNotchQ      = kPinnaNotchQ;        // 2.0   — ~0.5 octave bandwidth
+    float pinnaShelfFreqHz = kPinnaShelfFreqHz;   // 4000 Hz — high shelf knee
+    float chestDelayMaxMs  = kChestDelayMaxMs;    // 2.0 ms — chest bounce max delay
+    float chestGainDb      = kChestGainDb;        // -8 dB  — chest bounce attenuation
+    float floorDelayMaxMs  = kFloorDelayMaxMs;    // 20.0 ms — floor bounce max delay
+    float floorGainDb      = kFloorGainDb;        // -5 dB  — floor bounce attenuation
 };
 
 // Result of XYZ-to-spherical coordinate conversion.

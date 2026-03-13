@@ -55,4 +55,56 @@ constexpr float kDefaultSmoothMs_Gain   = 5.0f;   // ILD gain smoother
 // sqrt(3) is the maximum Euclidean distance when XYZ are all at ±1 (corner of the unit cube).
 constexpr float kSqrt3 = 1.7320508f;
 
+// ============================================================================
+// Phase 3: Depth (comb filter bank)
+// ============================================================================
+
+// Maximum number of comb filters in the series bank.
+constexpr int kMaxCombFilters = 10;
+
+// Per-filter delay times in milliseconds at 44.1 kHz (range: 0–1.5 ms).
+// These primes/near-primes avoid alignment that would produce a repetitive
+// comb pattern — the irregular spacing gives a richer spectral coloration.
+constexpr float kCombDefaultDelays_ms[10] = {
+    0.21f, 0.37f, 0.54f, 0.68f, 0.83f,
+    0.97f, 1.08f, 1.23f, 1.38f, 1.50f
+};
+
+// Per-filter feedback gain — each slightly different for varied decay character.
+// All values are within the stable range [-0.95, 0.95] (FeedbackCombFilter will
+// hard-clamp these even if they drift due to floating-point rounding).
+constexpr float kCombDefaultFeedback[10] = {
+    0.15f, 0.14f, 0.16f, 0.13f, 0.15f,
+    0.14f, 0.16f, 0.13f, 0.15f, 0.14f
+};
+
+// Maximum dry/wet blend for the comb bank output (30% wet at Y=-1).
+constexpr float kCombMaxWet = 0.30f;
+
+// Maximum comb filter delay time in milliseconds (caps the delay range).
+constexpr float kCombMaxDelay_ms = 1.50f;
+
+// ============================================================================
+// Phase 3: Elevation (pinna, chest bounce, floor bounce)
+// ============================================================================
+
+// Pinna notch / peak filter (PeakingEQ biquad at 8 kHz)
+constexpr float kPinnaNotchFreqHz = 8000.0f;   // center frequency
+constexpr float kPinnaNotchQ      = 2.0f;       // bandwidth (~0.5 octave)
+
+// Pinna high shelf (HighShelf biquad at 4 kHz)
+constexpr float kPinnaShelfFreqHz = 4000.0f;   // shelf knee frequency
+
+// Chest bounce delay: 0 ms at Z=1 (above), 2 ms at Z=-1 (below) — max delay
+constexpr float kChestDelayMaxMs  = 2.0f;
+
+// Chest bounce attenuation at Z=-1 (maximum bounce contribution)
+constexpr float kChestGainDb      = -8.0f;
+
+// Floor bounce delay: 0 ms at Z=1 (above), 20 ms at Z=-1 (below) — max delay
+constexpr float kFloorDelayMaxMs  = 20.0f;
+
+// Floor bounce attenuation at Z=-1 (maximum bounce contribution)
+constexpr float kFloorGainDb      = -5.0f;
+
 } // namespace xyzpan
