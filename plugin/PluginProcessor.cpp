@@ -32,6 +32,33 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(smoothItdParam    != nullptr);
     jassert(smoothFilterParam != nullptr);
     jassert(smoothGainParam   != nullptr);
+
+    // Dev panel: Comb filter bank (Phase 3)
+    for (int i = 0; i < 10; ++i) {
+        combDelayParam[i] = apvts.getRawParameterValue(ParamID::COMB_DELAY[i]);
+        combFbParam[i]    = apvts.getRawParameterValue(ParamID::COMB_FB[i]);
+        jassert(combDelayParam[i] != nullptr);
+        jassert(combFbParam[i]    != nullptr);
+    }
+    combWetMaxParam   = apvts.getRawParameterValue(ParamID::COMB_WET_MAX);
+    jassert(combWetMaxParam != nullptr);
+
+    // Dev panel: Elevation filters (Phase 3)
+    pinnaNotchHzParam = apvts.getRawParameterValue(ParamID::PINNA_NOTCH_HZ);
+    pinnaNotchQParam  = apvts.getRawParameterValue(ParamID::PINNA_NOTCH_Q);
+    pinnaShelfHzParam = apvts.getRawParameterValue(ParamID::PINNA_SHELF_HZ);
+    chestDelayMsParam = apvts.getRawParameterValue(ParamID::CHEST_DELAY_MS);
+    chestGainDbParam  = apvts.getRawParameterValue(ParamID::CHEST_GAIN_DB);
+    floorDelayMsParam = apvts.getRawParameterValue(ParamID::FLOOR_DELAY_MS);
+    floorGainDbParam  = apvts.getRawParameterValue(ParamID::FLOOR_GAIN_DB);
+
+    jassert(pinnaNotchHzParam != nullptr);
+    jassert(pinnaNotchQParam  != nullptr);
+    jassert(pinnaShelfHzParam != nullptr);
+    jassert(chestDelayMsParam != nullptr);
+    jassert(chestGainDbParam  != nullptr);
+    jassert(floorDelayMsParam != nullptr);
+    jassert(floorGainDbParam  != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -67,6 +94,22 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.smoothMs_ITD    = smoothItdParam->load();
     params.smoothMs_Filter = smoothFilterParam->load();
     params.smoothMs_Gain   = smoothGainParam->load();
+
+    // Dev panel: Comb filter bank (Phase 3)
+    for (int i = 0; i < 10; ++i) {
+        params.combDelays_ms[i] = combDelayParam[i]->load();
+        params.combFeedback[i]  = combFbParam[i]->load();
+    }
+    params.combWetMax       = combWetMaxParam->load();
+
+    // Dev panel: Elevation filters (Phase 3)
+    params.pinnaNotchFreqHz = pinnaNotchHzParam->load();
+    params.pinnaNotchQ      = pinnaNotchQParam->load();
+    params.pinnaShelfFreqHz = pinnaShelfHzParam->load();
+    params.chestDelayMaxMs  = chestDelayMsParam->load();
+    params.chestGainDb      = chestGainDbParam->load();
+    params.floorDelayMaxMs  = floorDelayMsParam->load();
+    params.floorGainDb      = floorGainDbParam->load();
 
     // Build input channel pointer array.
     // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which

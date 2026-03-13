@@ -55,5 +55,19 @@ private:
     std::atomic<float>* smoothFilterParam = nullptr;
     std::atomic<float>* smoothGainParam   = nullptr;
 
+    // Dev panel: Comb filter bank (Phase 3)
+    std::atomic<float>* combDelayParam[10] = {};
+    std::atomic<float>* combFbParam[10]    = {};
+    std::atomic<float>* combWetMaxParam    = nullptr;
+
+    // Dev panel: Elevation filters (Phase 3)
+    std::atomic<float>* pinnaNotchHzParam  = nullptr;
+    std::atomic<float>* pinnaNotchQParam   = nullptr;
+    std::atomic<float>* pinnaShelfHzParam  = nullptr;
+    std::atomic<float>* chestDelayMsParam  = nullptr;
+    std::atomic<float>* chestGainDbParam   = nullptr;
+    std::atomic<float>* floorDelayMsParam  = nullptr;
+    std::atomic<float>* floorGainDbParam   = nullptr;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

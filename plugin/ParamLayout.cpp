@@ -1,5 +1,6 @@
 #include "ParamLayout.h"
 #include "ParamIDs.h"
+#include "xyzpan/Constants.h"
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     using APF = juce::AudioParameterFloat;
@@ -87,6 +88,94 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         "Smooth Gain (ms)",
         NR(1.0f, 50.0f, 0.1f),
         5.0f
+    ));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Comb filter bank (Phase 3) — DEPTH-05
+    // Per-filter delays and feedback gains for the series comb bank.
+    // Defaults from Constants.h (kCombDefaultDelays_ms / kCombDefaultFeedback).
+    // -------------------------------------------------------------------------
+    for (int i = 0; i < xyzpan::kMaxCombFilters; ++i) {
+        layout.add(std::make_unique<APF>(
+            PID{ ParamID::COMB_DELAY[i], 1 },
+            "Comb Delay " + juce::String(i) + " (ms)",
+            NR(0.0f, 1.5f, 0.01f),
+            xyzpan::kCombDefaultDelays_ms[i]
+        ));
+        layout.add(std::make_unique<APF>(
+            PID{ ParamID::COMB_FB[i], 1 },
+            "Comb FB " + juce::String(i),
+            NR(-0.95f, 0.95f, 0.01f),
+            xyzpan::kCombDefaultFeedback[i]
+        ));
+    }
+
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::COMB_WET_MAX, 1 },
+        "Comb Wet Max",
+        NR(0.0f, 1.0f, 0.01f),
+        xyzpan::kCombMaxWet  // 0.30f
+    ));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Elevation filter tuning (Phase 3) — ELEV-05
+    // Pinna notch/shelf, chest bounce, and floor bounce parameters.
+    // -------------------------------------------------------------------------
+
+    // Pinna notch center frequency (Hz)
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::PINNA_NOTCH_HZ, 1 },
+        "Pinna Notch Hz",
+        NR(1000.0f, 16000.0f, 1.0f, 0.3f),  // Skew 0.3 for log-like feel
+        xyzpan::kPinnaNotchFreqHz  // 8000.0f
+    ));
+
+    // Pinna notch Q
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::PINNA_NOTCH_Q, 1 },
+        "Pinna Notch Q",
+        NR(0.1f, 10.0f, 0.01f),
+        xyzpan::kPinnaNotchQ  // 2.0f
+    ));
+
+    // Pinna high shelf frequency (Hz)
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::PINNA_SHELF_HZ, 1 },
+        "Pinna Shelf Hz",
+        NR(1000.0f, 16000.0f, 1.0f, 0.3f),  // Skew 0.3 for log-like feel
+        xyzpan::kPinnaShelfFreqHz  // 4000.0f
+    ));
+
+    // Chest bounce max delay (ms)
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::CHEST_DELAY_MS, 1 },
+        "Chest Delay Max (ms)",
+        NR(0.0f, 10.0f, 0.01f),
+        xyzpan::kChestDelayMaxMs  // 2.0f
+    ));
+
+    // Chest bounce gain (dB) — negative for attenuation
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::CHEST_GAIN_DB, 1 },
+        "Chest Gain (dB)",
+        NR(-30.0f, 0.0f, 0.1f),
+        xyzpan::kChestGainDb  // -8.0f
+    ));
+
+    // Floor bounce max delay (ms)
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::FLOOR_DELAY_MS, 1 },
+        "Floor Delay Max (ms)",
+        NR(0.0f, 50.0f, 0.1f),
+        xyzpan::kFloorDelayMaxMs  // 20.0f
+    ));
+
+    // Floor bounce gain (dB) — negative for attenuation
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::FLOOR_GAIN_DB, 1 },
+        "Floor Gain (dB)",
+        NR(-30.0f, 0.0f, 0.1f),
+        xyzpan::kFloorGainDb  // -5.0f
     ));
 
     return layout;
