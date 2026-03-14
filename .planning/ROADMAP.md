@@ -160,3 +160,13 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 5. Creative Tools | 2/2 | Complete   | 2026-03-13 |
 | 6. UI and Parameter System | 3/4 | In Progress|  |
 | 7. Integration and Validation | 0/2 | Not started | - |
+
+### Phase 07.1: Optimization (INSERTED)
+
+**Goal:** Reduce audio-thread CPU usage through profiling-driven DSP optimization — SIMD vectorization, algorithm tuning, and hot-path elimination — so the plugin runs comfortably at low buffer sizes (64–128 samples) on mid-range hardware
+**Requirements**: INFRA-03
+**Depends on:** Phase 7
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 07.1 to break down)
