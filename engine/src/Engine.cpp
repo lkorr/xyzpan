@@ -585,6 +585,36 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     if (currentParams.stereoOrbitYZResetPhase) orbitLfoYZ_.requestReset();
 
     // -------------------------------------------------------------------------
+    // Per-block orbit angular smoother update
+    // The phase/offset knobs are per-block parameters — their IIR smoother
+    // only needs one tick per block. Advancing once every 64-128 samples
+    // (1.45ms) is valid: the 5ms smoothing constant is longer than the block.
+    // This saves 4 cos/sin + 2 atan2 per sample when stereo is active.
+    // -------------------------------------------------------------------------
+    constexpr float kPI_early = 3.14159265358979323846f;
+    constexpr float kTwoPI_early = 2.0f * kPI_early;
+    float blkSmoothedPhase = 0.0f, blkSmoothedOffset = 0.0f, blkRPhaseOffset = 0.0f;
+    {
+        const float smoothedWidth_peek = stereoWidthSmooth_.current();
+        if (smoothedWidth_peek > 0.001f && inputR != nullptr) {
+            const float b = 1.0f - angularSmA_;
+            {
+                const float phaseRad = currentParams.stereoOrbitPhase * kTwoPI_early;
+                phaseSmCos_ = std::cos(phaseRad) * b + phaseSmCos_ * angularSmA_;
+                phaseSmSin_ = std::sin(phaseRad) * b + phaseSmSin_ * angularSmA_;
+            }
+            {
+                const float offsetRad = currentParams.stereoOrbitOffset * kTwoPI_early;
+                offsetSmCos_ = std::cos(offsetRad) * b + offsetSmCos_ * angularSmA_;
+                offsetSmSin_ = std::sin(offsetRad) * b + offsetSmSin_ * angularSmA_;
+            }
+            blkSmoothedPhase  = std::atan2(phaseSmSin_,  phaseSmCos_);
+            blkSmoothedOffset = std::atan2(offsetSmSin_, offsetSmCos_);
+            blkRPhaseOffset   = kPI_early + blkSmoothedPhase;
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Per-block coefficient pre-computation
     // All transcendental math (cos, sin, pow, sqrt, tan, exp) runs here ONCE
     // per block, not per sample. Filter .process() calls remain per-sample.
@@ -983,27 +1013,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Orbit angle accumulation
             const float orbitAngleXY = orbitRawXY * orbitDepXY * kPI;
 
-            // Circular smoothing for phase and offset — smooth in sin/cos domain
-            // to always take the shortest path around the wrap boundary.
-            const float b = 1.0f - angularSmA_;
-            {
-                const float phaseRad = currentParams.stereoOrbitPhase * kTwoPI;
-                phaseSmCos_ = std::cos(phaseRad) * b + phaseSmCos_ * angularSmA_;
-                phaseSmSin_ = std::sin(phaseRad) * b + phaseSmSin_ * angularSmA_;
-            }
-            {
-                const float offsetRad = currentParams.stereoOrbitOffset * kTwoPI;
-                offsetSmCos_ = std::cos(offsetRad) * b + offsetSmCos_ * angularSmA_;
-                offsetSmSin_ = std::sin(offsetRad) * b + offsetSmSin_ * angularSmA_;
-            }
-            const float smoothedPhase  = std::atan2(phaseSmSin_,  phaseSmCos_);
-            const float smoothedOffset = std::atan2(offsetSmSin_, offsetSmCos_);
-
-            const float rPhaseOffset = kPI + smoothedPhase;
+            // Use per-block orbit angular smoother (phase/offset smoothed once per block
+            // in the preamble above — blkSmoothedPhase/blkSmoothedOffset/blkRPhaseOffset).
+            // XZ/YZ orbit LFO cos/sin remain per-sample because orbitRawXZ/YZ change per sample.
 
             // L node: angle = orbitAngle + offset, R node: angle + offset + PI + phase
-            const float lAngle = orbitAngleXY + smoothedOffset;
-            const float rAngle = orbitAngleXY + smoothedOffset + rPhaseOffset;
+            const float lAngle = orbitAngleXY + blkSmoothedOffset;
+            const float rAngle = orbitAngleXY + blkSmoothedOffset + blkRPhaseOffset;
 
             // Compute L offset in XY plane
             float lOffX = halfSpread * (spreadX * std::cos(lAngle) - spreadY * std::sin(lAngle));
