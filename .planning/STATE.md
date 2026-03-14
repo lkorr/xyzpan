@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 07.1-01-PLAN.md (Per-block coefficient pre-computation, AVX2 flags, INFRA-03 tests)
-last_updated: "2026-03-14T20:10:46.453Z"
+stopped_at: Completed 07.1-02-PLAN.md (Stereo orbit per-block optimization, performance microbenchmarks, 86 tests green)
+last_updated: "2026-03-14T20:16:27.794Z"
 last_activity: 2026-03-13 -- Completed plan 06.1-01 (distance gain fix, doppler smoothing, doppler toggle UI, dev panel z-order, LFO 2-row layout, 68 tests green)
 progress:
   total_phases: 9
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 94
 ---
 
@@ -69,6 +69,7 @@ Progress: [█████████░] 94%
 | Phase 06-ui-and-parameter-system P03 | 17 | 1 tasks | 9 files |
 | Phase 06.1-bug-and-dsp-fixes P01 | 9 | 5 tasks | 7 files |
 | Phase 07.1-optimization P01 | 9 | 2 tasks | 5 files |
+| Phase 07.1-optimization P02 | 3 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Recent decisions affecting current work:
 - [Phase 07.1-optimization]: Per-block coefficients use block-start position not LFO-modulated position — LFO delta within 64-128 samples is negligible for EQ coefficients
 - [Phase 07.1-optimization]: SVF cutoff steps once per block instead of smoothly — acceptable at 1.45ms block size, below 5ms smoothing constant
 - [Phase 07.1-optimization]: /fp:fast safe with std::isfinite() guards: MSVC /fp:fast documents isfinite() still returns correct results
+- [Phase 07.1-optimization]: Angular smoother ticked once per block: 5ms time constant >> 1.45ms block period, inaudible difference
+- [Phase 07.1-optimization]: XZ/YZ orbit cos/sin remain per-sample: depend on per-sample LFO output
+- [Phase 07.1-optimization]: Performance test budget: 10% CPU mono (290us), 20% stereo (580us) at 128/44.1kHz
 
 ### Pending Todos
 
@@ -154,6 +158,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-14T20:10:46.449Z
-Stopped at: Completed 07.1-01-PLAN.md (Per-block coefficient pre-computation, AVX2 flags, INFRA-03 tests)
+Last session: 2026-03-14T20:16:27.789Z
+Stopped at: Completed 07.1-02-PLAN.md (Stereo orbit per-block optimization, performance microbenchmarks, 86 tests green)
 Resume file: None
