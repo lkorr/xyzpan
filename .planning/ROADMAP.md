@@ -163,10 +163,11 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 ### Phase 07.1: Optimization (INSERTED)
 
-**Goal:** Reduce audio-thread CPU usage through profiling-driven DSP optimization — SIMD vectorization, algorithm tuning, and hot-path elimination — so the plugin runs comfortably at low buffer sizes (64–128 samples) on mid-range hardware
+**Goal:** Reduce audio-thread CPU usage through profiling-driven DSP optimization — SIMD vectorization, algorithm tuning, and hot-path elimination — so the plugin runs comfortably at low buffer sizes (64-128 samples) on mid-range hardware
 **Requirements**: INFRA-03
 **Depends on:** Phase 7
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 07.1 to break down)
+- [ ] 07.1-01-PLAN.md — Per-block coefficient pre-computation refactor, CMake Release optimization flags, sample-rate adaptation test
+- [ ] 07.1-02-PLAN.md — Per-block stereo orbit transcendentals, performance microbenchmark test
