@@ -4,6 +4,9 @@ add_executable(XYZPanTests
     engine/TestDepthAndElevation.cpp
     engine/TestDistanceProcessing.cpp
     engine/TestCreativeTools.cpp
+    engine/TestAuxSend.cpp
+    engine/TestStereoSplit.cpp
+    engine/TestSampleRateAdaptation.cpp
 )
 
 target_link_libraries(XYZPanTests
