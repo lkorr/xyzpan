@@ -92,7 +92,7 @@
 
 - [ ] **INFRA-01**: Builds as VST3 on Windows
 - [ ] **INFRA-02**: Builds as Standalone on Windows
-- [ ] **INFRA-03**: Adapts to DAW session sample rate (recalculates all coefficients on prepareToPlay)
+- [x] **INFRA-03**: Adapts to DAW session sample rate (recalculates all coefficients on prepareToPlay)
 - [ ] **INFRA-04**: Zero memory allocations on audio thread (all pre-allocated in prepareToPlay)
 - [ ] **INFRA-05**: Passes pluginval at strictness level 5
 - [ ] **INFRA-06**: Works correctly in Ableton, FL Studio, and Reaper
@@ -184,7 +184,7 @@
 | UI-07 | Phase 6: UI and Parameter System | Complete |
 | INFRA-01 | Phase 7: Integration and Validation | Pending |
 | INFRA-02 | Phase 7: Integration and Validation | Pending |
-| INFRA-03 | Phase 7: Integration and Validation | Pending |
+| INFRA-03 | Phase 7: Integration and Validation | Complete |
 | INFRA-04 | Phase 7: Integration and Validation | Pending |
 | INFRA-05 | Phase 7: Integration and Validation | Pending |
 | INFRA-06 | Phase 7: Integration and Validation | Pending |

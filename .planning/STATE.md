@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 06.1-01-PLAN.md (Bug and DSP fixes — distance gain, doppler, UI toggle, dev panel z-order, LFO knobs)
-last_updated: "2026-03-13T19:14:12.065Z"
-last_activity: 2026-03-13 -- Completed plan 06-02 (OpenGL spatial view, XYZPanEditor, PositionBridge wiring, 68 tests green)
+status: completed
+stopped_at: Completed 07.1-01-PLAN.md (Per-block coefficient pre-computation, AVX2 flags, INFRA-03 tests)
+last_updated: "2026-03-14T20:10:46.453Z"
+last_activity: 2026-03-13 -- Completed plan 06.1-01 (distance gain fix, doppler smoothing, doppler toggle UI, dev panel z-order, LFO 2-row layout, 68 tests green)
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 6
-  total_plans: 17
-  completed_plans: 16
-  percent: 83
+  total_plans: 19
+  completed_plans: 17
+  percent: 94
 ---
 
 # Project State
@@ -68,12 +68,14 @@ Progress: [█████████░] 94%
 | Phase 06-ui-and-parameter-system P02 | 15 | 2 tasks | 16 files |
 | Phase 06-ui-and-parameter-system P03 | 17 | 1 tasks | 9 files |
 | Phase 06.1-bug-and-dsp-fixes P01 | 9 | 5 tasks | 7 files |
+| Phase 07.1-optimization P01 | 9 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
 - Phase 06.1 inserted after Phase 6: Bug and dsp fixes (URGENT)
+- Phase 07.1 inserted after Phase 7: Optimization (URGENT)
 
 ### Decisions
 
@@ -138,6 +140,9 @@ Recent decisions affecting current work:
 - [Phase 06.1-bug-and-dsp-fixes]: kDistSmoothMs increased 30ms to 150ms; kDopplerMaxDeltaSamp=2.0 per-sample clamp prevents zipper artifacts
 - [Phase 06.1-bug-and-dsp-fixes]: glView_ added FIRST in PluginEditor constructor — JUCE paints later-added children on top (devPanel_ z-order fix)
 - [Phase 06.1-bug-and-dsp-fixes]: LFO strip 2-row layout fits all controls in 100px column width without reducing knobs below 40px diameter
+- [Phase 07.1-optimization]: Per-block coefficients use block-start position not LFO-modulated position — LFO delta within 64-128 samples is negligible for EQ coefficients
+- [Phase 07.1-optimization]: SVF cutoff steps once per block instead of smoothly — acceptable at 1.45ms block size, below 5ms smoothing constant
+- [Phase 07.1-optimization]: /fp:fast safe with std::isfinite() guards: MSVC /fp:fast documents isfinite() still returns correct results
 
 ### Pending Todos
 
@@ -149,6 +154,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-13T19:14:12.061Z
-Stopped at: Completed 06.1-01-PLAN.md (Bug and DSP fixes — distance gain, doppler, UI toggle, dev panel z-order, LFO knobs)
+Last session: 2026-03-14T20:10:46.449Z
+Stopped at: Completed 07.1-01-PLAN.md (Per-block coefficient pre-computation, AVX2 flags, INFRA-03 tests)
 Resume file: None
