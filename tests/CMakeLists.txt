@@ -7,6 +7,7 @@ add_executable(XYZPanTests
     engine/TestAuxSend.cpp
     engine/TestStereoSplit.cpp
     engine/TestSampleRateAdaptation.cpp
+    engine/TestPerformance.cpp
 )
 
 target_link_libraries(XYZPanTests
