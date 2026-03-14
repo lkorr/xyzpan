@@ -1,6 +1,7 @@
 #pragma once
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
+#include "xyzpan/DSPStateBridge.h"
 #include "xyzpan/dsp/FractionalDelayLine.h"
 #include "xyzpan/dsp/SVFLowPass.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
@@ -12,8 +13,58 @@
 #include "xyzpan/dsp/LFO.h"
 #include <vector>
 #include <array>
+#include <random>
 
 namespace xyzpan {
+
+// Per-source binaural DSP state. When stereo width > 0, L and R input channels
+// are each processed through an independent BinauralPipeline with the same
+// coefficients but separate filter state. Shared stages (chest/floor bounce,
+// distance, reverb) run once on the summed binaural output.
+struct BinauralPipeline {
+    // ITD delay lines — one per ear
+    dsp::FractionalDelayLine delayL, delayR;
+
+    // Head shadow SVFs — one per ear
+    dsp::SVFLowPass shadowL, shadowR;
+
+    // Rear shadow SVFs — both ears
+    dsp::SVFLowPass rearSvfL, rearSvfR;
+
+    // Per-parameter smoothers
+    dsp::OnePoleSmooth itdSmooth;
+    dsp::OnePoleSmooth shadowCutoffSmooth;
+    dsp::OnePoleSmooth ildGainSmooth;
+    dsp::OnePoleSmooth rearCutoffSmooth;
+
+    // Near-field ILD biquads
+    dsp::BiquadFilter nearFieldLF_L, nearFieldLF_R;
+
+    // Per-source comb bank (same coefficients as L, independent state)
+    std::array<dsp::FeedbackCombFilter, kMaxCombFilters> combBank;
+    dsp::OnePoleSmooth combWetSmooth;
+
+    // Per-source mono EQ chain (same coefficients, independent state)
+    dsp::BiquadFilter presenceShelf, earCanalPeak, pinnaP1;
+    dsp::BiquadFilter pinnaNotch, pinnaNotch2, pinnaShelf;
+
+    void prepare(float sr, int delayCap, float combMaxMs);
+    void reset();
+};
+
+// Per-source distance DSP state. When stereo width > 0, L and R input channels
+// each get independent distance processing (gain attenuation, delay+doppler,
+// air absorption) based on their own node positions.
+struct DistancePipeline {
+    dsp::FractionalDelayLine distDelayL, distDelayR;
+    dsp::OnePoleLP airLPF_L, airLPF_R;    // stage 1
+    dsp::OnePoleLP airLPF2_L, airLPF2_R;  // stage 2
+    dsp::OnePoleSmooth distGainSmooth;
+    dsp::OnePoleSmooth distDelaySmooth;
+    float lastDistDelaySamp = 2.0f;
+    void prepare(float sr);
+    void reset();
+};
 
 // XYZPanEngine — pure C++ audio processing engine with no JUCE dependency.
 //
@@ -31,7 +82,7 @@ namespace xyzpan {
 // Phase 5 signal flow (per sample):
 //   1. Stereo-to-mono sum (Phase 1)
 //   2. Comb bank (series) with Y-driven dry/wet blend [DEPTH]
-//   3. Pinna notch EQ + high shelf (Z-driven) [ELEV-01, ELEV-02]
+//   3. Mono EQ: presenceShelf (Y) → earCanalPeak (Y) → P1 → N1 → N2 → pinnaShelf (Z) [ELEV]
 //   4. ITD/ILD binaural split (Phase 2) — with proximity-scaled ITD and head shadow
 //   5. Chest bounce: parallel filtered+delayed copy added to both ears [ELEV-03]
 //   6. Floor bounce: parallel delayed copy added to both ears [ELEV-04]
@@ -58,7 +109,9 @@ public:
     //   outL, outR        — output channel pointers (pre-allocated by caller)
     //   numSamples        — number of samples to process (must not exceed maxBlockSize)
     void process(const float* const* inputs, int numInputChannels,
-                 float* outL, float* outR, int numSamples);
+                 float* outL, float* outR,
+                 float* auxL, float* auxR,  // nullptr when aux bus inactive
+                 int numSamples);
 
     // Reset all internal state (delay lines, filter states, smoothers).
     // Call on transport restart or after silence gaps.
@@ -68,6 +121,13 @@ public:
     // Written on audio thread at end of process(); read via PositionBridge by audio thread.
     struct ModulatedPosition { float x = 0.0f, y = 1.0f, z = 0.0f; };
     ModulatedPosition getLastModulatedPosition() const noexcept { return lastModulated_; }
+
+    // Stereo node positions from most recent process() call
+    struct StereoNodePositions { float lx, ly, lz, rx, ry, rz; float width; };
+    StereoNodePositions getLastStereoNodes() const noexcept { return lastStereoNodes_; }
+
+    // Live DSP state snapshot for dev panel display (UI-07).
+    DSPStateSnapshot getLastDSPState() const noexcept { return lastDSPState_; }
 
 private:
     EngineParams currentParams;
@@ -113,7 +173,11 @@ private:
     // =========================================================================
     // Phase 3: Elevation — pinna notch and high shelf (mono domain, before binaural split)
     // =========================================================================
-    dsp::BiquadFilter pinnaNotch_;
+    dsp::BiquadFilter pinnaNotch_;    // N1: elevation-shifted notch (6.5–10 kHz)
+    dsp::BiquadFilter pinnaNotch2_;   // N2: secondary notch (N1 + 3 kHz)
+    dsp::BiquadFilter pinnaP1_;       // P1: fixed +4 dB peak at 5 kHz
+    dsp::BiquadFilter presenceShelf_; // front-boosting high shelf at 3 kHz (Y-mapped)
+    dsp::BiquadFilter earCanalPeak_;  // ear canal resonance peak at 2.7 kHz (Y-mapped)
     dsp::BiquadFilter pinnaShelf_;
 
     // =========================================================================
@@ -129,6 +193,7 @@ private:
     // =========================================================================
     dsp::FractionalDelayLine floorDelayL_;   // per-ear floor bounce delay
     dsp::FractionalDelayLine floorDelayR_;
+    dsp::OnePoleLP           floorLPF_;      // HF absorption on reflected floor signal
     dsp::OnePoleSmooth       floorGainSmooth_;  // smooth floor gain transitions
 
     // =========================================================================
@@ -136,8 +201,12 @@ private:
     // =========================================================================
     dsp::FractionalDelayLine distDelayL_;     // propagation delay + doppler, left
     dsp::FractionalDelayLine distDelayR_;     // propagation delay + doppler, right
-    dsp::OnePoleLP           airLPF_L_;       // air absorption LPF, left
-    dsp::OnePoleLP           airLPF_R_;       // air absorption LPF, right
+    dsp::OnePoleLP           airLPF_L_;       // air absorption LPF stage 1, left
+    dsp::OnePoleLP           airLPF_R_;       // air absorption LPF stage 1, right
+    dsp::OnePoleLP           airLPF2_L_;      // air absorption LPF stage 2 (cascade → 12dB/oct), left
+    dsp::OnePoleLP           airLPF2_R_;      // air absorption LPF stage 2, right
+    dsp::BiquadFilter        nearFieldLF_L_;  // near-field ILD: ipsilateral LF boost, left
+    dsp::BiquadFilter        nearFieldLF_R_;  // near-field ILD: ipsilateral LF boost, right
     dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
     dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
     float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
@@ -150,14 +219,100 @@ private:
     dsp::OnePoleSmooth verbWetSmooth_;   // smooth wet/dry transitions
 
     // =========================================================================
+    // Aux reverb send (post-air-absorption, pre-FDN reverb)
+    // =========================================================================
+    dsp::FractionalDelayLine auxPreDelayL_;
+    dsp::FractionalDelayLine auxPreDelayR_;
+    dsp::OnePoleSmooth       auxGainSmooth_;
+
+    // =========================================================================
     // Phase 5: LFO (LFO-01 through LFO-05)
     // =========================================================================
     dsp::LFO lfoX_, lfoY_, lfoZ_;
     dsp::OnePoleSmooth lfoDepthXSmooth_, lfoDepthYSmooth_, lfoDepthZSmooth_;
 
+    // Dev tool: test tone oscillator state — persistent across blocks
+    float        sawPhase_ = 0.0f;  // [0, 1)
+    dsp::LFO     pulseLFO_;
+    std::mt19937 noiseRng_;
+
+    // =========================================================================
+    // Stereo source node splitting — R channel binaural pipeline
+    // =========================================================================
+    BinauralPipeline srcR_;
+
+    // R-channel distance pipeline for stereo per-node distance processing
+    DistancePipeline distR_;
+
+    // Stereo orbit LFOs (3 planes) + depth smoothers
+    dsp::LFO orbitLfoXY_, orbitLfoXZ_, orbitLfoYZ_;
+    dsp::OnePoleSmooth orbitDepthXYSmooth_, orbitDepthXZSmooth_, orbitDepthYZSmooth_;
+
+    // Width transition smoother (avoids pops when width changes)
+    dsp::OnePoleSmooth stereoWidthSmooth_;
+
+    // Circular (angular) smoothers for phase and offset — prevents clicks at wrap-around.
+    // These smooth in the angular domain (radians) using sin/cos decomposition to handle
+    // the 0↔1 boundary correctly: the smoother always takes the shortest path.
+    float phaseSmCos_ = 1.0f, phaseSmSin_ = 0.0f;   // unit-circle state for phase
+    float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
+    float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
+
+    // Helper: distance processing for a single source node (stereo path)
+    struct DistanceResult { float left; float right; float distFrac; };
+    DistanceResult processDistanceForNode(
+        float dL, float dR,
+        float nodeX, float nodeY, float nodeZ,
+        float sr, bool dopplerOn,
+        dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
+        dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
+        dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
+        dsp::OnePoleSmooth& dgSmooth,
+        dsp::OnePoleSmooth& ddSmooth,
+        float& lastDelaySamp
+    );
+
+    // Helper: run comb bank + mono EQ + binaural split for one source node
+    struct BinauralResult { float left; float right; };
+    BinauralResult processBinauralForSource(
+        float inputSample,
+        float nodeX, float nodeY, float nodeZ,
+        float sr,
+        // Pipeline state — references to either existing flat members (L) or srcR_ (R)
+        dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
+        dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
+        dsp::SVFLowPass& rSvfL, dsp::SVFLowPass& rSvfR,
+        dsp::OnePoleSmooth& itdSm, dsp::OnePoleSmooth& shCutSm,
+        dsp::OnePoleSmooth& ildSm, dsp::OnePoleSmooth& rearCutSm,
+        dsp::BiquadFilter& nfL, dsp::BiquadFilter& nfR,
+        std::array<dsp::FeedbackCombFilter, kMaxCombFilters>& combs,
+        dsp::OnePoleSmooth& combWetSm,
+        dsp::BiquadFilter& presShelf, dsp::BiquadFilter& earCanal,
+        dsp::BiquadFilter& pP1, dsp::BiquadFilter& pN1,
+        dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf,
+        // Shared position-derived EQ targets
+        float combWetTarget, float presenceGainDb, float earCanalGainDb,
+        float pinnaGainDb, float shelfGainDb, float pinnaN1Freq,
+        float modProximity, float sphereRadius
+    );
+
+    // Last L/R node positions for position bridge
+    StereoNodePositions lastStereoNodes_{};
+
     // Phase 6: Last-sample modulated position from most recent process() call (UI-07).
     // Audio thread writes after process(); PositionBridge propagates to GL thread.
     ModulatedPosition lastModulated_;
+
+    // Live DSP state for dev panel display bridge (UI-07).
+    DSPStateSnapshot lastDSPState_;
+
+    // =========================================================================
+    // Per-block pre-computed cache (optimization: avoid per-sample transcendentals)
+    // =========================================================================
+    // Cached linear ILD gain base: pow(10, -ildMaxDb/20). Updated once per block.
+    // Used by processBinauralForSource() to compute per-node ILD target without
+    // re-calling std::pow on every sample.
+    float ildGainBase_ = 1.0f;
 };
 
 } // namespace xyzpan
