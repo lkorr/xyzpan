@@ -1,6 +1,7 @@
 #include "xyzpan/Engine.h"
 #include "xyzpan/Coordinates.h"
 #include "xyzpan/Constants.h"
+#include "xyzpan/dsp/SineLUT.h"
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -554,6 +555,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     lfoX_.setPhaseOffset(currentParams.lfoXPhase);
     lfoY_.setPhaseOffset(currentParams.lfoYPhase);
     lfoZ_.setPhaseOffset(currentParams.lfoZPhase);
+    lfoX_.setSmoothMs(currentParams.lfoXSmooth * 100.0f);  // 0-1 → 0-100ms
+    lfoY_.setSmoothMs(currentParams.lfoYSmooth * 100.0f);
+    lfoZ_.setSmoothMs(currentParams.lfoZSmooth * 100.0f);
     if (currentParams.lfoXResetPhase) lfoX_.requestReset();
     if (currentParams.lfoYResetPhase) lfoY_.requestReset();
     if (currentParams.lfoZResetPhase) lfoZ_.requestReset();
@@ -570,6 +574,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     orbitLfoXY_.setPhaseOffset(currentParams.stereoOrbitXYPhase);
     orbitLfoXZ_.setPhaseOffset(currentParams.stereoOrbitXZPhase);
     orbitLfoYZ_.setPhaseOffset(currentParams.stereoOrbitYZPhase);
+    orbitLfoXY_.setSmoothMs(currentParams.stereoOrbitXYSmooth * 100.0f);
+    orbitLfoXZ_.setSmoothMs(currentParams.stereoOrbitXZSmooth * 100.0f);
+    orbitLfoYZ_.setSmoothMs(currentParams.stereoOrbitYZSmooth * 100.0f);
     if (currentParams.stereoOrbitXYResetPhase) orbitLfoXY_.requestReset();
     if (currentParams.stereoOrbitXZResetPhase) orbitLfoXZ_.requestReset();
     if (currentParams.stereoOrbitYZResetPhase) orbitLfoYZ_.requestReset();
@@ -730,20 +737,20 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float blkRAngle = blkOrbitAngleXY + blkSmoothedOffset + blkRPhaseOffset;
 
         // L offset in XY plane
-        float blkLOffX = blkHalfSpread * (blkSpreadX * std::cos(blkLAngle) - blkSpreadY * std::sin(blkLAngle));
-        float blkLOffY = blkHalfSpread * (blkSpreadX * std::sin(blkLAngle) + blkSpreadY * std::cos(blkLAngle));
+        float blkLOffX = blkHalfSpread * (blkSpreadX * dsp::SineLUT::cosLookupAngle(blkLAngle) - blkSpreadY * dsp::SineLUT::lookupAngle(blkLAngle));
+        float blkLOffY = blkHalfSpread * (blkSpreadX * dsp::SineLUT::lookupAngle(blkLAngle) + blkSpreadY * dsp::SineLUT::cosLookupAngle(blkLAngle));
         float blkLOffZ = 0.0f;
 
         // R offset in XY plane
-        float blkROffX = blkHalfSpread * (blkSpreadX * std::cos(blkRAngle) - blkSpreadY * std::sin(blkRAngle));
-        float blkROffY = blkHalfSpread * (blkSpreadX * std::sin(blkRAngle) + blkSpreadY * std::cos(blkRAngle));
+        float blkROffX = blkHalfSpread * (blkSpreadX * dsp::SineLUT::cosLookupAngle(blkRAngle) - blkSpreadY * dsp::SineLUT::lookupAngle(blkRAngle));
+        float blkROffY = blkHalfSpread * (blkSpreadX * dsp::SineLUT::lookupAngle(blkRAngle) + blkSpreadY * dsp::SineLUT::cosLookupAngle(blkRAngle));
         float blkROffZ = 0.0f;
 
         // XZ orbit rotation
         if (std::abs(blkOrbitDepXZ) > 1e-7f) {
             const float angXZ = blkOrbitRawXZ * blkOrbitDepXZ * kPI;
-            const float cosXZ = std::cos(angXZ);
-            const float sinXZ = std::sin(angXZ);
+            const float cosXZ = dsp::SineLUT::cosLookupAngle(angXZ);
+            const float sinXZ = dsp::SineLUT::lookupAngle(angXZ);
 
             float tmpX, tmpZ;
             tmpX = blkLOffX * cosXZ - blkLOffZ * sinXZ;
@@ -758,8 +765,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // YZ orbit rotation
         if (std::abs(blkOrbitDepYZ) > 1e-7f) {
             const float angYZ = blkOrbitRawYZ * blkOrbitDepYZ * kPI;
-            const float cosYZ = std::cos(angYZ);
-            const float sinYZ = std::sin(angYZ);
+            const float cosYZ = dsp::SineLUT::cosLookupAngle(angYZ);
+            const float sinYZ = dsp::SineLUT::lookupAngle(angYZ);
 
             float tmpY, tmpZ;
             tmpY = blkLOffY * cosYZ - blkLOffZ * sinYZ;
@@ -1060,20 +1067,20 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             const float rAngle = orbitAngleXY + blkSmoothedOffset + blkRPhaseOffset;
 
             // Compute L offset in XY plane
-            float lOffX = halfSpread * (spreadX * std::cos(lAngle) - spreadY * std::sin(lAngle));
-            float lOffY = halfSpread * (spreadX * std::sin(lAngle) + spreadY * std::cos(lAngle));
+            float lOffX = halfSpread * (spreadX * dsp::SineLUT::cosLookupAngle(lAngle) - spreadY * dsp::SineLUT::lookupAngle(lAngle));
+            float lOffY = halfSpread * (spreadX * dsp::SineLUT::lookupAngle(lAngle) + spreadY * dsp::SineLUT::cosLookupAngle(lAngle));
             float lOffZ = 0.0f;
 
             // Compute R offset in XY plane
-            float rOffX = halfSpread * (spreadX * std::cos(rAngle) - spreadY * std::sin(rAngle));
-            float rOffY = halfSpread * (spreadX * std::sin(rAngle) + spreadY * std::cos(rAngle));
+            float rOffX = halfSpread * (spreadX * dsp::SineLUT::cosLookupAngle(rAngle) - spreadY * dsp::SineLUT::lookupAngle(rAngle));
+            float rOffY = halfSpread * (spreadX * dsp::SineLUT::lookupAngle(rAngle) + spreadY * dsp::SineLUT::cosLookupAngle(rAngle));
             float rOffZ = 0.0f;
 
             // Apply XZ orbit rotation to both offsets
             if (std::abs(orbitDepXZ) > 1e-7f) {
                 const float angXZ = orbitRawXZ * orbitDepXZ * kPI;
-                const float cosXZ = std::cos(angXZ);
-                const float sinXZ = std::sin(angXZ);
+                const float cosXZ = dsp::SineLUT::cosLookupAngle(angXZ);
+                const float sinXZ = dsp::SineLUT::lookupAngle(angXZ);
 
                 float tmpX, tmpZ;
                 tmpX = lOffX * cosXZ - lOffZ * sinXZ;
@@ -1088,8 +1095,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Apply YZ orbit rotation to both offsets
             if (std::abs(orbitDepYZ) > 1e-7f) {
                 const float angYZ = orbitRawYZ * orbitDepYZ * kPI;
-                const float cosYZ = std::cos(angYZ);
-                const float sinYZ = std::sin(angYZ);
+                const float cosYZ = dsp::SineLUT::cosLookupAngle(angYZ);
+                const float sinYZ = dsp::SineLUT::lookupAngle(angYZ);
 
                 float tmpY, tmpZ;
                 tmpY = lOffY * cosYZ - lOffZ * sinYZ;
@@ -1435,9 +1442,9 @@ void XYZPanEngine::reset() {
     verbWetSmooth_.reset(kVerbDefaultWet);
 
     // Phase 5: LFO
-    lfoX_.reset(0.0f);
-    lfoY_.reset(0.0f);
-    lfoZ_.reset(0.0f);
+    lfoX_.reset(currentParams.lfoXPhase);
+    lfoY_.reset(currentParams.lfoYPhase);
+    lfoZ_.reset(currentParams.lfoZPhase);
     lfoDepthXSmooth_.reset(0.0f);
     lfoDepthYSmooth_.reset(0.0f);
     lfoDepthZSmooth_.reset(0.0f);
@@ -1445,9 +1452,9 @@ void XYZPanEngine::reset() {
     // Stereo source node splitting
     srcR_.reset();
     distR_.reset();
-    orbitLfoXY_.reset(0.0f);
-    orbitLfoXZ_.reset(0.0f);
-    orbitLfoYZ_.reset(0.0f);
+    orbitLfoXY_.reset(currentParams.stereoOrbitXYPhase);
+    orbitLfoXZ_.reset(currentParams.stereoOrbitXZPhase);
+    orbitLfoYZ_.reset(currentParams.stereoOrbitYZPhase);
     orbitDepthXYSmooth_.reset(0.0f);
     orbitDepthXZSmooth_.reset(0.0f);
     orbitDepthYZSmooth_.reset(0.0f);

@@ -6,6 +6,7 @@ add_executable(XYZPanTests
     engine/TestCreativeTools.cpp
     engine/TestSampleRateAdaptation.cpp
     engine/TestPerformance.cpp
+    engine/TestSineLUT.cpp
 )
 
 target_link_libraries(XYZPanTests
