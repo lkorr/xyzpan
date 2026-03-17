@@ -102,3 +102,43 @@ TEST_CASE("Engine throughput: stereo 128 samples at 44.1kHz under 20% CPU", "[pe
     INFO("throughput: " << usPerBlock << " us per stereo 128-sample block (budget: 580 us)");
     CHECK(usPerBlock < 580.0);
 }
+
+TEST_CASE("Engine throughput: stereo worst-case (6 LFOs + 3 orbits) 128 samples at 44.1kHz under 25% CPU", "[performance]") {
+    XYZPanEngine engine;
+    engine.prepare(44100.0, 128);
+
+    std::vector<float> inBufL(128, 0.5f);
+    std::vector<float> inBufR(128, 0.3f);
+    std::vector<float> outL(128), outR(128);
+    const float* inputs[2] = { inBufL.data(), inBufR.data() };
+
+    EngineParams params;
+    params.x = 0.3f; params.y = 0.8f; params.z = 0.1f;
+    params.stereoWidth = 0.5f;
+    // Enable all 3 position LFOs (sine)
+    params.lfoXRate = 2.0f; params.lfoXDepth = 0.5f; params.lfoXWaveform = 0;
+    params.lfoYRate = 1.5f; params.lfoYDepth = 0.4f; params.lfoYWaveform = 0;
+    params.lfoZRate = 1.0f; params.lfoZDepth = 0.3f; params.lfoZWaveform = 0;
+    // Enable all 3 orbit planes
+    params.stereoOrbitXYDepth = 0.5f; params.stereoOrbitXYRate = 1.0f;
+    params.stereoOrbitXZDepth = 0.3f; params.stereoOrbitXZRate = 0.8f;
+    params.stereoOrbitYZDepth = 0.3f; params.stereoOrbitYZRate = 0.6f;
+    engine.setParams(params);
+
+    // Warm up
+    for (int i = 0; i < 100; ++i)
+        engine.process(inputs, 2, outL.data(), outR.data(), nullptr, nullptr, 128);
+
+    constexpr int kTrials = 1000;
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < kTrials; ++i)
+        engine.process(inputs, 2, outL.data(), outR.data(), nullptr, nullptr, 128);
+    auto t1 = std::chrono::steady_clock::now();
+
+    const double usPerBlock =
+        std::chrono::duration<double, std::micro>(t1 - t0).count() / kTrials;
+
+    // Budget: 25% CPU at 128/44.1k = 725us (more generous for worst case with all LFOs active)
+    INFO("throughput: " << usPerBlock << " us per worst-case stereo 128-sample block (budget: 725 us)");
+    CHECK(usPerBlock < 725.0);
+}

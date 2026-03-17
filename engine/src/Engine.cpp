@@ -919,6 +919,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     pulseLFO_.setRateHz(currentParams.testTonePulseHz);
     std::uniform_real_distribution<float> noiseDist(-1.0f, 1.0f);
 
+    // Pre-compute position-derived values for zero-LFO fast path
+    const float blkRawModDist = std::sqrt(currentParams.x * currentParams.x
+                                        + currentParams.y * currentParams.y
+                                        + currentParams.z * currentParams.z);
+    // blkHorizMag is already computed above (sqrt(blkX^2+blkY^2)) -- reused in zero-LFO path
+
     for (int i = 0; i < numSamples; ++i) {
         // ----------------------------------------------------------------
         // Test tone generation
@@ -976,12 +982,34 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float depthX = lfoDepthXSmooth_.process(currentParams.lfoXDepth);
         const float depthY = lfoDepthYSmooth_.process(currentParams.lfoYDepth);
         const float depthZ = lfoDepthZSmooth_.process(currentParams.lfoZDepth);
-        const float modX = currentParams.x + lfoX_.tick() * depthX;
-        const float modY = currentParams.y + lfoY_.tick() * depthY;
-        const float modZ = currentParams.z + lfoZ_.tick() * depthZ;
+
+        // Detect if any LFO depth is active -- when all are zero, position is block-constant
+        const bool lfoActive = depthX > 1e-7f || depthY > 1e-7f || depthZ > 1e-7f;
+
+        float modX, modY, modZ;
+        if (lfoActive) {
+            modX = currentParams.x + lfoX_.tick() * depthX;
+            modY = currentParams.y + lfoY_.tick() * depthY;
+            modZ = currentParams.z + lfoZ_.tick() * depthZ;
+        } else {
+            // Still tick LFOs to keep phase accumulation consistent (no jump when depth goes non-zero)
+            lfoX_.tick(); lfoY_.tick(); lfoZ_.tick();
+            // Use block-start values -- position is constant when LFO depths are all zero
+            modX = currentParams.x;
+            modY = currentParams.y;
+            modZ = currentParams.z;
+        }
 
         // Position-dependent targets from object center position
-        const float rawModDist  = std::sqrt(modX * modX + modY * modY + modZ * modZ);
+        // Skip sqrt when position is block-constant (zero-LFO fast path)
+        float rawModDist, horizontalMag;
+        if (lfoActive) {
+            rawModDist    = std::sqrt(modX * modX + modY * modY + modZ * modZ);
+            horizontalMag = std::sqrt(modX * modX + modY * modY);
+        } else {
+            rawModDist    = blkRawModDist;
+            horizontalMag = blkHorizMag;
+        }
         const float modDist     = std::max(rawModDist, kMinDistance);
         const float maxRange    = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
         const float modDistFrac = std::clamp((modDist - kMinDistance) / maxRange, 0.0f, 1.0f);
@@ -990,8 +1018,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float distRef = currentParams.sphereRadius * kDistRefScale;
 
         const float rawDistFrac = std::clamp(rawModDist / kSqrt3, 0.0f, 1.0f);
-
-        const float horizontalMag = std::sqrt(modX * modX + modY * modY);
 
         // Shared EQ targets from object position
         const float rearFactor = (horizontalMag > 1e-7f)
