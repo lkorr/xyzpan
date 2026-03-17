@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in-progress
-stopped_at: Completed 07.2-02-PLAN.md (GL frame throttle 30/60fps, sphere/cone draw call batching, single shader bind per frame)
-last_updated: "2026-03-17T21:16:34.000Z"
-last_activity: 2026-03-17 -- Completed plan 07.2-02 (GL frame throttle, draw call batching, 80 tests, 7 pre-existing failures)
+stopped_at: Completed 07.2-01-PLAN.md (SineLUT 2048-point LUT eliminates per-sample trig, zero-LFO fast path skips sqrt, 81 tests with 7 pre-existing failures)
+last_updated: "2026-03-17T21:20:12.000Z"
+last_activity: 2026-03-17 -- Completed plan 07.2-01 (SineLUT, orbit cos/sin LUT, zero-LFO fast path, worst-case benchmark, 4 SineLUT + 7 LFO + 4 perf tests green)
 progress:
   total_phases: 9
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 20
-  completed_plans: 19
-  percent: 95
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 07.2 of 9 (Optimization Round 2: DSP and UI CPU Optimization) -- in progress (1/2 plans done)
-Plan: 2 of 2 in current phase -- completed (07.2-02 GL frame throttle and draw batching done)
-Status: Phase 07.2 plan 02 complete — GL frame throttle (30/60fps), sphere/cone draw batching (single shader bind per frame)
-Last activity: 2026-03-17 -- Completed plan 07.2-02 (GL frame throttle, draw call batching, 80 tests, 7 pre-existing failures)
+Phase: 07.2 of 9 (Optimization Round 2: DSP and UI CPU Optimization) -- complete (2/2 plans done)
+Plan: 1 of 2 in current phase -- completed (07.2-01 SineLUT and zero-LFO fast path done)
+Status: Phase 07.2 complete — DSP: SineLUT replaces all per-sample trig in LFO+orbits; zero-LFO fast path skips sqrt; GL: frame throttle 30/60fps + draw batching
+Last activity: 2026-03-17 -- Completed plan 07.2-01 (SineLUT, orbit cos/sin LUT, zero-LFO fast path, worst-case benchmark, 4 SineLUT + 7 LFO + 4 perf tests green)
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [█████████░] 94%
 | Phase 06.1-bug-and-dsp-fixes P01 | 9 | 5 tasks | 7 files |
 | Phase 07.1-optimization P01 | 9 | 2 tasks | 5 files |
 | Phase 07.1-optimization P02 | 3 | 2 tasks | 3 files |
+| Phase 07.2-optimization-round-2 P01 | 20 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,10 @@ Recent decisions affecting current work:
 - [Phase 07.1-optimization]: Angular smoother ticked once per block: 5ms time constant >> 1.45ms block period, inaudible difference
 - [Phase 07.1-optimization]: XZ/YZ orbit cos/sin remain per-sample: depend on per-sample LFO output
 - [Phase 07.1-optimization]: Performance test budget: 10% CPU mono (290us), 20% stereo (580us) at 128/44.1kHz
+- [Phase 07.2-01-dsp-optimization]: SineLUT is header-only with static inline constexpr IIFE table — no .cpp required, zero runtime startup cost
+- [Phase 07.2-01-dsp-optimization]: Block-level preamble orbit cos/sin also replaced with SineLUT (plan acceptance criteria required no std::cos(angXZ) anywhere in Engine.cpp)
+- [Phase 07.2-01-dsp-optimization]: Zero-LFO fast path detects inactive LFOs via smoothed depthX/Y/Z > 1e-7f; LFOs still ticked every sample to maintain phase accumulation
+- [Phase 07.2-01-dsp-optimization]: blkHorizMag reused in zero-LFO fast path (already computed as sqrt(blkX^2+blkY^2) at block start)
 - [Phase 07.2-optimization-round-2]: Frame throttle: early-return inside setContinuousRepainting(true) loop (30fps idle, 60fps active) — simpler than toggling repainting, avoids race conditions
 - [Phase 07.2-optimization-round-2]: GL batch pattern: bind sphereShader + upload projection/view/lightDir once before all sphere/cone draws; each draw helper sets only model/color/opacity uniforms
 - [Phase 07.2-optimization-round-2]: isDraggingCamera_ tracks orbit drag state separately from isDraggingSource_ to keep 60fps during camera orbit regardless of position change detection
@@ -163,6 +168,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-14T20:16:27.789Z
-Stopped at: Completed 07.1-02-PLAN.md (Stereo orbit per-block optimization, performance microbenchmarks, 86 tests green)
+Last session: 2026-03-17T21:20:12.000Z
+Stopped at: Completed 07.2-01-PLAN.md (SineLUT 2048-point LUT eliminates per-sample trig, zero-LFO fast path skips sqrt, 81 tests with 7 pre-existing failures)
 Resume file: None
