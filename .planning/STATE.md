@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 07.1-02-PLAN.md (Stereo orbit per-block optimization, performance microbenchmarks, 86 tests green)
-last_updated: "2026-03-14T20:16:27.794Z"
-last_activity: 2026-03-13 -- Completed plan 06.1-01 (distance gain fix, doppler smoothing, doppler toggle UI, dev panel z-order, LFO 2-row layout, 68 tests green)
+status: in-progress
+stopped_at: Completed 07.2-02-PLAN.md (GL frame throttle 30/60fps, sphere/cone draw call batching, single shader bind per frame)
+last_updated: "2026-03-17T21:16:34.000Z"
+last_activity: 2026-03-17 -- Completed plan 07.2-02 (GL frame throttle, draw call batching, 80 tests, 7 pre-existing failures)
 progress:
   total_phases: 9
   completed_phases: 7
-  total_plans: 19
-  completed_plans: 18
-  percent: 94
+  total_plans: 20
+  completed_plans: 19
+  percent: 95
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 06.1 of 8 (Bug and DSP Fixes) -- complete (1/1 plans done)
-Plan: 1 of 1 in current phase -- completed (06.1-01 bug fixes done)
-Status: Phase 06.1 complete — distance gain, doppler, UI toggle, dev panel z-order, LFO knobs all fixed
-Last activity: 2026-03-13 -- Completed plan 06.1-01 (distance gain fix, doppler smoothing, doppler toggle UI, dev panel z-order, LFO 2-row layout, 68 tests green)
+Phase: 07.2 of 9 (Optimization Round 2: DSP and UI CPU Optimization) -- in progress (1/2 plans done)
+Plan: 2 of 2 in current phase -- completed (07.2-02 GL frame throttle and draw batching done)
+Status: Phase 07.2 plan 02 complete — GL frame throttle (30/60fps), sphere/cone draw batching (single shader bind per frame)
+Last activity: 2026-03-17 -- Completed plan 07.2-02 (GL frame throttle, draw call batching, 80 tests, 7 pre-existing failures)
 
 Progress: [█████████░] 94%
 
@@ -148,6 +148,10 @@ Recent decisions affecting current work:
 - [Phase 07.1-optimization]: Angular smoother ticked once per block: 5ms time constant >> 1.45ms block period, inaudible difference
 - [Phase 07.1-optimization]: XZ/YZ orbit cos/sin remain per-sample: depend on per-sample LFO output
 - [Phase 07.1-optimization]: Performance test budget: 10% CPU mono (290us), 20% stereo (580us) at 128/44.1kHz
+- [Phase 07.2-optimization-round-2]: Frame throttle: early-return inside setContinuousRepainting(true) loop (30fps idle, 60fps active) — simpler than toggling repainting, avoids race conditions
+- [Phase 07.2-optimization-round-2]: GL batch pattern: bind sphereShader + upload projection/view/lightDir once before all sphere/cone draws; each draw helper sets only model/color/opacity uniforms
+- [Phase 07.2-optimization-round-2]: isDraggingCamera_ tracks orbit drag state separately from isDraggingSource_ to keep 60fps during camera orbit regardless of position change detection
+- [Phase 07.2-optimization-round-2]: drawCone switches VAO mid-batch (vaoCone_) then restores vaoSphere_ to maintain batch invariant
 
 ### Pending Todos
 
