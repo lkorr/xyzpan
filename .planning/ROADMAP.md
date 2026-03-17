@@ -163,17 +163,18 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 ### Phase 07.2: Optimization Round 2 DSP and UI CPU Optimization (INSERTED)
 
-**Goal:** Comprehensive CPU optimization pass covering both DSP engine hot paths and OpenGL UI rendering — profile-driven improvements to reduce per-block DSP cost and per-frame GPU/CPU cost so the plugin runs smoothly at 64-sample buffers with the GL view active
+**Goal:** Comprehensive CPU optimization pass covering both DSP engine hot paths and OpenGL UI rendering -- SineLUT for LFO/orbit trig, zero-LFO fast path for sqrt elimination, GL frame rate throttling and draw call batching
 **Requirements**: INFRA-03
 **Depends on:** Phase 07.1
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 07.2 to break down)
+- [ ] 07.2-01-PLAN.md — SineLUT header, LFO sine + orbit cos/sin LUT integration, zero-LFO fast path, TestSineLUT + worst-case benchmark
+- [ ] 07.2-02-PLAN.md — GL frame rate throttle (30fps idle / 60fps active), sphere/cone draw call batching
 
 ### Phase 07.1: Optimization (INSERTED)
 
-**Goal:** Reduce audio-thread CPU usage through profiling-driven DSP optimization — SIMD vectorization, algorithm tuning, and hot-path elimination — so the plugin runs comfortably at low buffer sizes (64-128 samples) on mid-range hardware
+**Goal:** Reduce audio-thread CPU usage through profiling-driven DSP optimization -- SIMD vectorization, algorithm tuning, and hot-path elimination -- so the plugin runs comfortably at low buffer sizes (64-128 samples) on mid-range hardware
 **Requirements**: INFRA-03
 **Depends on:** Phase 7
 **Plans:** 2/2 plans complete
