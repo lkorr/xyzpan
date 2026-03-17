@@ -46,6 +46,34 @@ XYZPanGLView::~XYZPanGLView()
 // ---------------------------------------------------------------------------
 // newOpenGLContextCreated — compile shaders, build geometry, upload to GPU
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Helper: create a trail VAO/VBO with interleaved [vec3 pos, float alpha]
+// ---------------------------------------------------------------------------
+static void createTrailVAO(GLuint& vao, GLuint& vbo, int maxPoints)
+{
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    // Pre-allocate at max size; data uploaded each frame via glBufferSubData
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(maxPoints * 4 * sizeof(float)),
+                 nullptr, GL_STREAM_DRAW);
+
+    const GLsizei stride = 4 * sizeof(float);
+    // attribute 0: position (vec3)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+    // attribute 1: alpha (float)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(3 * sizeof(float)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
 void XYZPanGLView::newOpenGLContextCreated()
 {
     compileShaders();
@@ -66,6 +94,18 @@ void XYZPanGLView::newOpenGLContextCreated()
     sphereIdx_   = std::move(sphere.indices);
     sphereIndexCount_ = static_cast<int>(sphereIdx_.size());
     uploadSphereVAO();
+
+    // Build cone geometry for forward arrow and upload
+    auto cone = buildCone(1.0f, 1.0f, 16);
+    coneVerts_ = std::move(cone.vertices);
+    coneIdx_   = std::move(cone.indices);
+    coneIndexCount_ = static_cast<int>(coneIdx_.size());
+    uploadConeVAO();
+
+    // Create trail VAO/VBOs
+    createTrailVAO(vaoTrailSource_, vboTrailSource_, TrailBuffer::kCapacity);
+    createTrailVAO(vaoTrailL_,      vboTrailL_,      TrailBuffer::kCapacity);
+    createTrailVAO(vaoTrailR_,      vboTrailR_,      TrailBuffer::kCapacity);
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +132,8 @@ void XYZPanGLView::renderOpenGL()
     const float aspect = static_cast<float>(w) / static_cast<float>(h);
     projMatrix_ = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
 
-    // Read R parameter from APVTS to scale room/grid
+    // Scale room wireframe + floor grid by R so the cube boundary matches
+    // the effective coordinate range (params * R).
     const float r = [&]() -> float {
         if (auto* a = apvts_.getRawParameterValue(kParamR))
             return a->load();
@@ -108,10 +149,31 @@ void XYZPanGLView::renderOpenGL()
     //   XYZPan Z = up/down     → GL Y
     const glm::vec3 sourcePos(snap.x, snap.z, -snap.y);
 
-    // Compute source opacity: full at close range, ~10% at max distance (sqrt(3)~1.73)
-    const float maxDist = 1.732f;  // sqrt(3) = max distance in normalized cube
-    const float distFrac = std::clamp(snap.distance / maxDist, 0.0f, 1.0f);
+    // Sphere radius from bridge — halved for visual scaling so the rendered
+    // boundary better matches perceived distance cues (DSP uses full value).
+    const float sr = snap.sphereRadius * 0.5f;
+
+    // Compute source opacity: full at close range, ~10% at sphere boundary
+    const float distFrac = std::clamp(snap.distance / sr, 0.0f, 1.0f);
     const float sourceOpacity = 0.1f + 0.9f * (1.0f - distFrac);
+
+    // Stereo L/R node positions (same coordinate mapping)
+    const bool stereoActive = snap.stereoWidth > 0.0f;
+    const glm::vec3 lNodePos(snap.lNodeX, snap.lNodeZ, -snap.lNodeY);
+    const glm::vec3 rNodePos(snap.rNodeX, snap.rNodeZ, -snap.rNodeY);
+
+    // Current time for trail timestamps
+    const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+
+    // Push to trail buffers
+    trailSource_.push(sourcePos, now);
+    if (stereoActive) {
+        trailL_.push(lNodePos, now);
+        trailR_.push(rNodePos, now);
+    } else {
+        trailL_.clear();
+        trailR_.clear();
+    }
 
     // Draw room wireframe — scaled by R (model = roomModelMatrix)
     {
@@ -131,13 +193,100 @@ void XYZPanGLView::renderOpenGL()
         drawSphere(glm::vec3(0.0f), 0.045f, listenerColor, 1.0f);
     }
 
-    // Draw source node at current position — bright gold, opacity based on distance
+    // Forward arrow — cone pointing in -Z (XYZPan +Y = forward)
+    // Cone is built along +Y, so rotate -90° around X to point along -Z
+    {
+        constexpr float kArrowBaseRadius = 0.012f;
+        constexpr float kArrowLength     = 0.05f;
+        constexpr float kArrowOffset     = 0.048f;  // start just outside listener sphere
+
+        // Build model: translate forward, rotate to point -Z, scale
+        // Rotation: -90° around X takes +Y → -Z (forward in GL/XYZPan)
+        glm::mat4 arrowModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -kArrowOffset));
+        arrowModel = glm::rotate(arrowModel, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        arrowModel = glm::scale(arrowModel, glm::vec3(kArrowBaseRadius, kArrowLength, kArrowBaseRadius));
+
+        const glm::vec3 arrowColor(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f);
+        drawCone(arrowModel, arrowColor, 0.9f);
+    }
+
+    // Ears — small flattened ellipsoids at ±X on the listener sphere equator
+    {
+        constexpr float kEarRadius    = 0.015f;
+        constexpr float kEarFlatten   = 0.5f;    // squish along X (radial axis)
+        constexpr float kEarOffset    = 0.045f;   // sit on listener sphere surface
+
+        const glm::vec3 earColor(0xD4 / 255.0f, 0xA0 / 255.0f, 0x60 / 255.0f);
+
+        // Left ear (-X)
+        {
+            glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(-kEarOffset, 0.0f, 0.0f));
+            m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
+            drawSphereWithModel(m, earColor, 0.9f);
+        }
+
+        // Right ear (+X)
+        {
+            glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(kEarOffset, 0.0f, 0.0f));
+            m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
+            drawSphereWithModel(m, earColor, 0.9f);
+        }
+    }
+
+    // Draw audible radius sphere — semi-transparent gold boundary at origin
+    {
+        glDepthMask(GL_FALSE);
+        const glm::vec3 sphereColor(0xC8 / 255.0f, 0xA8 / 255.0f, 0x6B / 255.0f);
+        drawSphere(glm::vec3(0.0f), sr, sphereColor, 0.08f);
+        glDepthMask(GL_TRUE);
+    }
+
+    // Draw source node at current position — bright gold
+    // 0.8x base size; 10% opacity when stereo split is active
     {
         const glm::vec3 sourceColor = isSourceHovered_
             ? glm::vec3(0xFF / 255.0f, 0xD5 / 255.0f, 0x80 / 255.0f)  // hover: lighter gold
             : glm::vec3(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f); // normal: bright gold
-        drawSphere(sourcePos, 0.06f, sourceColor, sourceOpacity);
+        const float mainOpacity = stereoActive ? 0.1f : sourceOpacity;
+        drawSphere(sourcePos, 0.048f, sourceColor, mainOpacity);
     }
+
+    // Draw L/R stereo node spheres (smaller than center, only when stereo active)
+    // Each node's opacity is based on its own distance to the listener (origin).
+    if (stereoActive) {
+        const float lDistFrac = std::clamp(glm::length(lNodePos) / sr, 0.0f, 1.0f);
+        const float rDistFrac = std::clamp(glm::length(rNodePos) / sr, 0.0f, 1.0f);
+        const float lOpacity = 0.1f + 0.9f * (1.0f - lDistFrac);
+        const float rOpacity = 0.1f + 0.9f * (1.0f - rDistFrac);
+
+        const glm::vec3 leftColor(0xFF / 255.0f, 0x6B / 255.0f, 0x9D / 255.0f);
+        const glm::vec3 rightColor(0x6B / 255.0f, 0x9D / 255.0f, 0xFF / 255.0f);
+        drawSphere(lNodePos, 0.045f, leftColor, lOpacity);
+        drawSphere(rNodePos, 0.045f, rightColor, rOpacity);
+    }
+
+    // Draw trails — don't write depth to avoid occluding transparent geometry
+    glDepthMask(GL_FALSE);
+    {
+        const glm::vec3 goldTrail(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f);
+        drawTrail(trailSource_, vaoTrailSource_, vboTrailSource_,
+                  goldTrail, sourceOpacity * 0.6f, now);
+
+        if (stereoActive) {
+            const float lDistFracT = std::clamp(glm::length(lNodePos) / sr, 0.0f, 1.0f);
+            const float rDistFracT = std::clamp(glm::length(rNodePos) / sr, 0.0f, 1.0f);
+            const float lTrailOpacity = (0.1f + 0.9f * (1.0f - lDistFracT)) * 0.5f;
+            const float rTrailOpacity = (0.1f + 0.9f * (1.0f - rDistFracT)) * 0.5f;
+
+            const glm::vec3 pinkTrail(0xFF / 255.0f, 0x6B / 255.0f, 0x9D / 255.0f);
+            const glm::vec3 blueTrail(0x6B / 255.0f, 0x9D / 255.0f, 0xFF / 255.0f);
+            drawTrail(trailL_, vaoTrailL_, vboTrailL_,
+                      pinkTrail, lTrailOpacity, now);
+            drawTrail(trailR_, vaoTrailR_, vboTrailR_,
+                      blueTrail, rTrailOpacity, now);
+        }
+    }
+    glDepthMask(GL_TRUE);
 
     // Cache projected source position for hit-testing on mouse events
     projectedSourcePos_ = projectToScreen(sourcePos);
@@ -150,6 +299,7 @@ void XYZPanGLView::openGLContextClosing()
 {
     lineShader_.reset();
     sphereShader_.reset();
+    trailShader_.reset();
 
     if (vaoRoom_)   { glDeleteVertexArrays(1, &vaoRoom_);   vaoRoom_   = 0; }
     if (vboRoom_)   { glDeleteBuffers(1, &vboRoom_);        vboRoom_   = 0; }
@@ -158,6 +308,16 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoSphere_) { glDeleteVertexArrays(1, &vaoSphere_); vaoSphere_ = 0; }
     if (vboSphere_) { glDeleteBuffers(1, &vboSphere_);      vboSphere_ = 0; }
     if (iboSphere_) { glDeleteBuffers(1, &iboSphere_);      iboSphere_ = 0; }
+    if (vaoCone_)   { glDeleteVertexArrays(1, &vaoCone_);   vaoCone_   = 0; }
+    if (vboCone_)   { glDeleteBuffers(1, &vboCone_);        vboCone_   = 0; }
+    if (iboCone_)   { glDeleteBuffers(1, &iboCone_);        iboCone_   = 0; }
+
+    if (vaoTrailSource_) { glDeleteVertexArrays(1, &vaoTrailSource_); vaoTrailSource_ = 0; }
+    if (vboTrailSource_) { glDeleteBuffers(1, &vboTrailSource_);      vboTrailSource_ = 0; }
+    if (vaoTrailL_)      { glDeleteVertexArrays(1, &vaoTrailL_);      vaoTrailL_      = 0; }
+    if (vboTrailL_)      { glDeleteBuffers(1, &vboTrailL_);           vboTrailL_      = 0; }
+    if (vaoTrailR_)      { glDeleteVertexArrays(1, &vaoTrailR_);      vaoTrailR_      = 0; }
+    if (vboTrailR_)      { glDeleteBuffers(1, &vboTrailR_);           vboTrailR_      = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +386,20 @@ void XYZPanGLView::mouseUp(const juce::MouseEvent& /*e*/)
 }
 
 // ---------------------------------------------------------------------------
+// Mouse: Wheel (scroll to zoom)
+// ---------------------------------------------------------------------------
+void XYZPanGLView::mouseWheelMove(const juce::MouseEvent& /*e*/,
+                                    const juce::MouseWheelDetails& wheel)
+{
+    constexpr float kZoomSpeed = 0.5f;
+    constexpr float kMinDist   = 1.0f;
+    constexpr float kMaxDist   = 10.0f;
+
+    camera_.dist = std::clamp(camera_.dist - wheel.deltaY * kZoomSpeed,
+                              kMinDist, kMaxDist);
+}
+
+// ---------------------------------------------------------------------------
 // Mouse: Move (hover detection for source node highlight)
 // ---------------------------------------------------------------------------
 void XYZPanGLView::mouseMove(const juce::MouseEvent& e)
@@ -277,6 +451,16 @@ void XYZPanGLView::compileShaders()
         !sphereShader_->addFragmentShader(kSphereFragShader) ||
         !sphereShader_->link()) {
         sphereShader_.reset();
+        jassertfalse;
+        return;
+    }
+
+    // Trail shader (fading position trails)
+    trailShader_ = std::make_unique<juce::OpenGLShaderProgram>(glContext_);
+    if (!trailShader_->addVertexShader(kTrailVertShader) ||
+        !trailShader_->addFragmentShader(kTrailFragShader) ||
+        !trailShader_->link()) {
+        trailShader_.reset();
         jassertfalse;
         return;
     }
@@ -399,6 +583,121 @@ void XYZPanGLView::drawSphere(const glm::vec3& position, float radius,
 
     glBindVertexArray(vaoSphere_);
     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// drawSphereWithModel — draw sphere VAO with arbitrary model matrix
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawSphereWithModel(const glm::mat4& model,
+                                         const glm::vec3& color, float opacity)
+{
+    if (!sphereShader_ || vaoSphere_ == 0 || sphereIndexCount_ == 0) return;
+
+    sphereShader_->use();
+
+    const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+
+    sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    sphereShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+    sphereShader_->setUniform("nodeColor", color.r,    color.g,    color.b);
+    sphereShader_->setUniform("opacity",   opacity);
+    sphereShader_->setUniform("lightDir",  lightDir.x, lightDir.y, lightDir.z);
+
+    glBindVertexArray(vaoSphere_);
+    glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// uploadConeVAO — interleaved pos(3)+normal(3) with index buffer
+// ---------------------------------------------------------------------------
+void XYZPanGLView::uploadConeVAO()
+{
+    if (vaoCone_) glDeleteVertexArrays(1, &vaoCone_);
+    if (vboCone_) glDeleteBuffers(1, &vboCone_);
+    if (iboCone_) glDeleteBuffers(1, &iboCone_);
+
+    glGenVertexArrays(1, &vaoCone_);
+    glGenBuffers(1, &vboCone_);
+    glGenBuffers(1, &iboCone_);
+
+    glBindVertexArray(vaoCone_);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vboCone_);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(coneVerts_.size() * sizeof(float)),
+                 coneVerts_.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, iboCone_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(coneIdx_.size() * sizeof(unsigned)),
+                 coneIdx_.data(), GL_STATIC_DRAW);
+
+    const GLsizei stride = 6 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(3 * sizeof(float)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
+
+// ---------------------------------------------------------------------------
+// drawCone — draw cone VAO with arbitrary model matrix (reuses sphere shader)
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawCone(const glm::mat4& model,
+                              const glm::vec3& color, float opacity)
+{
+    if (!sphereShader_ || vaoCone_ == 0 || coneIndexCount_ == 0) return;
+
+    sphereShader_->use();
+
+    const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+
+    sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    sphereShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+    sphereShader_->setUniform("nodeColor", color.r,    color.g,    color.b);
+    sphereShader_->setUniform("opacity",   opacity);
+    sphereShader_->setUniform("lightDir",  lightDir.x, lightDir.y, lightDir.z);
+
+    glBindVertexArray(vaoCone_);
+    glDrawElements(GL_TRIANGLES, coneIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// drawTrail — draw a fading trail from a TrailBuffer
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawTrail(TrailBuffer& trail, GLuint vao, GLuint vbo,
+                              const glm::vec3& color, float baseOpacity,
+                              double nowSeconds)
+{
+    if (!trailShader_ || vao == 0) return;
+
+    const int vertCount = trail.fillVertexData(trailVertexStaging_.data(), nowSeconds);
+    if (vertCount < 2) return;
+
+    // Upload active portion to VBO
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0,
+                    static_cast<GLsizeiptr>(vertCount * 4 * sizeof(float)),
+                    trailVertexStaging_.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    trailShader_->use();
+    trailShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    trailShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    trailShader_->setUniform("trailColor",  color.r, color.g, color.b);
+    trailShader_->setUniform("baseOpacity", baseOpacity);
+
+    glBindVertexArray(vao);
+    glDrawArrays(GL_LINE_STRIP, 0, vertCount);
     glBindVertexArray(0);
 }
 

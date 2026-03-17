@@ -75,4 +75,61 @@ namespace ParamID {
     constexpr const char* LFO_X_BEAT_DIV  = "lfo_x_beat_div";
     constexpr const char* LFO_Y_BEAT_DIV  = "lfo_y_beat_div";
     constexpr const char* LFO_Z_BEAT_DIV  = "lfo_z_beat_div";
+
+    // Stereo source node splitting
+    constexpr const char* STEREO_WIDTH         = "stereo_width";
+    constexpr const char* STEREO_FACE_LISTENER = "stereo_face_listener";
+    constexpr const char* STEREO_ORBIT_PHASE   = "stereo_orbit_phase";
+    constexpr const char* STEREO_ORBIT_OFFSET  = "stereo_orbit_offset";
+
+    // Stereo orbit LFOs — XY plane
+    constexpr const char* STEREO_ORBIT_XY_WAVEFORM    = "stereo_orbit_xy_waveform";
+    constexpr const char* STEREO_ORBIT_XY_RATE         = "stereo_orbit_xy_rate";
+    constexpr const char* STEREO_ORBIT_XY_BEAT_DIV     = "stereo_orbit_xy_beat_div";
+    constexpr const char* STEREO_ORBIT_XY_PHASE        = "stereo_orbit_xy_phase";
+    constexpr const char* STEREO_ORBIT_XY_RESET_PHASE  = "stereo_orbit_xy_reset_phase";
+    constexpr const char* STEREO_ORBIT_XY_DEPTH        = "stereo_orbit_xy_depth";
+
+    // Stereo orbit LFOs — XZ plane
+    constexpr const char* STEREO_ORBIT_XZ_WAVEFORM    = "stereo_orbit_xz_waveform";
+    constexpr const char* STEREO_ORBIT_XZ_RATE         = "stereo_orbit_xz_rate";
+    constexpr const char* STEREO_ORBIT_XZ_BEAT_DIV     = "stereo_orbit_xz_beat_div";
+    constexpr const char* STEREO_ORBIT_XZ_PHASE        = "stereo_orbit_xz_phase";
+    constexpr const char* STEREO_ORBIT_XZ_RESET_PHASE  = "stereo_orbit_xz_reset_phase";
+    constexpr const char* STEREO_ORBIT_XZ_DEPTH        = "stereo_orbit_xz_depth";
+
+    // Stereo orbit LFOs — YZ plane
+    constexpr const char* STEREO_ORBIT_YZ_WAVEFORM    = "stereo_orbit_yz_waveform";
+    constexpr const char* STEREO_ORBIT_YZ_RATE         = "stereo_orbit_yz_rate";
+    constexpr const char* STEREO_ORBIT_YZ_BEAT_DIV     = "stereo_orbit_yz_beat_div";
+    constexpr const char* STEREO_ORBIT_YZ_PHASE        = "stereo_orbit_yz_phase";
+    constexpr const char* STEREO_ORBIT_YZ_RESET_PHASE  = "stereo_orbit_yz_reset_phase";
+    constexpr const char* STEREO_ORBIT_YZ_DEPTH        = "stereo_orbit_yz_depth";
+
+    // Stereo orbit shared
+    constexpr const char* STEREO_ORBIT_TEMPO_SYNC = "stereo_orbit_tempo_sync";
+    constexpr const char* STEREO_ORBIT_SPEED_MUL  = "stereo_orbit_speed_mul";
+
+    // Dev panel: Presence shelf
+    constexpr const char* PRESENCE_SHELF_FREQ_HZ = "presence_shelf_freq_hz";
+    constexpr const char* PRESENCE_SHELF_MAX_DB  = "presence_shelf_max_db";
+
+    // Dev panel: Ear canal resonance
+    constexpr const char* EAR_CANAL_FREQ_HZ = "ear_canal_freq_hz";
+    constexpr const char* EAR_CANAL_Q       = "ear_canal_q";
+    constexpr const char* EAR_CANAL_MAX_DB  = "ear_canal_max_db";
+
+    // Dev panel: Aux reverb send
+    constexpr const char* AUX_SEND_GAIN_MAX_DB = "aux_send_gain_max_db";
+
+    // Dev panel: Geometry
+    constexpr const char* SPHERE_RADIUS             = "sphere_radius";
+    constexpr const char* VERT_MONO_CYLINDER_RADIUS = "vert_mono_cyl_radius";
+
+    // Dev panel: Test tone oscillator
+    constexpr const char* TEST_TONE_ENABLED  = "test_tone_enabled";
+    constexpr const char* TEST_TONE_GAIN_DB  = "test_tone_gain_db";
+    constexpr const char* TEST_TONE_PITCH_HZ = "test_tone_pitch_hz";
+    constexpr const char* TEST_TONE_PULSE_HZ = "test_tone_pulse_hz";
+    constexpr const char* TEST_TONE_WAVEFORM = "test_tone_waveform";
 } // namespace ParamID

@@ -3,6 +3,17 @@
 
 namespace xyzpan {
 
+// Waveform selector for the dev-tool test tone oscillator.
+enum class TestToneWaveform : int {
+    Saw               = 0,
+    Square            = 1,
+    WhiteNoise        = 2,
+    PulsingSaw        = 3,
+    PulsingSquare     = 4,
+    PulsingWhiteNoise = 5,
+    StereoNoiseSaw    = 6,
+};
+
 // Parameters passed to the engine each processBlock.
 // Grows per phase as DSP features are added.
 struct EngineParams {
@@ -81,6 +92,63 @@ struct EngineParams {
     bool  lfoTempoSync  = false;
     float hostBpm       = 120.0f;           // passed from processBlock AudioPlayHead
     float lfoXBeatDiv   = 1.0f;             float lfoYBeatDiv   = 1.0f;             float lfoZBeatDiv   = 1.0f;
+
+    // =========================================================================
+    // Phase 5: LFO extensions
+    // =========================================================================
+    float lfoSpeedMul    = kLFOSpeedMulDefault;
+    bool  lfoXResetPhase = false;
+    bool  lfoYResetPhase = false;
+    bool  lfoZResetPhase = false;
+
+    // =========================================================================
+    // Geometry
+    // =========================================================================
+    float sphereRadius           = kSphereRadiusDefault;
+    float vertMonoCylinderRadius = kVertMonoCylinderRadius;
+
+    // =========================================================================
+    // Elevation tuning (dev-panel exposed)
+    // =========================================================================
+    float presenceShelfFreqHz = kPresenceShelfFreqHz;
+    float presenceShelfMaxDb  = kPresenceShelfMaxDb;
+    float earCanalFreqHz      = kEarCanalFreqHz;
+    float earCanalQ           = kEarCanalQ;
+    float earCanalMaxDb       = kEarCanalMaxDb;
+
+    // =========================================================================
+    // Aux reverb send
+    // =========================================================================
+    float auxSendGainMaxDb = kAuxSendGainMaxDb;
+
+    // =========================================================================
+    // Stereo source node splitting
+    // =========================================================================
+    float stereoWidth        = 0.0f;
+    bool  stereoFaceListener = false;
+    float stereoOrbitPhase   = 0.0f;
+    float stereoOrbitOffset  = 0.0f;
+
+    // =========================================================================
+    // Stereo orbit LFOs (XY, XZ, YZ planes)
+    // =========================================================================
+    int   stereoOrbitXYWaveform   = 0;                       int   stereoOrbitXZWaveform   = 0;                       int   stereoOrbitYZWaveform   = 0;
+    float stereoOrbitXYRate       = kStereoOrbitDefaultRate;  float stereoOrbitXZRate       = kStereoOrbitDefaultRate;  float stereoOrbitYZRate       = kStereoOrbitDefaultRate;
+    float stereoOrbitXYBeatDiv    = 1.0f;                    float stereoOrbitXZBeatDiv    = 1.0f;                    float stereoOrbitYZBeatDiv    = 1.0f;
+    float stereoOrbitXYPhase      = 0.0f;                    float stereoOrbitXZPhase      = 0.0f;                    float stereoOrbitYZPhase      = 0.0f;
+    bool  stereoOrbitXYResetPhase = false;                   bool  stereoOrbitXZResetPhase = false;                   bool  stereoOrbitYZResetPhase = false;
+    float stereoOrbitXYDepth      = 0.0f;                    float stereoOrbitXZDepth      = 0.0f;                    float stereoOrbitYZDepth      = 0.0f;
+    bool  stereoOrbitTempoSync    = false;
+    float stereoOrbitSpeedMul     = 1.0f;
+
+    // =========================================================================
+    // Dev tool: Test tone oscillator
+    // =========================================================================
+    bool             testToneEnabled  = false;
+    float            testToneGainDb   = -12.0f;
+    float            testTonePitchHz  = kTestTonePitchDefault;
+    float            testTonePulseHz  = kTestTonePulseDefault;
+    TestToneWaveform testToneWaveform = TestToneWaveform::Saw;
 };
 
 // Result of XYZ-to-spherical coordinate conversion.
@@ -88,7 +156,7 @@ struct EngineParams {
 struct SphericalCoord {
     float azimuth;    // radians: 0 = front, +PI/2 = right (X=1), clockwise positive
     float elevation;  // radians: +PI/2 = directly above, -PI/2 = directly below
-    float distance;   // normalized Euclidean distance, clamped to [kMinDistance, sqrt(3)]
+    float distance;   // Euclidean distance from origin, floored at kMinDistance
 };
 
 } // namespace xyzpan

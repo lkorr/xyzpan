@@ -2,7 +2,7 @@
 
 namespace xyzpan::dsp {
 
-enum class LFOWaveform { Sine = 0, Triangle, Saw, Square };
+enum class LFOWaveform { Sine = 0, Triangle, Saw, Square, RampDown };
 
 // Phase accumulator LFO with 4 waveforms.
 // Output range: [-1, 1]. Use setRateHz() + tick() pattern.
@@ -22,13 +22,24 @@ public:
     // Set the LFO rate in Hz. Must be called after prepare().
     void setRateHz(float hz);
 
+    // Store a phase offset (normalized [0,1]) added to the accumulator each tick.
+    void setPhaseOffset(float offset);
+
+    // Request a phase reset on the next tick().
+    void requestReset();
+
+    // Return current output in [-1, 1] without advancing the accumulator.
+    float peek() const;
+
     // Advance accumulator and return output in [-1, 1].
     float tick();
 
 private:
-    float  accumulator_ = 0.0f;
-    float  increment_   = 0.0f;
-    double sampleRate_  = 44100.0;
+    float  accumulator_  = 0.0f;
+    float  increment_    = 0.0f;
+    double sampleRate_   = 44100.0;
+    float  phaseOffset_  = 0.0f;
+    bool   resetPending_ = false;
 };
 
 } // namespace xyzpan::dsp

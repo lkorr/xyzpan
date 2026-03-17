@@ -23,7 +23,7 @@ public:
     void mouseExit(const juce::MouseEvent&) override;
 
 private:
-    int waveform_ = 0; // 0=sine, 1=triangle, 2=saw, 3=square
+    int waveform_ = 0; // 0=sine, 1=triangle, 2=saw, 3=square, 4=rampDown
     bool hovered_ = false;
     juce::AudioProcessorParameter* param_ = nullptr;
 

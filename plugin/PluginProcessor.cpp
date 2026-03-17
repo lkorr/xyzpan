@@ -2,11 +2,12 @@
 #include "PluginEditor.h"
 #include "ParamIDs.h"
 #include "xyzpan/Types.h"
+#include "xyzpan/Constants.h"
 #include <cmath>
 
 XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
-                         .withInput("Input",   juce::AudioChannelSet::mono(),   true)
+                         .withInput("Input",   juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "XYZPanState", createParameterLayout()) {
     // Spatial position (Phase 1)
@@ -126,6 +127,109 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(lfoXBeatDivParam  != nullptr);
     jassert(lfoYBeatDivParam  != nullptr);
     jassert(lfoZBeatDivParam  != nullptr);
+
+    // Stereo source node splitting
+    stereoWidthParam        = apvts.getRawParameterValue(ParamID::STEREO_WIDTH);
+    stereoFaceListenerParam = apvts.getRawParameterValue(ParamID::STEREO_FACE_LISTENER);
+    stereoOrbitPhaseParam   = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_PHASE);
+    stereoOrbitOffsetParam  = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_OFFSET);
+
+    jassert(stereoWidthParam        != nullptr);
+    jassert(stereoFaceListenerParam != nullptr);
+    jassert(stereoOrbitPhaseParam   != nullptr);
+    jassert(stereoOrbitOffsetParam  != nullptr);
+
+    // Stereo orbit LFOs — XY
+    orbitXYWaveformParam   = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_WAVEFORM);
+    orbitXYRateParam       = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_RATE);
+    orbitXYBeatDivParam    = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_BEAT_DIV);
+    orbitXYPhaseParam      = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_PHASE);
+    orbitXYResetPhaseParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_RESET_PHASE);
+    orbitXYDepthParam      = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_DEPTH);
+
+    jassert(orbitXYWaveformParam   != nullptr);
+    jassert(orbitXYRateParam       != nullptr);
+    jassert(orbitXYBeatDivParam    != nullptr);
+    jassert(orbitXYPhaseParam      != nullptr);
+    jassert(orbitXYResetPhaseParam != nullptr);
+    jassert(orbitXYDepthParam      != nullptr);
+
+    // Stereo orbit LFOs — XZ
+    orbitXZWaveformParam   = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_WAVEFORM);
+    orbitXZRateParam       = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_RATE);
+    orbitXZBeatDivParam    = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_BEAT_DIV);
+    orbitXZPhaseParam      = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_PHASE);
+    orbitXZResetPhaseParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_RESET_PHASE);
+    orbitXZDepthParam      = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_DEPTH);
+
+    jassert(orbitXZWaveformParam   != nullptr);
+    jassert(orbitXZRateParam       != nullptr);
+    jassert(orbitXZBeatDivParam    != nullptr);
+    jassert(orbitXZPhaseParam      != nullptr);
+    jassert(orbitXZResetPhaseParam != nullptr);
+    jassert(orbitXZDepthParam      != nullptr);
+
+    // Stereo orbit LFOs — YZ
+    orbitYZWaveformParam   = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_WAVEFORM);
+    orbitYZRateParam       = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_RATE);
+    orbitYZBeatDivParam    = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_BEAT_DIV);
+    orbitYZPhaseParam      = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_PHASE);
+    orbitYZResetPhaseParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_RESET_PHASE);
+    orbitYZDepthParam      = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_DEPTH);
+
+    jassert(orbitYZWaveformParam   != nullptr);
+    jassert(orbitYZRateParam       != nullptr);
+    jassert(orbitYZBeatDivParam    != nullptr);
+    jassert(orbitYZPhaseParam      != nullptr);
+    jassert(orbitYZResetPhaseParam != nullptr);
+    jassert(orbitYZDepthParam      != nullptr);
+
+    // Stereo orbit shared
+    orbitTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_TEMPO_SYNC);
+    orbitSpeedMulParam  = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_SPEED_MUL);
+
+    jassert(orbitTempoSyncParam != nullptr);
+    jassert(orbitSpeedMulParam  != nullptr);
+
+    // Dev panel: Presence shelf
+    presenceShelfFreqParam  = apvts.getRawParameterValue(ParamID::PRESENCE_SHELF_FREQ_HZ);
+    presenceShelfMaxDbParam = apvts.getRawParameterValue(ParamID::PRESENCE_SHELF_MAX_DB);
+
+    jassert(presenceShelfFreqParam  != nullptr);
+    jassert(presenceShelfMaxDbParam != nullptr);
+
+    // Dev panel: Ear canal resonance
+    earCanalFreqParam  = apvts.getRawParameterValue(ParamID::EAR_CANAL_FREQ_HZ);
+    earCanalQParam     = apvts.getRawParameterValue(ParamID::EAR_CANAL_Q);
+    earCanalMaxDbParam = apvts.getRawParameterValue(ParamID::EAR_CANAL_MAX_DB);
+
+    jassert(earCanalFreqParam  != nullptr);
+    jassert(earCanalQParam     != nullptr);
+    jassert(earCanalMaxDbParam != nullptr);
+
+    // Dev panel: Aux send
+    auxSendGainMaxDbParam = apvts.getRawParameterValue(ParamID::AUX_SEND_GAIN_MAX_DB);
+    jassert(auxSendGainMaxDbParam != nullptr);
+
+    // Dev panel: Geometry
+    sphereRadiusParam      = apvts.getRawParameterValue(ParamID::SPHERE_RADIUS);
+    vertMonoCylRadiusParam = apvts.getRawParameterValue(ParamID::VERT_MONO_CYLINDER_RADIUS);
+
+    jassert(sphereRadiusParam      != nullptr);
+    jassert(vertMonoCylRadiusParam != nullptr);
+
+    // Dev panel: Test tone
+    testToneEnabledParam  = apvts.getRawParameterValue(ParamID::TEST_TONE_ENABLED);
+    testToneGainDbParam   = apvts.getRawParameterValue(ParamID::TEST_TONE_GAIN_DB);
+    testTonePitchHzParam  = apvts.getRawParameterValue(ParamID::TEST_TONE_PITCH_HZ);
+    testTonePulseHzParam  = apvts.getRawParameterValue(ParamID::TEST_TONE_PULSE_HZ);
+    testToneWaveformParam = apvts.getRawParameterValue(ParamID::TEST_TONE_WAVEFORM);
+
+    jassert(testToneEnabledParam  != nullptr);
+    jassert(testToneGainDbParam   != nullptr);
+    jassert(testTonePitchHzParam  != nullptr);
+    jassert(testTonePulseHzParam  != nullptr);
+    jassert(testToneWaveformParam != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -141,10 +245,12 @@ void XYZPanProcessor::releaseResources() {
 }
 
 bool XYZPanProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-    // XYZPan requires exactly mono input and stereo output.
-    if (layouts.getMainInputChannelSet()  != juce::AudioChannelSet::mono())   return false;
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) return false;
-    return true;
+    // Accept both mono and stereo input (engine handles both via numInputChannels).
+    // Stereo input required for stereo source node splitting (width > 0).
+    const auto& in = layouts.getMainInputChannelSet();
+    if (in != juce::AudioChannelSet::mono() && in != juce::AudioChannelSet::stereo())
+        return false;
+    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
 void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
@@ -213,12 +319,78 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.lfoZPhase     = lfoZPhaseParam->load();
     params.lfoZWaveform  = static_cast<int>(std::round(lfoZWaveformParam->load()));
     params.lfoTempoSync  = lfoTempoSyncParam->load() >= 0.5f;
-    params.lfoXBeatDiv   = lfoXBeatDivParam->load();
-    params.lfoYBeatDiv   = lfoYBeatDivParam->load();
-    params.lfoZBeatDiv   = lfoZBeatDivParam->load();
+
+    // Beat div params are AudioParameterChoice — raw value is the choice index (0–10).
+    // Convert to float multiplier via kBeatDivValues lookup.
+    auto beatDivFromChoice = [](float rawIndex) -> float {
+        int idx = juce::jlimit(0, xyzpan::kBeatDivCount - 1,
+                               static_cast<int>(std::round(rawIndex)));
+        return xyzpan::kBeatDivValues[idx];
+    };
+    params.lfoXBeatDiv   = beatDivFromChoice(lfoXBeatDivParam->load());
+    params.lfoYBeatDiv   = beatDivFromChoice(lfoYBeatDivParam->load());
+    params.lfoZBeatDiv   = beatDivFromChoice(lfoZBeatDivParam->load());
     // Note: lfoXPhase (and Y/Z) are snapshotted but the engine applies them as initial
     // accumulator offsets only via lfoX_.reset() in Engine::reset(). Live phase changes
     // in a running LFO are not applied per-block — intentional for v1 (no phase-jump clicks).
+
+    // Stereo source node splitting
+    params.stereoWidth        = stereoWidthParam->load();
+    params.stereoFaceListener = stereoFaceListenerParam->load() >= 0.5f;
+    params.stereoOrbitPhase   = stereoOrbitPhaseParam->load();
+    params.stereoOrbitOffset  = stereoOrbitOffsetParam->load();
+
+    // Stereo orbit LFOs — XY
+    params.stereoOrbitXYWaveform   = static_cast<int>(std::round(orbitXYWaveformParam->load()));
+    params.stereoOrbitXYRate       = orbitXYRateParam->load();
+    params.stereoOrbitXYBeatDiv    = beatDivFromChoice(orbitXYBeatDivParam->load());
+    params.stereoOrbitXYPhase      = orbitXYPhaseParam->load();
+    params.stereoOrbitXYResetPhase = orbitXYResetPhaseParam->load() >= 0.5f;
+    params.stereoOrbitXYDepth      = orbitXYDepthParam->load();
+
+    // Stereo orbit LFOs — XZ
+    params.stereoOrbitXZWaveform   = static_cast<int>(std::round(orbitXZWaveformParam->load()));
+    params.stereoOrbitXZRate       = orbitXZRateParam->load();
+    params.stereoOrbitXZBeatDiv    = beatDivFromChoice(orbitXZBeatDivParam->load());
+    params.stereoOrbitXZPhase      = orbitXZPhaseParam->load();
+    params.stereoOrbitXZResetPhase = orbitXZResetPhaseParam->load() >= 0.5f;
+    params.stereoOrbitXZDepth      = orbitXZDepthParam->load();
+
+    // Stereo orbit LFOs — YZ
+    params.stereoOrbitYZWaveform   = static_cast<int>(std::round(orbitYZWaveformParam->load()));
+    params.stereoOrbitYZRate       = orbitYZRateParam->load();
+    params.stereoOrbitYZBeatDiv    = beatDivFromChoice(orbitYZBeatDivParam->load());
+    params.stereoOrbitYZPhase      = orbitYZPhaseParam->load();
+    params.stereoOrbitYZResetPhase = orbitYZResetPhaseParam->load() >= 0.5f;
+    params.stereoOrbitYZDepth      = orbitYZDepthParam->load();
+
+    // Stereo orbit shared
+    params.stereoOrbitTempoSync = orbitTempoSyncParam->load() >= 0.5f;
+    params.stereoOrbitSpeedMul  = orbitSpeedMulParam->load();
+
+    // Dev panel: Presence shelf
+    params.presenceShelfFreqHz = presenceShelfFreqParam->load();
+    params.presenceShelfMaxDb  = presenceShelfMaxDbParam->load();
+
+    // Dev panel: Ear canal resonance
+    params.earCanalFreqHz = earCanalFreqParam->load();
+    params.earCanalQ      = earCanalQParam->load();
+    params.earCanalMaxDb  = earCanalMaxDbParam->load();
+
+    // Dev panel: Aux send
+    params.auxSendGainMaxDb = auxSendGainMaxDbParam->load();
+
+    // Dev panel: Geometry
+    params.sphereRadius           = sphereRadiusParam->load();
+    params.vertMonoCylinderRadius = vertMonoCylRadiusParam->load();
+
+    // Dev panel: Test tone
+    params.testToneEnabled  = testToneEnabledParam->load() >= 0.5f;
+    params.testToneGainDb   = testToneGainDbParam->load();
+    params.testTonePitchHz  = testTonePitchHzParam->load();
+    params.testTonePulseHz  = testTonePulseHzParam->load();
+    params.testToneWaveform = static_cast<xyzpan::TestToneWaveform>(
+        static_cast<int>(std::round(testToneWaveformParam->load())));
 
     // Phase 5: Read host BPM for LFO tempo sync (LFO-05)
     if (auto* ph = getPlayHead()) {
@@ -244,7 +416,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     float* outR = buffer.getWritePointer(1);
 
     engine.setParams(params);
-    engine.process(inputs, numIn, outL, outR, buffer.getNumSamples());
+    engine.process(inputs, numIn, outL, outR, nullptr, nullptr, buffer.getNumSamples());
 
     // Phase 6: update PositionBridge with last modulated position (UI-07)
     // Written here on audio thread; XYZPanGLView reads it on GL thread via bridge_.read()
@@ -254,7 +426,19 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     snap.y = mp.y;
     snap.z = mp.z;
     snap.distance = std::sqrt(mp.x * mp.x + mp.y * mp.y + mp.z * mp.z);
+
+    // Stereo node positions for GL rendering
+    auto sn = engine.getLastStereoNodes();
+    snap.lNodeX = sn.lx;  snap.lNodeY = sn.ly;  snap.lNodeZ = sn.lz;
+    snap.rNodeX = sn.rx;  snap.rNodeY = sn.ry;  snap.rNodeZ = sn.rz;
+    snap.stereoWidth = sn.width;
+
+    snap.sphereRadius = sphereRadiusParam->load();
+
     positionBridge.write(snap);
+
+    // DSP state bridge for dev panel readouts
+    dspStateBridge.write(engine.getLastDSPState());
 }
 
 juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {

@@ -91,7 +91,7 @@ static StereoOut settleAndProcess(const EngineParams& params,
         int offset = 0;
         while (offset < settleN) {
             int batch = std::min(kTestBlockSize, settleN - offset);
-            engine.process(ins, 1, silL.data() + offset, silR.data() + offset, batch);
+            engine.process(ins, 1, silL.data() + offset, silR.data() + offset, nullptr, nullptr, batch);
             ins[0] += batch;
             offset += batch;
         }
@@ -107,7 +107,7 @@ static StereoOut settleAndProcess(const EngineParams& params,
     int offset = 0;
     while (offset < N) {
         int batch = std::min(kTestBlockSize, N - offset);
-        engine.process(ins, 1, out.L.data() + offset, out.R.data() + offset, batch);
+        engine.process(ins, 1, out.L.data() + offset, out.R.data() + offset, nullptr, nullptr, batch);
         ins[0] += batch;
         offset += batch;
     }
@@ -339,7 +339,7 @@ TEST_CASE("DIST-04: Doppler pitch shift during distance change", "[distance][DIS
         int off = 0;
         while (off < 4096) {
             int b = std::min(kTestBlockSize, 4096 - off);
-            engine.process(ins, 1, silL.data() + off, silR.data() + off, b);
+            engine.process(ins, 1, silL.data() + off, silR.data() + off, nullptr, nullptr, b);
             ins[0] += b;
             off += b;
         }
@@ -355,7 +355,7 @@ TEST_CASE("DIST-04: Doppler pitch shift during distance change", "[distance][DIS
         p.y = kMinDistance + (1.0f - kMinDistance) * t;
         engine.setParams(p);
         const float* ins[1] = { sine1k.data() + offset };
-        engine.process(ins, 1, rampL.data() + offset, rampR.data() + offset, batch);
+        engine.process(ins, 1, rampL.data() + offset, rampR.data() + offset, nullptr, nullptr, batch);
         offset += batch;
     }
 
@@ -449,7 +449,7 @@ TEST_CASE("DIST-06: Stability at extreme parameters", "[distance][DIST-06]") {
         engine.setParams(p);
 
         const float* ins[1] = { noise.data() + offset };
-        engine.process(ins, 1, outL.data() + offset, outR.data() + offset, batch);
+        engine.process(ins, 1, outL.data() + offset, outR.data() + offset, nullptr, nullptr, batch);
         offset += batch;
         ++blockIndex;
     }

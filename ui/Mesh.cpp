@@ -59,6 +59,72 @@ SphereGeometry buildUnitSphere(int stacks, int slices)
 }
 
 // ---------------------------------------------------------------------------
+// buildCone — solid cone along +Y axis (base at Y=0, tip at Y=height)
+// ---------------------------------------------------------------------------
+SphereGeometry buildCone(float baseRadius, float height, int slices)
+{
+    SphereGeometry geo;
+
+    // Tip vertex (index 0): position + normal pointing up
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(height);
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(1.0f);
+    geo.vertices.push_back(0.0f);
+
+    // Side slope for normals: rise = baseRadius, run = height
+    const float slopeLen = std::sqrt(baseRadius * baseRadius + height * height);
+    const float ny = baseRadius / slopeLen;  // outward component along Y
+    const float nr = height / slopeLen;      // outward component radially
+
+    // Base ring vertices (indices 1..slices)
+    for (int i = 0; i < slices; ++i) {
+        const float theta = 2.0f * 3.14159265f * float(i) / float(slices);
+        const float cosT = std::cos(theta);
+        const float sinT = std::sin(theta);
+
+        // position on base circle
+        geo.vertices.push_back(baseRadius * cosT);
+        geo.vertices.push_back(0.0f);
+        geo.vertices.push_back(baseRadius * sinT);
+        // outward-facing normal for smooth shading
+        geo.vertices.push_back(nr * cosT);
+        geo.vertices.push_back(ny);
+        geo.vertices.push_back(nr * sinT);
+    }
+
+    // Centre of base (index slices+1): for base cap
+    const unsigned baseCenterIdx = static_cast<unsigned>(slices + 1);
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(0.0f);
+    geo.vertices.push_back(-1.0f);
+    geo.vertices.push_back(0.0f);
+
+    // Side triangles: tip (0) → ring[i] → ring[i+1]
+    for (int i = 0; i < slices; ++i) {
+        const unsigned cur  = static_cast<unsigned>(1 + i);
+        const unsigned next = static_cast<unsigned>(1 + (i + 1) % slices);
+        geo.indices.push_back(0);
+        geo.indices.push_back(cur);
+        geo.indices.push_back(next);
+    }
+
+    // Base cap triangles: baseCenterIdx → ring[i+1] → ring[i] (reversed winding for downward normal)
+    for (int i = 0; i < slices; ++i) {
+        const unsigned cur  = static_cast<unsigned>(1 + i);
+        const unsigned next = static_cast<unsigned>(1 + (i + 1) % slices);
+        geo.indices.push_back(baseCenterIdx);
+        geo.indices.push_back(next);
+        geo.indices.push_back(cur);
+    }
+
+    return geo;
+}
+
+// ---------------------------------------------------------------------------
 // buildRoomWireframe — 12 edges of a box
 // ---------------------------------------------------------------------------
 std::vector<float> buildRoomWireframe(float halfSize)

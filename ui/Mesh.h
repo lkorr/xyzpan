@@ -22,6 +22,11 @@ struct SphereGeometry {
 // Typical: stacks=16, slices=16 for smooth appearance at small sizes.
 SphereGeometry buildUnitSphere(int stacks, int slices);
 
+// Build a cone (for forward direction indicator) along +Y axis.
+// baseRadius = radius at Y=0, height = extent along +Y.
+// Returns same format as SphereGeometry (interleaved pos+normal, indexed).
+SphereGeometry buildCone(float baseRadius, float height, int slices);
+
 // Build a box wireframe (12 edges of a cube) centred at origin.
 // halfSize controls the half-extent of the box on each axis.
 // Returns [x,y,z] flat vertex list — each pair of consecutive vertices is one edge.

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "xyzpan/Engine.h"
+#include "xyzpan/DSPStateBridge.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
 #include "ParamLayout.h"
 #include "PositionBridge.h"
@@ -43,6 +44,9 @@ public:
     // Phase 6: PositionBridge for audio-to-GL position transfer (UI-07)
     // Public so XYZPanEditor / XYZPanGLView can hold a reference
     xyzpan::PositionBridge positionBridge;
+
+    // DSP state bridge for dev panel readouts (audio thread → UI thread)
+    xyzpan::DSPStateBridge dspStateBridge;
 
 private:
     xyzpan::XYZPanEngine engine;
@@ -113,6 +117,63 @@ private:
     std::atomic<float>* lfoXBeatDivParam  = nullptr;
     std::atomic<float>* lfoYBeatDivParam  = nullptr;
     std::atomic<float>* lfoZBeatDivParam  = nullptr;
+
+    // Stereo source node splitting
+    std::atomic<float>* stereoWidthParam        = nullptr;
+    std::atomic<float>* stereoFaceListenerParam = nullptr;
+    std::atomic<float>* stereoOrbitPhaseParam    = nullptr;
+    std::atomic<float>* stereoOrbitOffsetParam   = nullptr;
+
+    // Stereo orbit LFOs — XY plane
+    std::atomic<float>* orbitXYWaveformParam   = nullptr;
+    std::atomic<float>* orbitXYRateParam       = nullptr;
+    std::atomic<float>* orbitXYBeatDivParam    = nullptr;
+    std::atomic<float>* orbitXYPhaseParam      = nullptr;
+    std::atomic<float>* orbitXYResetPhaseParam = nullptr;
+    std::atomic<float>* orbitXYDepthParam      = nullptr;
+
+    // Stereo orbit LFOs — XZ plane
+    std::atomic<float>* orbitXZWaveformParam   = nullptr;
+    std::atomic<float>* orbitXZRateParam       = nullptr;
+    std::atomic<float>* orbitXZBeatDivParam    = nullptr;
+    std::atomic<float>* orbitXZPhaseParam      = nullptr;
+    std::atomic<float>* orbitXZResetPhaseParam = nullptr;
+    std::atomic<float>* orbitXZDepthParam      = nullptr;
+
+    // Stereo orbit LFOs — YZ plane
+    std::atomic<float>* orbitYZWaveformParam   = nullptr;
+    std::atomic<float>* orbitYZRateParam       = nullptr;
+    std::atomic<float>* orbitYZBeatDivParam    = nullptr;
+    std::atomic<float>* orbitYZPhaseParam      = nullptr;
+    std::atomic<float>* orbitYZResetPhaseParam = nullptr;
+    std::atomic<float>* orbitYZDepthParam      = nullptr;
+
+    // Stereo orbit shared
+    std::atomic<float>* orbitTempoSyncParam = nullptr;
+    std::atomic<float>* orbitSpeedMulParam  = nullptr;
+
+    // Dev panel: Presence shelf
+    std::atomic<float>* presenceShelfFreqParam = nullptr;
+    std::atomic<float>* presenceShelfMaxDbParam = nullptr;
+
+    // Dev panel: Ear canal resonance
+    std::atomic<float>* earCanalFreqParam  = nullptr;
+    std::atomic<float>* earCanalQParam     = nullptr;
+    std::atomic<float>* earCanalMaxDbParam = nullptr;
+
+    // Dev panel: Aux send
+    std::atomic<float>* auxSendGainMaxDbParam = nullptr;
+
+    // Dev panel: Geometry
+    std::atomic<float>* sphereRadiusParam       = nullptr;
+    std::atomic<float>* vertMonoCylRadiusParam  = nullptr;
+
+    // Dev panel: Test tone
+    std::atomic<float>* testToneEnabledParam  = nullptr;
+    std::atomic<float>* testToneGainDbParam   = nullptr;
+    std::atomic<float>* testTonePitchHzParam  = nullptr;
+    std::atomic<float>* testTonePulseHzParam  = nullptr;
+    std::atomic<float>* testToneWaveformParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

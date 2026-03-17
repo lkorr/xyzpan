@@ -14,7 +14,7 @@ void LFOWaveformButton::setParam(juce::AudioProcessorValueTreeState& apvts,
     if (param_ != nullptr) {
         // Sync display from current value
         waveform_ = static_cast<int>(std::round(
-            param_->getValue() * 3.0f));  // normalized [0,1] -> [0,3]
+            param_->getValue() * 4.0f));  // normalized [0,1] -> [0,4]
         repaint();
     }
 }
@@ -23,7 +23,7 @@ void LFOWaveformButton::parameterChanged()
 {
     if (param_ != nullptr) {
         waveform_ = static_cast<int>(std::round(
-            param_->getValue() * 3.0f));
+            param_->getValue() * 4.0f));
         repaint();
     }
 }
@@ -39,6 +39,8 @@ float LFOWaveformButton::computeWaveformY(float t, int waveform)
             return 2.0f * t - 1.0f;
         case 3: // Square
             return t < 0.5f ? 1.0f : -1.0f;
+        case 4: // Ramp Down
+            return 1.0f - 2.0f * t;
         default:
             return 0.0f;
     }
@@ -96,12 +98,12 @@ void LFOWaveformButton::mouseUp(const juce::MouseEvent&)
 {
     if (param_ == nullptr) return;
 
-    // Advance waveform (0→1→2→3→0)
-    waveform_ = (waveform_ + 1) % 4;
+    // Advance waveform (0→1→2→3→4→0)
+    waveform_ = (waveform_ + 1) % 5;
 
-    // Map back to normalized [0,1] for a param with range [0,3]
+    // Map back to normalized [0,1] for a param with range [0,4]
     // AudioProcessorParameter::setValue() takes normalized value
-    const float normalized = static_cast<float>(waveform_) / 3.0f;
+    const float normalized = static_cast<float>(waveform_) / 4.0f;
     param_->setValueNotifyingHost(normalized);
 
     repaint();

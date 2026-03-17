@@ -230,7 +230,7 @@ static void settle(XYZPanEngine& eng, const EngineParams& params, int samples = 
     std::vector<float> outL(static_cast<size_t>(samples));
     std::vector<float> outR(static_cast<size_t>(samples));
     const float* ins[1] = { silence.data() };
-    eng.process(ins, 1, outL.data(), outR.data(), samples);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, samples);
 }
 
 TEST_CASE("Engine ITD center: X=0 produces identical L and R output", "[Integration][ITD]") {
@@ -248,7 +248,7 @@ TEST_CASE("Engine ITD center: X=0 produces identical L and R output", "[Integrat
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { input.data() };
     eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     // At X=0: L and R should be identical
     for (int i = 0; i < N; ++i) {
@@ -273,7 +273,7 @@ TEST_CASE("Engine ITD delay: X=-1 delays right ear relative to left", "[Integrat
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { input.data() };
     eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     // Find peak positions
     int peakL = 0, peakR = 0;
@@ -303,7 +303,7 @@ TEST_CASE("Engine ITD delay: X=+1 delays left ear relative to right", "[Integrat
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { input.data() };
     eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     int peakL = 0, peakR = 0;
     float maxL = 0.0f, maxR = 0.0f;
@@ -337,7 +337,7 @@ TEST_CASE("Engine head shadow: X=1 far ear (left) has less HF than near ear (rig
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { noise.data() };
     eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     // Measure RMS energy ratio L/R (far ear L should be quieter due to ILD and head shadow)
     float rmsL = 0.0f, rmsR = 0.0f;
@@ -370,7 +370,7 @@ TEST_CASE("Engine ILD: X=1 close distance, left ear has lower RMS than right", "
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { noise.data() };
     eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     float rmsL = 0.0f, rmsR = 0.0f;
     for (int i = 512; i < N; ++i) {
@@ -437,7 +437,7 @@ TEST_CASE("Engine rear shadow: Y=-1 has less HF than Y=+1", "[Integration]") {
     {
         const float* ins[1] = { noise.data() };
         eng.setParams(pFront);
-        eng.process(ins, 1, outL_front.data(), outR_front.data(), N);
+        eng.process(ins, 1, outL_front.data(), outR_front.data(), nullptr, nullptr, N);
     }
 
     // Reset and process with Y=-1 (rear)
@@ -449,7 +449,7 @@ TEST_CASE("Engine rear shadow: Y=-1 has less HF than Y=+1", "[Integration]") {
     {
         const float* ins[1] = { noise.data() };
         eng.setParams(pRear);
-        eng.process(ins, 1, outL_rear.data(), outR_rear.data(), N);
+        eng.process(ins, 1, outL_rear.data(), outR_rear.data(), nullptr, nullptr, N);
     }
 
     // Measure overall RMS: rear output should have less energy (more LPF applied)
@@ -491,7 +491,7 @@ TEST_CASE("Engine automation sweep: no NaN, no amplitude spikes", "[Integration]
         eng.setParams(p);
 
         const float* ins[1] = { noise.data() + offset };
-        eng.process(ins, 1, outL.data() + offset, outR.data() + offset, thisBatch);
+        eng.process(ins, 1, outL.data() + offset, outR.data() + offset, nullptr, nullptr, thisBatch);
         offset += thisBatch;
     }
 
@@ -524,7 +524,7 @@ TEST_CASE("Engine mono to stereo: X=0.5 produces L != R", "[Integration][PAN-03]
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { noise.data() };
     eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     // L and R should differ (spatial panning applied)
     float diffSum = 0.0f;
@@ -553,7 +553,7 @@ TEST_CASE("Engine reset clears state: silence after reset", "[Integration]") {
 
     std::vector<float> outL(N), outR(N);
     const float* ins[1] = { noise.data() };
-    eng.process(ins, 1, outL.data(), outR.data(), N);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     // Now reset
     eng.reset();
@@ -563,7 +563,7 @@ TEST_CASE("Engine reset clears state: silence after reset", "[Integration]") {
     std::vector<float> outL2(N), outR2(N);
     const float* silIns[1] = { silence.data() };
     eng.setParams(p);
-    eng.process(silIns, 1, outL2.data(), outR2.data(), N);
+    eng.process(silIns, 1, outL2.data(), outR2.data(), nullptr, nullptr, N);
 
     // Output should be silence (no ringing from delay lines or filters)
     float maxAbs = 0.0f;
@@ -600,7 +600,7 @@ TEST_CASE("Engine smoothing time change: slower smoothMs takes more samples to r
         input[0] = 1.0f;
         std::vector<float> outL(N), outR(N);
         const float* ins[1] = { input.data() };
-        eng.process(ins, 1, outL.data(), outR.data(), N);
+        eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
         // Find peak in R (delayed by ITD when X=1, left ear far, no -- wait:
         // X=1 means left ear is far and delayed. So look at outL for the delayed impulse.

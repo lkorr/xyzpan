@@ -89,7 +89,7 @@ static StereoOut settleAndProcess(const EngineParams& params,
         int offset = 0;
         while (offset < settleN) {
             int batch = std::min(kTestBlockSize, settleN - offset);
-            engine.process(ins, 1, silL.data() + offset, silR.data() + offset, batch);
+            engine.process(ins, 1, silL.data() + offset, silR.data() + offset, nullptr, nullptr, batch);
             ins[0] += batch;
             offset += batch;
         }
@@ -105,7 +105,7 @@ static StereoOut settleAndProcess(const EngineParams& params,
     int offset = 0;
     while (offset < N) {
         int batch = std::min(kTestBlockSize, N - offset);
-        engine.process(ins, 1, out.L.data() + offset, out.R.data() + offset, batch);
+        engine.process(ins, 1, out.L.data() + offset, out.R.data() + offset, nullptr, nullptr, batch);
         ins[0] += batch;
         offset += batch;
     }
@@ -315,7 +315,7 @@ TEST_CASE("VERB-04: FDN stability at decay=1.0 over 100000 samples", "[VERB-04]"
         }
 
         const float* ins[1] = { input.data() };
-        engine.process(ins, 1, outL.data(), outR.data(), batch);
+        engine.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, batch);
 
         // Check for NaN/Inf
         for (int i = 0; i < batch; ++i) {
@@ -563,7 +563,7 @@ TEST_CASE("LFO-03: LFO rate, depth via engine, and phase offset", "[LFO-03]") {
         int offset = 0;
         while (offset < N) {
             int batch = std::min(512, N - offset);
-            engine.process(ins, 1, outL.data() + offset, outR.data() + offset, batch);
+            engine.process(ins, 1, outL.data() + offset, outR.data() + offset, nullptr, nullptr, batch);
             ins[0] += batch;
             offset += batch;
         }

@@ -2,6 +2,7 @@
 #include <juce_opengl/juce_opengl.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <vector>
+#include <array>
 
 // GLM — orbit camera math
 #include <glm/glm.hpp>
@@ -12,6 +13,54 @@
 #include "PositionBridge.h"
 
 namespace xyzpan {
+
+// ---------------------------------------------------------------------------
+// TrailBuffer — circular buffer of world-space positions for time-fading trails.
+// Points fade to transparent based on age, not buffer position.
+// ---------------------------------------------------------------------------
+struct TrailBuffer {
+    static constexpr int kCapacity = 48;
+    static constexpr float kMinPushDist = 0.003f;
+    static constexpr float kTrailLifetime = 0.8f;  // seconds before fully faded
+
+    void push(const glm::vec3& pos, double timeSeconds) {
+        if (count_ > 0) {
+            const glm::vec3 diff = pos - positions_[head_];
+            if (glm::dot(diff, diff) < kMinPushDist * kMinPushDist)
+                return;
+        }
+        head_ = (head_ + 1) % kCapacity;
+        positions_[head_] = pos;
+        timestamps_[head_] = timeSeconds;
+        if (count_ < kCapacity) ++count_;
+    }
+
+    void clear() { count_ = 0; head_ = 0; }
+
+    // Write interleaved [x, y, z, alpha] newest-to-oldest into out.
+    // Drops points older than kTrailLifetime. Returns number of points written.
+    int fillVertexData(float* out, double nowSeconds) const {
+        int written = 0;
+        for (int i = 0; i < count_; ++i) {
+            const int idx = (head_ - i + kCapacity) % kCapacity;
+            const float age = static_cast<float>(nowSeconds - timestamps_[idx]);
+            if (age >= kTrailLifetime) break;  // older points are even older, stop
+            const float alpha = 1.0f - age / kTrailLifetime;
+            out[written * 4 + 0] = positions_[idx].x;
+            out[written * 4 + 1] = positions_[idx].y;
+            out[written * 4 + 2] = positions_[idx].z;
+            out[written * 4 + 3] = alpha;
+            ++written;
+        }
+        return written;
+    }
+
+private:
+    std::array<glm::vec3, kCapacity> positions_{};
+    std::array<double, kCapacity> timestamps_{};
+    int head_  = 0;
+    int count_ = 0;
+};
 
 // ---------------------------------------------------------------------------
 // XYZPanGLView — OpenGL 3.2 Core spatial visualization component.
@@ -53,6 +102,8 @@ public:
     void mouseDrag(const juce::MouseEvent& e)  override;
     void mouseUp(const juce::MouseEvent& e)    override;
     void mouseMove(const juce::MouseEvent& e)  override;
+    void mouseWheelMove(const juce::MouseEvent& e,
+                        const juce::MouseWheelDetails& wheel) override;
 
     // Called by snap buttons in XYZPanEditor
     using SnapView = Camera::SnapView;
@@ -70,6 +121,9 @@ private:
     // Upload sphere geometry (interleaved pos+normal) with index buffer
     void uploadSphereVAO();
 
+    // Upload cone geometry (interleaved pos+normal) with index buffer
+    void uploadConeVAO();
+
     // Draw call helpers
     void drawLines(GLuint vao, int vertexCount,
                    const glm::vec3& color, float opacity,
@@ -77,6 +131,12 @@ private:
 
     void drawSphere(const glm::vec3& position, float radius,
                     const glm::vec3& color, float opacity);
+
+    // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
+    void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
+
+    // Draw the cone with an arbitrary model matrix (reuses sphere shader)
+    void drawCone(const glm::mat4& model, const glm::vec3& color, float opacity);
 
     // Project a 3D world position to screen (pixel) coordinates
     glm::vec2 projectToScreen(const glm::vec3& worldPos) const;
@@ -88,12 +148,17 @@ private:
     void computeDragDelta(const juce::Point<int>& screenDelta,
                           float& outDX, float& outDY, float& outDZ);
 
+    // Draw a fading trail from a TrailBuffer
+    void drawTrail(TrailBuffer& trail, GLuint vao, GLuint vbo,
+                   const glm::vec3& color, float baseOpacity, double nowSeconds);
+
     // ------------------------------------------------------------------
     // GL context and shaders
     // ------------------------------------------------------------------
     juce::OpenGLContext glContext_;
     std::unique_ptr<juce::OpenGLShaderProgram> lineShader_;
     std::unique_ptr<juce::OpenGLShaderProgram> sphereShader_;
+    std::unique_ptr<juce::OpenGLShaderProgram> trailShader_;
 
     // ------------------------------------------------------------------
     // GL resource handles (GLuint is a global typedef from GL headers)
@@ -102,13 +167,26 @@ private:
     GLuint vaoGrid_   = 0, vboGrid_   = 0;
     GLuint vaoSphere_ = 0, vboSphere_ = 0, iboSphere_ = 0;
 
+    GLuint vaoCone_ = 0, vboCone_ = 0, iboCone_ = 0;
+
+    GLuint vaoTrailSource_ = 0, vboTrailSource_ = 0;
+    GLuint vaoTrailL_      = 0, vboTrailL_      = 0;
+    GLuint vaoTrailR_      = 0, vboTrailR_      = 0;
+
     int roomVertexCount_   = 0;
     int gridVertexCount_   = 0;
     int sphereIndexCount_  = 0;
+    int coneIndexCount_    = 0;
 
     // Cached geometry
     std::vector<float>    sphereVerts_;
     std::vector<unsigned> sphereIdx_;
+    std::vector<float>    coneVerts_;
+    std::vector<unsigned> coneIdx_;
+
+    // Trail buffers and CPU staging
+    TrailBuffer trailSource_, trailL_, trailR_;
+    std::array<float, TrailBuffer::kCapacity * 4> trailVertexStaging_{};
 
     // ------------------------------------------------------------------
     // Camera and projection

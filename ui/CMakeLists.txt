@@ -13,6 +13,7 @@ add_library(xyzpan_ui STATIC
 
 target_include_directories(xyzpan_ui
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../engine/include
 )
 
 target_link_libraries(xyzpan_ui

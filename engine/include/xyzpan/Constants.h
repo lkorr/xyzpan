@@ -6,8 +6,9 @@ namespace xyzpan {
 // azimuth/elevation when the source is placed at or near the listener position.
 constexpr float kMinDistance = 0.1f;
 
-// Base parameter range for XYZ inputs. UI knobs and mouse drag stay within
-// [-1, 1], but LFO modulation can push effective coordinates beyond this range.
+// Base parameter range for XYZ inputs. UI knobs and mouse drag clamp to
+// [-1, 1], but LFO modulation can push effective coordinates to [-2, 2].
+// This constant defines the base range only — it is NOT a hard DSP clamp.
 constexpr float kMaxInputXYZ = 1.0f;
 
 // ============================================================================
@@ -212,6 +213,19 @@ constexpr float kLFOMaxDepth      = 1.0f;   // max depth = full ±1 axis swing
 constexpr float kLFOSpeedMulMin     = 0.0f;
 constexpr float kLFOSpeedMulMax     = 2.0f;
 constexpr float kLFOSpeedMulDefault = 1.0f;
+
+// Beat division discrete values for tempo-synced LFOs
+// Index 6 ("1") = quarter note = default
+constexpr int   kBeatDivCount        = 11;
+constexpr int   kBeatDivDefaultIndex = 6;
+constexpr float kBeatDivValues[kBeatDivCount] = {
+    0.0625f, 0.125f, 0.25f, 0.3333f, 0.5f,
+    0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f
+};
+constexpr const char* kBeatDivLabels[kBeatDivCount] = {
+    "1/16", "1/8", "1/4", "1/3", "1/2",
+    "3/4", "1", "1.5", "2", "3", "4"
+};
 
 // ============================================================================
 // ============================================================================

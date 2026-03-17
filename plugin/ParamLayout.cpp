@@ -251,9 +251,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_PHASE, 1}, "LFO X Phase",
         NR(0.0f, 1.0f, 0.001f), 0.0f));
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_WAVEFORM, 1}, "LFO X Waveform",
-        NR(0.0f, 3.0f, 1.0f), 0.0f));
-    layout.add(std::make_unique<APF>(PID{ParamID::LFO_X_BEAT_DIV, 1}, "LFO X Beat Div",
-        NR(0.125f, 8.0f, 0.125f), 1.0f));
+        NR(0.0f, 4.0f, 1.0f), 0.0f));
+    {
+        juce::StringArray divLabels;
+        for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
+            divLabels.add(xyzpan::kBeatDivLabels[i]);
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            PID{ParamID::LFO_X_BEAT_DIV, 2}, "LFO X Beat Div",
+            divLabels, xyzpan::kBeatDivDefaultIndex));
+    }
 
     // Y axis
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_RATE, 1}, "LFO Y Rate (Hz)",
@@ -263,9 +269,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_PHASE, 1}, "LFO Y Phase",
         NR(0.0f, 1.0f, 0.001f), 0.0f));
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_WAVEFORM, 1}, "LFO Y Waveform",
-        NR(0.0f, 3.0f, 1.0f), 0.0f));
-    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Y_BEAT_DIV, 1}, "LFO Y Beat Div",
-        NR(0.125f, 8.0f, 0.125f), 1.0f));
+        NR(0.0f, 4.0f, 1.0f), 0.0f));
+    {
+        juce::StringArray divLabels;
+        for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
+            divLabels.add(xyzpan::kBeatDivLabels[i]);
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            PID{ParamID::LFO_Y_BEAT_DIV, 2}, "LFO Y Beat Div",
+            divLabels, xyzpan::kBeatDivDefaultIndex));
+    }
 
     // Z axis
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_RATE, 1}, "LFO Z Rate (Hz)",
@@ -275,13 +287,151 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_PHASE, 1}, "LFO Z Phase",
         NR(0.0f, 1.0f, 0.001f), 0.0f));
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_WAVEFORM, 1}, "LFO Z Waveform",
-        NR(0.0f, 3.0f, 1.0f), 0.0f));
-    layout.add(std::make_unique<APF>(PID{ParamID::LFO_Z_BEAT_DIV, 1}, "LFO Z Beat Div",
-        NR(0.125f, 8.0f, 0.125f), 1.0f));
+        NR(0.0f, 4.0f, 1.0f), 0.0f));
+    {
+        juce::StringArray divLabels;
+        for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
+            divLabels.add(xyzpan::kBeatDivLabels[i]);
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            PID{ParamID::LFO_Z_BEAT_DIV, 2}, "LFO Z Beat Div",
+            divLabels, xyzpan::kBeatDivDefaultIndex));
+    }
 
     // Tempo sync (shared across all axes) — AudioParameterBool
     layout.add(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ParamID::LFO_TEMPO_SYNC, 1}, "LFO Tempo Sync", false));
+
+    // -------------------------------------------------------------------------
+    // Stereo source node splitting
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_WIDTH, 1}, "Stereo Width",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_FACE_LISTENER, 1}, "Face Listener", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_PHASE, 1}, "Orbit Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_OFFSET, 1}, "Orbit Offset",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+
+    // -------------------------------------------------------------------------
+    // Stereo orbit LFOs — XY plane
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XY_WAVEFORM, 1}, "Orbit XY Waveform",
+        NR(0.0f, 4.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XY_RATE, 1}, "Orbit XY Rate (Hz)",
+        NR(xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate, 0.001f, 0.3f), xyzpan::kStereoOrbitDefaultRate));
+    {
+        juce::StringArray divLabels;
+        for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
+            divLabels.add(xyzpan::kBeatDivLabels[i]);
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            PID{ParamID::STEREO_ORBIT_XY_BEAT_DIV, 2}, "Orbit XY Beat Div",
+            divLabels, xyzpan::kBeatDivDefaultIndex));
+    }
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XY_PHASE, 1}, "Orbit XY Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_ORBIT_XY_RESET_PHASE, 1}, "Orbit XY Reset Phase", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XY_DEPTH, 1}, "Orbit XY Depth",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+
+    // -------------------------------------------------------------------------
+    // Stereo orbit LFOs — XZ plane
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XZ_WAVEFORM, 1}, "Orbit XZ Waveform",
+        NR(0.0f, 4.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XZ_RATE, 1}, "Orbit XZ Rate (Hz)",
+        NR(xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate, 0.001f, 0.3f), xyzpan::kStereoOrbitDefaultRate));
+    {
+        juce::StringArray divLabels;
+        for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
+            divLabels.add(xyzpan::kBeatDivLabels[i]);
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            PID{ParamID::STEREO_ORBIT_XZ_BEAT_DIV, 2}, "Orbit XZ Beat Div",
+            divLabels, xyzpan::kBeatDivDefaultIndex));
+    }
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XZ_PHASE, 1}, "Orbit XZ Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_ORBIT_XZ_RESET_PHASE, 1}, "Orbit XZ Reset Phase", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_XZ_DEPTH, 1}, "Orbit XZ Depth",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+
+    // -------------------------------------------------------------------------
+    // Stereo orbit LFOs — YZ plane
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_YZ_WAVEFORM, 1}, "Orbit YZ Waveform",
+        NR(0.0f, 4.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_YZ_RATE, 1}, "Orbit YZ Rate (Hz)",
+        NR(xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate, 0.001f, 0.3f), xyzpan::kStereoOrbitDefaultRate));
+    {
+        juce::StringArray divLabels;
+        for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
+            divLabels.add(xyzpan::kBeatDivLabels[i]);
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            PID{ParamID::STEREO_ORBIT_YZ_BEAT_DIV, 2}, "Orbit YZ Beat Div",
+            divLabels, xyzpan::kBeatDivDefaultIndex));
+    }
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_YZ_PHASE, 1}, "Orbit YZ Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_ORBIT_YZ_RESET_PHASE, 1}, "Orbit YZ Reset Phase", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_YZ_DEPTH, 1}, "Orbit YZ Depth",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+
+    // -------------------------------------------------------------------------
+    // Stereo orbit shared
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_ORBIT_TEMPO_SYNC, 1}, "Orbit Tempo Sync", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_SPEED_MUL, 1}, "Orbit Speed Mul",
+        NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f), xyzpan::kLFOSpeedMulDefault));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Presence shelf tuning
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::PRESENCE_SHELF_FREQ_HZ, 1}, "Presence Shelf Hz",
+        NR(500.0f, 10000.0f, 1.0f, 0.3f), xyzpan::kPresenceShelfFreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::PRESENCE_SHELF_MAX_DB, 1}, "Presence Shelf Max dB",
+        NR(0.0f, 12.0f, 0.1f), xyzpan::kPresenceShelfMaxDb));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Ear canal resonance tuning
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::EAR_CANAL_FREQ_HZ, 1}, "Ear Canal Hz",
+        NR(500.0f, 10000.0f, 1.0f, 0.3f), xyzpan::kEarCanalFreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::EAR_CANAL_Q, 1}, "Ear Canal Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kEarCanalQ));
+    layout.add(std::make_unique<APF>(PID{ParamID::EAR_CANAL_MAX_DB, 1}, "Ear Canal Max dB",
+        NR(0.0f, 12.0f, 0.1f), xyzpan::kEarCanalMaxDb));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Aux reverb send
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::AUX_SEND_GAIN_MAX_DB, 1}, "Aux Send Max dB",
+        NR(0.0f, 24.0f, 0.1f), xyzpan::kAuxSendGainMaxDb));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Geometry
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::SPHERE_RADIUS, 1}, "Sphere Radius",
+        NR(0.1f, 5.0f, 0.01f), xyzpan::kSphereRadiusDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERT_MONO_CYLINDER_RADIUS, 1}, "Vert Mono Cyl Radius",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVertMonoCylinderRadius));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Test tone oscillator
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::TEST_TONE_ENABLED, 1}, "Test Tone", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_GAIN_DB, 1}, "Test Tone Gain dB",
+        NR(-60.0f, 0.0f, 0.1f), -12.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_PITCH_HZ, 1}, "Test Tone Pitch Hz",
+        NR(xyzpan::kTestTonePitchMinHz, xyzpan::kTestTonePitchMaxHz, 0.1f, 0.3f), xyzpan::kTestTonePitchDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_PULSE_HZ, 1}, "Test Tone Pulse Hz",
+        NR(xyzpan::kTestTonePulseMinHz, xyzpan::kTestTonePulseMaxHz, 0.01f), xyzpan::kTestTonePulseDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_WAVEFORM, 1}, "Test Tone Waveform",
+        NR(0.0f, 6.0f, 1.0f), 0.0f));
 
     return layout;
 }

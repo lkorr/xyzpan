@@ -92,4 +92,43 @@ void main()
 }
 )";
 
+// ---------------------------------------------------------------------------
+// Trail shader — per-vertex alpha for fading position trails
+// No model matrix; trail vertices stored in world space.
+// ---------------------------------------------------------------------------
+
+inline constexpr const char* kTrailVertShader = R"(
+#version 150 core
+
+in vec3 position;
+in float alpha;
+
+uniform mat4 projection;
+uniform mat4 view;
+
+out float vAlpha;
+
+void main()
+{
+    vAlpha      = alpha;
+    gl_Position = projection * view * vec4(position, 1.0);
+}
+)";
+
+inline constexpr const char* kTrailFragShader = R"(
+#version 150 core
+
+in float vAlpha;
+
+uniform vec3  trailColor;
+uniform float baseOpacity;
+
+out vec4 outColor;
+
+void main()
+{
+    outColor = vec4(trailColor, baseOpacity * vAlpha);
+}
+)";
+
 } // namespace xyzpan

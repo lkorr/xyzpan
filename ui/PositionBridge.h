@@ -10,6 +10,14 @@ struct SourcePositionSnapshot {
     float y        = 1.0f;  // default: front (Y-forward convention)
     float z        = 0.0f;
     float distance = 1.0f;
+
+    // Stereo source node positions (for GL rendering of L/R nodes)
+    float lNodeX = 0.0f, lNodeY = 0.0f, lNodeZ = 0.0f;
+    float rNodeX = 0.0f, rNodeY = 0.0f, rNodeZ = 0.0f;
+    float stereoWidth = 0.0f;
+
+    // Audible sphere boundary radius (for GL rendering)
+    float sphereRadius = 1.732f;
 };
 
 // Lock-free double-buffer for audio->GL position transfer (UI-07).

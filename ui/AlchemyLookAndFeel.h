@@ -33,6 +33,11 @@ public:
                               bool shouldDrawButtonAsHighlighted,
                               bool shouldDrawButtonAsDown) override;
 
+    // Button text: parchment with size scaled to button height
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button,
+                        bool shouldDrawButtonAsHighlighted,
+                        bool shouldDrawButtonAsDown) override;
+
     // Label text: parchment colour on transparent background
     void drawLabel(juce::Graphics& g, juce::Label& label) override;
 
@@ -44,6 +49,8 @@ public:
     static constexpr uint32_t kParchment   = 0xFFD4B483u;
     static constexpr uint32_t kBrightGold  = 0xFFE8C46Au;
     static constexpr uint32_t kHoverGold   = 0xFFFFD580u;
+    static constexpr uint32_t kStereoLeft  = 0xFFFF6B9Du;  // pink
+    static constexpr uint32_t kStereoRight = 0xFF6B9DFFu;  // blue
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AlchemyLookAndFeel)

@@ -6,11 +6,6 @@
 namespace xyzpan {
 
 SphericalCoord toSpherical(float x, float y, float z) {
-    // Hard clamp inputs to [-kMaxInputXYZ, kMaxInputXYZ]
-    x = std::clamp(x, -kMaxInputXYZ, kMaxInputXYZ);
-    y = std::clamp(y, -kMaxInputXYZ, kMaxInputXYZ);
-    z = std::clamp(z, -kMaxInputXYZ, kMaxInputXYZ);
-
     // Compute distance first (needed for azimuth guard)
     const float dist = computeDistance(x, y, z);
 
@@ -26,9 +21,6 @@ SphericalCoord toSpherical(float x, float y, float z) {
 }
 
 float computeDistance(float x, float y, float z) {
-    x = std::clamp(x, -kMaxInputXYZ, kMaxInputXYZ);
-    y = std::clamp(y, -kMaxInputXYZ, kMaxInputXYZ);
-    z = std::clamp(z, -kMaxInputXYZ, kMaxInputXYZ);
     const float raw = std::sqrt(x * x + y * y + z * z);
     return std::max(raw, kMinDistance);
 }

@@ -26,7 +26,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
     int x, int y, int width, int height,
     float sliderPosProportional,
     float rotaryStartAngle, float rotaryEndAngle,
-    juce::Slider& /*slider*/)
+    juce::Slider& slider)
 {
     const float radius    = static_cast<float>(juce::jmin(width, height)) * 0.5f - 4.0f;
     const float centreX   = static_cast<float>(x) + static_cast<float>(width)  * 0.5f;
@@ -51,7 +51,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
                                                     juce::PathStrokeType::rounded));
     }
 
-    // Value arc — warm gold
+    // Value arc — use slider's fill colour (allows per-knob colouring)
     {
         const float arcRadius  = radius * 0.78f;
         const float angle      = rotaryStartAngle + sliderPosProportional
@@ -59,7 +59,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
         juce::Path valueArc;
         valueArc.addCentredArc(centreX, centreY, arcRadius, arcRadius,
                                0.0f, rotaryStartAngle, angle, true);
-        g.setColour(juce::Colour(kWarmGold));
+        g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId));
         g.strokePath(valueArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
     }
@@ -103,6 +103,25 @@ void AlchemyLookAndFeel::drawButtonBackground(
         : juce::Colour(kBronze);
     g.setColour(border);
     g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+void AlchemyLookAndFeel::drawButtonText(
+    juce::Graphics& g,
+    juce::TextButton& button,
+    bool /*shouldDrawButtonAsHighlighted*/,
+    bool /*shouldDrawButtonAsDown*/)
+{
+    const auto fontSize = juce::jmin(12.0f, static_cast<float>(button.getHeight()) * 0.5f);
+    g.setFont(juce::Font(juce::FontOptions(fontSize)));
+
+    const auto textColour = button.getToggleState()
+        ? button.findColour(juce::TextButton::textColourOnId)
+        : button.findColour(juce::TextButton::textColourOffId);
+
+    g.setColour(textColour.withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+    g.drawText(button.getButtonText(), button.getLocalBounds(),
+               juce::Justification::centred, true);
 }
 
 // ---------------------------------------------------------------------------

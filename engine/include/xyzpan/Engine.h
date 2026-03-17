@@ -289,11 +289,7 @@ private:
         dsp::OnePoleSmooth& combWetSm,
         dsp::BiquadFilter& presShelf, dsp::BiquadFilter& earCanal,
         dsp::BiquadFilter& pP1, dsp::BiquadFilter& pN1,
-        dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf,
-        // Shared position-derived EQ targets
-        float combWetTarget, float presenceGainDb, float earCanalGainDb,
-        float pinnaGainDb, float shelfGainDb, float pinnaN1Freq,
-        float modProximity, float sphereRadius
+        dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf
     );
 
     // Last L/R node positions for position bridge

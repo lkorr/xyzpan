@@ -17,7 +17,37 @@ void LFO::setRateHz(float hz) {
     increment_ = hz / static_cast<float>(sampleRate_);
 }
 
+void LFO::setPhaseOffset(float offset) {
+    phaseOffset_ = offset - std::floor(offset); // wrap to [0, 1)
+}
+
+void LFO::requestReset() {
+    resetPending_ = true;
+}
+
+float LFO::peek() const {
+    const float phase = resetPending_ ? phaseOffset_ : accumulator_;
+    switch (waveform) {
+        case LFOWaveform::Sine:
+            return std::sin(phase * 6.28318530f);
+        case LFOWaveform::Triangle:
+            return 1.0f - 4.0f * std::abs(phase - 0.5f);
+        case LFOWaveform::Saw:
+            return 2.0f * phase - 1.0f;
+        case LFOWaveform::Square:
+            return phase < 0.5f ? 1.0f : -1.0f;
+        case LFOWaveform::RampDown:
+            return 1.0f - 2.0f * phase;
+        default:
+            return 0.0f;
+    }
+}
+
 float LFO::tick() {
+    if (resetPending_) {
+        accumulator_ = phaseOffset_;
+        resetPending_ = false;
+    }
     float out;
     switch (waveform) {
         case LFOWaveform::Sine:
@@ -31,6 +61,9 @@ float LFO::tick() {
             break;
         case LFOWaveform::Square:
             out = accumulator_ < 0.5f ? 1.0f : -1.0f;
+            break;
+        case LFOWaveform::RampDown:
+            out = 1.0f - 2.0f * accumulator_;
             break;
         default:
             out = 0.0f;

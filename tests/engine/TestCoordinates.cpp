@@ -79,38 +79,32 @@ TEST_CASE("Coordinate conversion - origin and minimum distance", "[coordinates]"
 }
 
 // ---------------------------------------------------------------------------
-// Boundary clamping (out-of-range inputs)
+// Extended-range passthrough (LFO can push coordinates beyond [-1, 1])
 // ---------------------------------------------------------------------------
-TEST_CASE("Coordinate conversion - boundary clamping", "[coordinates]") {
-    SECTION("Values above +1.0 are clamped to +1.0 result") {
-        auto sOver  = toSpherical(2.0f, 0.0f, 0.0f);
-        auto sExact = toSpherical(1.0f, 0.0f, 0.0f);
-        REQUIRE_THAT(sOver.azimuth,   WithinAbs(sExact.azimuth,   0.001f));
-        REQUIRE_THAT(sOver.distance,  WithinAbs(sExact.distance,  0.001f));
-        REQUIRE_THAT(sOver.elevation, WithinAbs(sExact.elevation, 0.001f));
+TEST_CASE("Coordinate conversion - extended range passthrough", "[coordinates]") {
+    SECTION("toSpherical(2,0,0) gives azimuth=PI/2, distance=2.0") {
+        auto s = toSpherical(2.0f, 0.0f, 0.0f);
+        REQUIRE_THAT(s.azimuth,  WithinAbs(kPi / 2.0f, 0.001f));
+        REQUIRE_THAT(s.distance, WithinAbs(2.0f, 0.001f));
     }
 
-    SECTION("Values below -1.0 are clamped to -1.0 result") {
-        auto sOver  = toSpherical(-2.0f, 0.0f, 0.0f);
-        auto sExact = toSpherical(-1.0f, 0.0f, 0.0f);
-        REQUIRE_THAT(sOver.azimuth,   WithinAbs(sExact.azimuth,   0.001f));
-        REQUIRE_THAT(sOver.elevation, WithinAbs(sExact.elevation, 0.001f));
+    SECTION("toSpherical(-2,0,0) gives azimuth=-PI/2, distance=2.0") {
+        auto s = toSpherical(-2.0f, 0.0f, 0.0f);
+        REQUIRE_THAT(s.azimuth,  WithinAbs(-kPi / 2.0f, 0.001f));
+        REQUIRE_THAT(s.distance, WithinAbs(2.0f, 0.001f));
     }
 
-    SECTION("Extreme values on all axes are clamped") {
-        auto s = toSpherical(99.0f, 99.0f, 99.0f);
-        auto sExpected = toSpherical(1.0f, 1.0f, 1.0f);
-        REQUIRE_THAT(s.azimuth,   WithinAbs(sExpected.azimuth,   0.001f));
-        REQUIRE_THAT(s.elevation, WithinAbs(sExpected.elevation, 0.001f));
-        REQUIRE_THAT(s.distance,  WithinAbs(sExpected.distance,  0.001f));
+    SECTION("toSpherical(2,2,2) gives distance=sqrt(12)") {
+        auto s = toSpherical(2.0f, 2.0f, 2.0f);
+        REQUIRE_THAT(s.distance, WithinAbs(std::sqrt(12.0f), 0.01f));
     }
 
-    SECTION("Y-axis overrange (0,5,0) clamps to same as (0,1,0)") {
-        auto sOver  = toSpherical(0.0f, 5.0f, 0.0f);
-        auto sExact = toSpherical(0.0f, 1.0f, 0.0f);
-        REQUIRE_THAT(sOver.azimuth,   WithinAbs(sExact.azimuth,   0.001f));
-        REQUIRE_THAT(sOver.elevation, WithinAbs(sExact.elevation, 0.001f));
-        REQUIRE_THAT(sOver.distance,  WithinAbs(sExact.distance,  0.001f));
+    SECTION("computeDistance(2,0,0) = 2.0") {
+        REQUIRE_THAT(computeDistance(2.0f, 0.0f, 0.0f), WithinAbs(2.0f, 0.001f));
+    }
+
+    SECTION("computeDistance(0,0,0) = kMinDistance (floor preserved)") {
+        REQUIRE_THAT(computeDistance(0.0f, 0.0f, 0.0f), WithinAbs(kMinDistance, 0.001f));
     }
 }
 
@@ -174,9 +168,8 @@ TEST_CASE("Distance computation", "[coordinates]") {
         REQUIRE_THAT(computeDistance(0.0f, 0.0f, 1.0f), WithinAbs(1.0f, 0.001f));
     }
 
-    SECTION("computeDistance clamps out-of-range inputs") {
-        float dOver  = computeDistance(2.0f, 0.0f, 0.0f);
-        float dExact = computeDistance(1.0f, 0.0f, 0.0f);
-        REQUIRE_THAT(dOver, WithinAbs(dExact, 0.001f));
+    SECTION("computeDistance passes through extended-range inputs") {
+        float d = computeDistance(2.0f, 0.0f, 0.0f);
+        REQUIRE_THAT(d, WithinAbs(2.0f, 0.001f));
     }
 }

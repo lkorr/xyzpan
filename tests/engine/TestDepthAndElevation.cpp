@@ -378,7 +378,7 @@ static EngineOutput runEngine(const EngineParams& params, float freqHz, int N,
     const float* inputs[] = { input.data() };
     float* pL = outL.data();
     float* pR = outR.data();
-    engine.process(inputs, 1, pL, pR, N);
+    engine.process(inputs, 1, pL, pR, nullptr, nullptr, N);
 
     return { outL, outR };
 }
@@ -615,7 +615,7 @@ TEST_CASE("Phase3Integration: Reset clears Phase 3 state", "[engine][depth][elev
     std::vector<float> outL(static_cast<size_t>(N), 0.0f);
     std::vector<float> outR(static_cast<size_t>(N), 0.0f);
     const float* inputs[] = { noise.data() };
-    engine.process(inputs, 1, outL.data(), outR.data(), N);
+    engine.process(inputs, 1, outL.data(), outR.data(), nullptr, nullptr, N);
 
     // Now reset — should clear all state (comb buffers, biquad state, delay lines, smoothers)
     engine.reset();
@@ -625,7 +625,7 @@ TEST_CASE("Phase3Integration: Reset clears Phase 3 state", "[engine][depth][elev
     std::vector<float> postL(static_cast<size_t>(silenceN), 0.0f);
     std::vector<float> postR(static_cast<size_t>(silenceN), 0.0f);
     const float* silenceInputs[] = { silence.data() };
-    engine.process(silenceInputs, 1, postL.data(), postR.data(), silenceN);
+    engine.process(silenceInputs, 1, postL.data(), postR.data(), nullptr, nullptr, silenceN);
 
     // All output after reset + silence input must be zero
     float maxAbs = 0.0f;
