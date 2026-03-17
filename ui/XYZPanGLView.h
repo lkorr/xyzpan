@@ -39,13 +39,30 @@ struct TrailBuffer {
 
     // Write interleaved [x, y, z, alpha] newest-to-oldest into out.
     // Drops points older than kTrailLifetime. Returns number of points written.
+    // Alpha combines time-based fade with positional fade so the tail always
+    // graduates from opaque (head) to transparent (tail), even during fast motion.
     int fillVertexData(float* out, double nowSeconds) const {
-        int written = 0;
+        // First pass: count live points to compute positional gradient
+        int liveCount = 0;
         for (int i = 0; i < count_; ++i) {
             const int idx = (head_ - i + kCapacity) % kCapacity;
             const float age = static_cast<float>(nowSeconds - timestamps_[idx]);
-            if (age >= kTrailLifetime) break;  // older points are even older, stop
-            const float alpha = 1.0f - age / kTrailLifetime;
+            if (age >= kTrailLifetime) break;
+            ++liveCount;
+        }
+        if (liveCount == 0) return 0;
+
+        // Second pass: write vertices with combined alpha
+        int written = 0;
+        for (int i = 0; i < liveCount; ++i) {
+            const int idx = (head_ - i + kCapacity) % kCapacity;
+            const float age = static_cast<float>(nowSeconds - timestamps_[idx]);
+            const float timeFade = 1.0f - age / kTrailLifetime;
+            // Positional fade: 1.0 at head (i=0), 0.0 at tail (i=liveCount-1)
+            const float posFade = (liveCount > 1)
+                ? 1.0f - static_cast<float>(i) / static_cast<float>(liveCount - 1)
+                : 1.0f;
+            const float alpha = timeFade * posFade;
             out[written * 4 + 0] = positions_[idx].x;
             out[written * 4 + 1] = positions_[idx].y;
             out[written * 4 + 2] = positions_[idx].z;
@@ -202,6 +219,7 @@ private:
     // Drag state
     // ------------------------------------------------------------------
     bool              isDraggingSource_ = false;
+    bool              isDraggingCamera_ = false;
     bool              isSourceHovered_  = false;
     juce::Point<int>  lastDragPos_;
 
@@ -211,6 +229,10 @@ private:
     juce::AudioProcessorValueTreeState& apvts_;
     juce::AudioProcessor*               proc_;   // kept for future WeakReference use
     xyzpan::PositionBridge&             bridge_;
+
+    // Frame rate throttle: 30fps when idle, 60fps when position moving or dragging
+    double                              lastRenderTime_ = 0.0;
+    xyzpan::SourcePositionSnapshot      lastSnap_{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanGLView)
 };

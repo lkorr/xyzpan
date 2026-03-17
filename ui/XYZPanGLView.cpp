@@ -115,6 +115,28 @@ void XYZPanGLView::renderOpenGL()
 {
     jassert(juce::OpenGLHelpers::isContextActive());
 
+    // Frame rate throttle: 60fps when position is moving, 30fps when idle.
+    // Keeps setContinuousRepainting(true) for simplicity -- just skips frames.
+    {
+        const auto currentSnap = bridge_.read();
+        const bool positionChanged =
+            currentSnap.x != lastSnap_.x ||
+            currentSnap.y != lastSnap_.y ||
+            currentSnap.z != lastSnap_.z ||
+            currentSnap.stereoWidth != lastSnap_.stereoWidth ||
+            currentSnap.lNodeX != lastSnap_.lNodeX ||
+            currentSnap.lNodeY != lastSnap_.lNodeY ||
+            currentSnap.rNodeX != lastSnap_.rNodeX ||
+            currentSnap.rNodeY != lastSnap_.rNodeY;
+        lastSnap_ = currentSnap;
+
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        // 60fps = 16.67ms when active, 30fps = 33.33ms when idle
+        const double minInterval = (positionChanged || isDraggingSource_ || isDraggingCamera_) ? 16.0 : 33.0;
+        if (now - lastRenderTime_ < minInterval) return;
+        lastRenderTime_ = now;
+    }
+
     // Viewport
     const int w = getWidth();
     const int h = getHeight();
@@ -141,8 +163,8 @@ void XYZPanGLView::renderOpenGL()
     }();
     const glm::mat4 roomModelMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(r, r, r));
 
-    // Read current source position from bridge (audio thread writes it)
-    const auto snap = bridge_.read();
+    // Reuse the snapshot already read in the throttle section above
+    const auto& snap = lastSnap_;
     // Coordinate convention mapping:
     //   XYZPan X = left/right  → GL X
     //   XYZPan Y = front/back  → GL -Z (GL +Z is toward viewer, +Y is front in XYZPan)
@@ -165,8 +187,12 @@ void XYZPanGLView::renderOpenGL()
     // Current time for trail timestamps
     const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
 
-    // Push to trail buffers
-    trailSource_.push(sourcePos, now);
+    // Push to trail buffers — skip center trail when stereo orbit is active
+    if (!stereoActive)
+        trailSource_.push(sourcePos, now);
+    else
+        trailSource_.clear();
+
     if (stereoActive) {
         trailL_.push(lNodePos, now);
         trailR_.push(rNodePos, now);
@@ -185,6 +211,16 @@ void XYZPanGLView::renderOpenGL()
     {
         const glm::vec3 earthColor(0x3D / 255.0f, 0x2A / 255.0f, 0x10 / 255.0f);
         drawLines(vaoGrid_, gridVertexCount_, earthColor, 0.5f, roomModelMatrix);
+    }
+
+    // Begin sphere/cone shader batch -- bind once, upload shared uniforms once
+    if (sphereShader_ && vaoSphere_ != 0 && sphereIndexCount_ > 0) {
+        sphereShader_->use();
+        sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+        sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+        const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+        sphereShader_->setUniform("lightDir", lightDir.x, lightDir.y, lightDir.z);
+        glBindVertexArray(vaoSphere_);
     }
 
     // Draw listener node at origin — warm gold, always full opacity
@@ -248,7 +284,8 @@ void XYZPanGLView::renderOpenGL()
             ? glm::vec3(0xFF / 255.0f, 0xD5 / 255.0f, 0x80 / 255.0f)  // hover: lighter gold
             : glm::vec3(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f); // normal: bright gold
         const float mainOpacity = stereoActive ? 0.1f : sourceOpacity;
-        drawSphere(sourcePos, 0.048f, sourceColor, mainOpacity);
+        const float mainRadius = stereoActive ? 0.006f : 0.048f;
+        drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
     }
 
     // Draw L/R stereo node spheres (smaller than center, only when stereo active)
@@ -265,12 +302,18 @@ void XYZPanGLView::renderOpenGL()
         drawSphere(rNodePos, 0.045f, rightColor, rOpacity);
     }
 
+    // End sphere/cone shader batch
+    glBindVertexArray(0);
+
     // Draw trails — don't write depth to avoid occluding transparent geometry
     glDepthMask(GL_FALSE);
     {
-        const glm::vec3 goldTrail(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f);
-        drawTrail(trailSource_, vaoTrailSource_, vboTrailSource_,
-                  goldTrail, sourceOpacity * 0.6f, now);
+        // Center trail only in mono mode; stereo mode uses L/R trails instead
+        if (!stereoActive) {
+            const glm::vec3 goldTrail(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f);
+            drawTrail(trailSource_, vaoTrailSource_, vboTrailSource_,
+                      goldTrail, sourceOpacity * 0.6f, now);
+        }
 
         if (stereoActive) {
             const float lDistFracT = std::clamp(glm::length(lNodePos) / sr, 0.0f, 1.0f);
@@ -329,9 +372,11 @@ void XYZPanGLView::mouseDown(const juce::MouseEvent& e)
 
     if (isNearSourceNode(e.getPosition())) {
         isDraggingSource_ = true;
+        isDraggingCamera_ = false;
         setMouseCursor(juce::MouseCursor(juce::MouseCursor::DraggingHandCursor));
     } else {
         isDraggingSource_ = false;
+        isDraggingCamera_ = true;
     }
 }
 
@@ -382,6 +427,7 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
 void XYZPanGLView::mouseUp(const juce::MouseEvent& /*e*/)
 {
     isDraggingSource_ = false;
+    isDraggingCamera_ = false;
     setMouseCursor(juce::MouseCursor(juce::MouseCursor::NormalCursor));
 }
 
@@ -565,25 +611,15 @@ void XYZPanGLView::drawSphere(const glm::vec3& position, float radius,
 {
     if (!sphereShader_ || vaoSphere_ == 0 || sphereIndexCount_ == 0) return;
 
-    sphereShader_->use();
-
     const glm::mat4 model = glm::scale(
         glm::translate(glm::mat4(1.0f), position),
         glm::vec3(radius));
 
-    // Light direction — fixed world-space direction for consistent shading
-    const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
-
-    sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
-    sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
-    sphereShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
-    sphereShader_->setUniform("nodeColor", color.r,    color.g,    color.b);
+    // Shader bind, projection/view/lightDir already set by batch setup block in renderOpenGL()
+    sphereShader_->setUniformMat4("model",     glm::value_ptr(model), 1, GL_FALSE);
+    sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
     sphereShader_->setUniform("opacity",   opacity);
-    sphereShader_->setUniform("lightDir",  lightDir.x, lightDir.y, lightDir.z);
-
-    glBindVertexArray(vaoSphere_);
     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -594,20 +630,11 @@ void XYZPanGLView::drawSphereWithModel(const glm::mat4& model,
 {
     if (!sphereShader_ || vaoSphere_ == 0 || sphereIndexCount_ == 0) return;
 
-    sphereShader_->use();
-
-    const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
-
-    sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
-    sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
-    sphereShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
-    sphereShader_->setUniform("nodeColor", color.r,    color.g,    color.b);
+    // Shader bind, projection/view/lightDir already set by batch setup block in renderOpenGL()
+    sphereShader_->setUniformMat4("model",     glm::value_ptr(model), 1, GL_FALSE);
+    sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
     sphereShader_->setUniform("opacity",   opacity);
-    sphereShader_->setUniform("lightDir",  lightDir.x, lightDir.y, lightDir.z);
-
-    glBindVertexArray(vaoSphere_);
     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -655,20 +682,15 @@ void XYZPanGLView::drawCone(const glm::mat4& model,
 {
     if (!sphereShader_ || vaoCone_ == 0 || coneIndexCount_ == 0) return;
 
-    sphereShader_->use();
-
-    const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
-
-    sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
-    sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
-    sphereShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
-    sphereShader_->setUniform("nodeColor", color.r,    color.g,    color.b);
-    sphereShader_->setUniform("opacity",   opacity);
-    sphereShader_->setUniform("lightDir",  lightDir.x, lightDir.y, lightDir.z);
-
+    // Shader bind, projection/view/lightDir already set by batch setup block in renderOpenGL().
+    // Cone uses a different VAO, so switch to it and restore sphere VAO afterwards.
     glBindVertexArray(vaoCone_);
+    sphereShader_->setUniformMat4("model",     glm::value_ptr(model), 1, GL_FALSE);
+    sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
+    sphereShader_->setUniform("opacity",   opacity);
     glDrawElements(GL_TRIANGLES, coneIndexCount_, GL_UNSIGNED_INT, nullptr);
-    glBindVertexArray(0);
+    // Restore sphere VAO since cone is drawn mid-batch
+    glBindVertexArray(vaoSphere_);
 }
 
 // ---------------------------------------------------------------------------
