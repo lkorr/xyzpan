@@ -555,9 +555,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     lfoX_.setPhaseOffset(currentParams.lfoXPhase);
     lfoY_.setPhaseOffset(currentParams.lfoYPhase);
     lfoZ_.setPhaseOffset(currentParams.lfoZPhase);
-    lfoX_.setSmoothMs(currentParams.lfoXSmooth * 100.0f);  // 0-1 → 0-100ms
-    lfoY_.setSmoothMs(currentParams.lfoYSmooth * 100.0f);
-    lfoZ_.setSmoothMs(currentParams.lfoZSmooth * 100.0f);
+    lfoX_.setSmoothMs(currentParams.lfoXSmooth * 300.0f);  // 0-1 → 0-300ms
+    lfoY_.setSmoothMs(currentParams.lfoYSmooth * 300.0f);
+    lfoZ_.setSmoothMs(currentParams.lfoZSmooth * 300.0f);
     if (currentParams.lfoXResetPhase) lfoX_.requestReset();
     if (currentParams.lfoYResetPhase) lfoY_.requestReset();
     if (currentParams.lfoZResetPhase) lfoZ_.requestReset();
@@ -574,9 +574,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     orbitLfoXY_.setPhaseOffset(currentParams.stereoOrbitXYPhase);
     orbitLfoXZ_.setPhaseOffset(currentParams.stereoOrbitXZPhase);
     orbitLfoYZ_.setPhaseOffset(currentParams.stereoOrbitYZPhase);
-    orbitLfoXY_.setSmoothMs(currentParams.stereoOrbitXYSmooth * 100.0f);
-    orbitLfoXZ_.setSmoothMs(currentParams.stereoOrbitXZSmooth * 100.0f);
-    orbitLfoYZ_.setSmoothMs(currentParams.stereoOrbitYZSmooth * 100.0f);
+    orbitLfoXY_.setSmoothMs(currentParams.stereoOrbitXYSmooth * 300.0f);
+    orbitLfoXZ_.setSmoothMs(currentParams.stereoOrbitXZSmooth * 300.0f);
+    orbitLfoYZ_.setSmoothMs(currentParams.stereoOrbitYZSmooth * 300.0f);
     if (currentParams.stereoOrbitXYResetPhase) orbitLfoXY_.requestReset();
     if (currentParams.stereoOrbitXZResetPhase) orbitLfoXZ_.requestReset();
     if (currentParams.stereoOrbitYZResetPhase) orbitLfoYZ_.requestReset();
@@ -1497,7 +1497,9 @@ void XYZPanEngine::reset() {
 
 XYZPanEngine::LFOPhases XYZPanEngine::getLastLFOPhases() const noexcept {
     return { lfoX_.getPhase(), lfoY_.getPhase(), lfoZ_.getPhase(),
-             orbitLfoXY_.getPhase(), orbitLfoXZ_.getPhase(), orbitLfoYZ_.getPhase() };
+             orbitLfoXY_.getPhase(), orbitLfoXZ_.getPhase(), orbitLfoYZ_.getPhase(),
+             lfoX_.getHeldValue(), lfoY_.getHeldValue(), lfoZ_.getHeldValue(),
+             orbitLfoXY_.getHeldValue(), orbitLfoXZ_.getHeldValue(), orbitLfoYZ_.getHeldValue() };
 }
 
 } // namespace xyzpan

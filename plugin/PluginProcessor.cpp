@@ -479,6 +479,14 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     lfoPhaseOrbitXY.store(phases.orbitXY, std::memory_order_relaxed);
     lfoPhaseOrbitXZ.store(phases.orbitXZ, std::memory_order_relaxed);
     lfoPhaseOrbitYZ.store(phases.orbitYZ, std::memory_order_relaxed);
+
+    // S&H held values for accurate waveform display
+    lfoSHValueX.store(phases.shX, std::memory_order_relaxed);
+    lfoSHValueY.store(phases.shY, std::memory_order_relaxed);
+    lfoSHValueZ.store(phases.shZ, std::memory_order_relaxed);
+    lfoSHValueOrbitXY.store(phases.shOrbitXY, std::memory_order_relaxed);
+    lfoSHValueOrbitXZ.store(phases.shOrbitXZ, std::memory_order_relaxed);
+    lfoSHValueOrbitYZ.store(phases.shOrbitYZ, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {

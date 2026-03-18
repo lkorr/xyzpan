@@ -41,6 +41,9 @@ public:
     // Return raw phase accumulator value in [0, 1).
     float getPhase() const noexcept { return accumulator_; }
 
+    // Return last S&H held value in [-1, 1] (for accurate UI display).
+    float getHeldValue() const noexcept { return shHeldValue_; }
+
     // Advance accumulator and return output in [-1, 1].
     float tick();
 

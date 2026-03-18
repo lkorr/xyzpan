@@ -3,6 +3,7 @@
 #include "xyzpan/DSPStateBridge.h"
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 // ---------------------------------------------------------------------------
 // DevPanelComponent — scrollable overlay panel for all DSP tuning constants.
@@ -23,9 +24,10 @@ public:
     void paint(juce::Graphics& g) override;
     void timerCallback() override;
     void mouseDown(const juce::MouseEvent& event) override;
-    void mouseUp(const juce::MouseEvent& event) override;
-    void mouseDrag(const juce::MouseEvent& event) override;
-    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseEnter(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& e,
+                        const juce::MouseWheelDetails& wheel) override;
 
     // Returns the custom width set by drag, or 0 if default
     int getCustomWidth() const { return customWidth_; }
@@ -68,6 +70,12 @@ private:
     static constexpr int kSliderW = 100;  // slider width
     static constexpr int kGroupH  = 24;   // group header height
     static constexpr int kPadding = 6;    // left/right padding
+    static constexpr int kInfoBoxH = 80;  // hover description box height
+
+    // Hover info box
+    std::unordered_map<juce::Component*, juce::String> componentToDescKey_;
+    juce::String currentInfoText_;
+    static const std::unordered_map<juce::String, juce::String>& getDescriptions();
 
     // Build helpers called from constructor
     void beginSection(const juce::String& title);
@@ -80,14 +88,21 @@ private:
     // Recalculates all component positions based on collapsed state
     void relayout();
 
-    // Drag-to-resize state
-    static constexpr int kDragHandleW = 6;  // left-edge drag zone width
+    // Drag-to-resize: thin overlay component on the left edge
+    static constexpr int kDragHandleW = 6;
     int customWidth_ = 0;       // 0 = use parent default; >0 = user-dragged width
     bool dragging_ = false;
     int dragStartX_ = 0;
     int dragStartW_ = 0;
 
-    bool isInDragZone(int localX) const { return localX < kDragHandleW; }
+    struct DragHandle : public juce::Component {
+        DevPanelComponent& owner;
+        explicit DragHandle(DevPanelComponent& o) : owner(o) { setMouseCursor(juce::MouseCursor::LeftRightResizeCursor); }
+        void mouseDown(const juce::MouseEvent& e) override;
+        void mouseDrag(const juce::MouseEvent& e) override;
+        void mouseUp(const juce::MouseEvent&) override;
+    };
+    DragHandle dragHandle_ { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DevPanelComponent)
 };

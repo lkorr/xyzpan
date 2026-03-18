@@ -133,6 +133,9 @@ public:
     struct LFOPhases {
         float x = 0.f, y = 0.f, z = 0.f;
         float orbitXY = 0.f, orbitXZ = 0.f, orbitYZ = 0.f;
+        // S&H held values for accurate display
+        float shX = 0.f, shY = 0.f, shZ = 0.f;
+        float shOrbitXY = 0.f, shOrbitXZ = 0.f, shOrbitYZ = 0.f;
     };
     LFOPhases getLastLFOPhases() const noexcept;
 

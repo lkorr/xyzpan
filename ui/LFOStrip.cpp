@@ -128,6 +128,11 @@ void LFOStrip::setPhaseSource(std::atomic<float>* src)
     waveformDisplay_.setPhaseSource(src);
 }
 
+void LFOStrip::setSHSource(std::atomic<float>* src)
+{
+    waveformDisplay_.setSHSource(src);
+}
+
 void LFOStrip::resized()
 {
     // 4-row layout:

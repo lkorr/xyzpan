@@ -56,6 +56,10 @@ public:
     std::atomic<float> lfoPhaseX{0.f}, lfoPhaseY{0.f}, lfoPhaseZ{0.f};
     std::atomic<float> lfoPhaseOrbitXY{0.f}, lfoPhaseOrbitXZ{0.f}, lfoPhaseOrbitYZ{0.f};
 
+    // S&H held values — written by audio thread, read by UI displays
+    std::atomic<float> lfoSHValueX{0.f}, lfoSHValueY{0.f}, lfoSHValueZ{0.f};
+    std::atomic<float> lfoSHValueOrbitXY{0.f}, lfoSHValueOrbitXZ{0.f}, lfoSHValueOrbitYZ{0.f};
+
 private:
     xyzpan::XYZPanEngine engine;
 

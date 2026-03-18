@@ -58,6 +58,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     yLFO_.setPhaseSource(&p.lfoPhaseY);
     zLFO_.setPhaseSource(&p.lfoPhaseZ);
 
+    // Wire S&H held value sources for accurate S&H waveform display
+    xLFO_.setSHSource(&p.lfoSHValueX);
+    yLFO_.setSHSource(&p.lfoSHValueY);
+    zLFO_.setSHSource(&p.lfoSHValueZ);
+
     // ----- XYZ LFO Speed slider (below LFO strips, above Utilities) -----
     lfoSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
     lfoSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 16);
@@ -126,6 +131,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     orbitXYLFO_.setPhaseSource(&p.lfoPhaseOrbitXY);
     orbitXZLFO_.setPhaseSource(&p.lfoPhaseOrbitXZ);
     orbitYZLFO_.setPhaseSource(&p.lfoPhaseOrbitYZ);
+
+    orbitXYLFO_.setSHSource(&p.lfoSHValueOrbitXY);
+    orbitXZLFO_.setSHSource(&p.lfoSHValueOrbitXZ);
+    orbitYZLFO_.setSHSource(&p.lfoSHValueOrbitYZ);
 
     // ----- Stereo toggle button — click to expand (hides itself) -----
     stereoToggle_.onClick = [this] {

@@ -63,6 +63,82 @@ namespace {
     constexpr const char* kTEST_TONE_WAVEFORM = "test_tone_waveform";
 }
 
+const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDescriptions()
+{
+    static const std::unordered_map<juce::String, juce::String> descs = {
+        // Test Tone
+        { "test_tone_enabled",   "Master on/off for the built-in test tone generator. Useful for auditioning spatial cues without external audio." },
+        { "test_tone_gain_db",   "Output level of the test tone in dB. Keep low to avoid clipping when combined with input audio." },
+        { "test_tone_pitch_hz",  "Fundamental frequency of the test tone. Mid-range tones (300-1000 Hz) are best for hearing ITD/ILD cues clearly." },
+        { "test_tone_pulse_hz",  "Rate at which the test tone pulses on/off. Pulsing helps distinguish direct vs. reflected sound in the spatial field." },
+        { "test_tone_waveform",  "Waveform shape of the test tone (sine, saw, etc.). Harmonically rich waveforms reveal filter and comb effects more clearly." },
+
+        // X-Axis: Left/Right
+        { "itd_max_ms",          "Maximum interaural time difference in ms. Models the extra path length to the far ear (~0.7 ms for humans). Primary azimuth cue below ~1.5 kHz." },
+        { "head_shadow_hz",      "Cutoff frequency of the head-shadow low-pass filter on the far ear. The head blocks high frequencies, creating an ILD that dominates azimuth perception above ~1.5 kHz." },
+        { "ild_max_db",          "Maximum interaural level difference in dB. The far ear receives less energy due to head shadowing. Works with head_shadow_hz to encode left/right position." },
+        { "vert_mono_cyl_radius","Radius of the vertical mono-blend cylinder. Sources within this radius blend toward mono to prevent extreme hard-panning at dead-center positions." },
+
+        // Y-Axis: Front/Back
+        { "rear_shadow_hz",      "Low-pass cutoff applied to rear sources. The pinna naturally attenuates high frequencies from behind. Lower values push the source further 'behind' the listener." },
+        { "presence_shelf_freq_hz", "Centre frequency of the presence shelf filter. Boosting the 2-5 kHz range creates a forward/present quality; cutting it moves the source behind the head." },
+        { "presence_shelf_max_db",  "Maximum gain/cut of the presence shelf in dB. Applied proportionally to front-back position (Y-axis). Positive = front boost, negative at rear." },
+        { "ear_canal_freq_hz",   "Resonant frequency of the ear-canal model (peak filter). The real ear canal resonates around 2.5-3 kHz and amplifies front-facing sound. Scales with Y-axis." },
+        { "ear_canal_q",         "Q (bandwidth) of the ear-canal resonance. Higher Q = narrower, more pronounced peak. Real ear canal Q is roughly 5-10." },
+        { "ear_canal_max_db",    "Maximum boost of the ear-canal resonance in dB. Applied at full strength when the source is directly in front; fades to zero behind." },
+
+        // Z-Axis: Above/Below
+        { "pinna_notch_hz",      "Centre frequency of the pinna notch filter. The pinna creates a narrow spectral notch whose frequency shifts with elevation — higher source = higher notch frequency." },
+        { "pinna_notch_q",       "Q of the pinna notch. Narrow notch (high Q) gives a sharper elevation cue. Real pinna notches are fairly narrow (Q ~ 5-15)." },
+        { "pinna_shelf_hz",      "Cutoff of the pinna high-shelf filter. Elevated sources receive a subtle high-frequency boost from outer-ear reflections." },
+        { "chest_delay_ms",      "Delay of the chest-bounce reflection in ms. Sound from below bounces off the torso, arriving ~0.4 ms late. Cues the brain that the source is low." },
+        { "chest_gain_db",       "Gain of the chest-bounce reflection in dB. Typically negative (attenuated). Stronger reflection = stronger below cue." },
+        { "floor_delay_ms",      "Delay of the floor reflection in ms. A second early reflection off the ground plane reinforces the below cue." },
+        { "floor_gain_db",       "Gain of the floor reflection in dB. Typically well below 0 dB. Combined with chest bounce creates a convincing below sensation." },
+        { "comb_delay_",         "Delay time for one line of the pinna comb filter bank. Ten parallel delay lines model the complex interference pattern of the outer ear at different elevations." },
+        { "comb_fb_",            "Feedback coefficient for one comb filter line. Controls how many times the signal recirculates. Higher values = more resonant, coloured sound." },
+        { "comb_wet_max",        "Maximum wet mix of the pinna comb filter bank. Blends the comb-filtered signal with dry. Scales with elevation distance from the horizontal plane." },
+
+        // Distance
+        { "dist_delay_max_ms",   "Maximum propagation delay in ms at the far edge of the sphere. Models speed-of-sound travel time. This is a creative effect, not latency-compensated." },
+        { "dist_smooth_ms",      "Smoothing time for distance parameter changes in ms. Prevents clicks when the source jumps in distance. Affects delay interpolation ramp." },
+        { "air_abs_max_hz",      "Low-pass cutoff at the far edge (maximum distance). Models high-frequency absorption by air — distant sounds lose treble." },
+        { "air_abs_min_hz",      "Low-pass cutoff at minimum distance. Even a close source gets some gentle roll-off for naturalness. Should be well above audible range." },
+        { "aux_send_gain_max_db","Maximum aux send level in dB at the far edge. Drives an external reverb bus to increase wet ratio with distance, simulating room reflections." },
+
+        // Smoothing
+        { "smooth_itd_ms",       "Smoothing time constant for ITD changes in ms. Prevents audible clicks when the source crosses the median plane. Too fast = clicks, too slow = laggy motion." },
+        { "smooth_filter_ms",    "Smoothing time constant for filter coefficient changes in ms. Applies to head shadow, pinna, and ear-canal filters. Avoids zipper noise during motion." },
+        { "smooth_gain_ms",      "Smoothing time constant for gain changes in ms. Covers ILD and distance attenuation. Fast enough for responsive motion, slow enough to avoid artefacts." },
+
+        // Geometry
+        { "sphere_radius",       "Radius of the spatial sphere in world units. All source positions are normalised to this radius. Larger values spread the spatial field wider." },
+
+        // Section descriptions
+        { "section:Test Tone",        "Built-in signal generator for auditioning spatial DSP cues without needing external audio input." },
+        { "section:X-Axis: Left/Right", "Azimuth (left/right) cues: interaural time difference (ITD), interaural level difference (ILD), and head shadow filtering." },
+        { "section:Y-Axis: Front/Back", "Front/back disambiguation cues: rear shadow, presence shelf, and ear-canal resonance model." },
+        { "section:Z-Axis: Above/Below","Elevation cues: pinna notch/shelf, chest and floor reflections, and the 10-line pinna comb filter bank." },
+        { "section:Distance",          "Distance rendering: propagation delay, air absorption low-pass, gain attenuation, and aux reverb send." },
+        { "section:Smoothing",         "Parameter smoothing time constants. Control how quickly DSP coefficients update during source motion to balance responsiveness vs. artefacts." },
+        { "section:DSP Readouts",      "Live telemetry from the audio thread. Shows current computed DSP values for the active source position." },
+
+        // Readout descriptions
+        { "readout:ITD Samples",   "Current interaural time difference in samples. Positive = right ear delayed. Derived from azimuth angle and itd_max_ms." },
+        { "readout:Shadow Cutoff", "Current head-shadow low-pass cutoff in Hz. Varies with azimuth — lower when source is far to one side." },
+        { "readout:ILD Gain",      "Current interaural level difference as a linear gain. 1.0 = no difference; lower values mean more attenuation on the far ear." },
+        { "readout:Rear Cutoff",   "Current rear-shadow low-pass cutoff in Hz. Drops as the source moves behind the listener." },
+        { "readout:Comb Wet",      "Current wet mix of the pinna comb bank. Increases as the source moves away from the horizontal plane." },
+        { "readout:Mono Blend",    "Current mono-blend factor. 1.0 = full stereo; approaches 0.0 as the source enters the vertical mono cylinder." },
+        { "readout:Sample Rate",   "Audio sample rate in Hz reported by the host DAW. All delay/filter calculations depend on this value." },
+        { "readout:Dist Delay",    "Current distance delay in samples. Proportional to normalised distance and dist_delay_max_ms." },
+        { "readout:Dist Gain",     "Current distance attenuation as linear gain. Inverse-distance law: gain = 1 / (1 + distance)." },
+        { "readout:Air Cutoff",    "Current air-absorption low-pass cutoff in Hz. Interpolated between air_abs_min_hz (close) and air_abs_max_hz (far)." },
+        { "readout:Mod X",         "Current modulated X position after LFO. Shows the final horizontal position used for DSP, including any LFO displacement." },
+    };
+    return descs;
+}
+
 DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
                                      xyzpan::DSPStateBridge* dspBridge)
     : dspBridge_(dspBridge)
@@ -71,6 +147,9 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     viewport_.setViewedComponent(&content_, false);
     viewport_.setScrollBarsShown(true, false);  // vertical scroll only
     addAndMakeVisible(viewport_);
+
+    // Drag handle sits on top of viewport (added after = higher Z-order)
+    addAndMakeVisible(dragHandle_);
 
     // -------------------------------------------------------------------
     // Section 1: Test Tone (dev utility — stays at top)
@@ -151,6 +230,11 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
         header->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
         content_.addAndMakeVisible(header);
 
+        // Hover info for DSP Readouts header
+        header->setInterceptsMouseClicks(true, false);
+        header->addMouseListener(this, false);
+        componentToDescKey_[header] = "section:DSP Readouts";
+
         addReadonlyLabel("ITD Samples");
         addReadonlyLabel("Shadow Cutoff");
         addReadonlyLabel("ILD Gain");
@@ -184,6 +268,9 @@ void DevPanelComponent::beginSection(const juce::String& title)
     header->setInterceptsMouseClicks(true, false);
     header->addMouseListener(this, false);
 
+    // Hover info: map section header to section key
+    componentToDescKey_[header] = "section:" + title;
+
     sections_.push_back({ header, {}, false });
     currentSectionIdx_ = static_cast<int>(sections_.size()) - 1;
 }
@@ -213,6 +300,12 @@ void DevPanelComponent::addDevSlider(const juce::String& paramID,
     attachments_.emplace_back(
         std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
             apvts, paramID, *slider));
+
+    // Hover info: register mouse listeners and map to paramID
+    lbl->addMouseListener(this, false);
+    slider->addMouseListener(this, true);
+    componentToDescKey_[lbl] = paramID;
+    componentToDescKey_[slider] = paramID;
 
     // Register with current section
     if (currentSectionIdx_ >= 0) {
@@ -245,6 +338,12 @@ void DevPanelComponent::addDevToggle(const juce::String& paramID,
         std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
             apvts, paramID, *toggle));
 
+    // Hover info: register mouse listeners and map to paramID
+    lbl->addMouseListener(this, false);
+    toggle->addMouseListener(this, true);
+    componentToDescKey_[lbl] = paramID;
+    componentToDescKey_[toggle] = paramID;
+
     // Register with current section
     if (currentSectionIdx_ >= 0) {
         sections_[static_cast<size_t>(currentSectionIdx_)].children.push_back(lbl);
@@ -269,6 +368,13 @@ void DevPanelComponent::addReadonlyLabel(const juce::String& name)
     valLbl->setColour(juce::Label::textColourId, juce::Colours::aqua);
     valLbl->setJustificationType(juce::Justification::centredLeft);
     content_.addAndMakeVisible(valLbl);
+
+    // Hover info: map both labels to readout key
+    juce::String key = "readout:" + name;
+    nameLbl->addMouseListener(this, false);
+    valLbl->addMouseListener(this, false);
+    componentToDescKey_[nameLbl] = key;
+    componentToDescKey_[valLbl] = key;
 }
 
 void DevPanelComponent::relayout()
@@ -374,16 +480,50 @@ void DevPanelComponent::timerCallback()
     fmt(10, "%.4f",   s.modX);
 }
 
+void DevPanelComponent::mouseEnter(const juce::MouseEvent& event)
+{
+    // Walk up the parent chain from eventComponent until we find a mapped component
+    for (auto* comp = event.eventComponent; comp != nullptr; comp = comp->getParentComponent()) {
+        auto it = componentToDescKey_.find(comp);
+        if (it != componentToDescKey_.end()) {
+            const auto& key = it->second;
+            const auto& descs = getDescriptions();
+
+            // Exact lookup first
+            auto descIt = descs.find(key);
+            if (descIt != descs.end()) {
+                currentInfoText_ = descIt->second;
+            } else {
+                // Prefix match for comb_delay_N / comb_fb_N
+                currentInfoText_ = {};
+                for (const auto& [prefix, text] : descs) {
+                    if (key.startsWith(prefix)) {
+                        currentInfoText_ = text;
+                        break;
+                    }
+                }
+            }
+
+            repaint(0, getHeight() - kInfoBoxH, getWidth(), kInfoBoxH);
+            return;
+        }
+    }
+}
+
+void DevPanelComponent::mouseExit(const juce::MouseEvent& event)
+{
+    // Walk up parent chain — only clear if we were showing something for this component
+    for (auto* comp = event.eventComponent; comp != nullptr; comp = comp->getParentComponent()) {
+        if (componentToDescKey_.find(comp) != componentToDescKey_.end()) {
+            currentInfoText_ = {};
+            repaint(0, getHeight() - kInfoBoxH, getWidth(), kInfoBoxH);
+            return;
+        }
+    }
+}
+
 void DevPanelComponent::mouseDown(const juce::MouseEvent& event)
 {
-    // Check for left-edge drag-to-resize
-    if (event.eventComponent == this && isInDragZone(event.x)) {
-        dragging_ = true;
-        dragStartX_ = event.getScreenX();
-        dragStartW_ = getWidth();
-        return;
-    }
-
     // Collapsible section header click
     auto* source = event.eventComponent;
     for (auto& section : sections_) {
@@ -395,45 +535,54 @@ void DevPanelComponent::mouseDown(const juce::MouseEvent& event)
     }
 }
 
-void DevPanelComponent::mouseUp(const juce::MouseEvent&)
+// ---------------------------------------------------------------------------
+// DragHandle — thin overlay on left edge for resize
+// ---------------------------------------------------------------------------
+void DevPanelComponent::DragHandle::mouseDown(const juce::MouseEvent& e)
 {
-    dragging_ = false;
+    owner.dragging_ = true;
+    owner.dragStartX_ = e.getScreenX();
+    owner.dragStartW_ = owner.getWidth();
 }
 
-void DevPanelComponent::mouseDrag(const juce::MouseEvent& event)
+void DevPanelComponent::DragHandle::mouseDrag(const juce::MouseEvent& e)
 {
-    if (!dragging_) return;
+    if (!owner.dragging_) return;
 
-    const int delta = dragStartX_ - event.getScreenX();  // dragging left = positive delta = wider
-    int newW = dragStartW_ + delta;
+    const int delta = owner.dragStartX_ - e.getScreenX();
+    int newW = owner.dragStartW_ + delta;
 
-    // Clamp to reasonable bounds
-    if (auto* parent = getParentComponent()) {
+    if (auto* parent = owner.getParentComponent()) {
         const int minW = 200;
         const int maxW = parent->getWidth() - 50;
         newW = juce::jlimit(minW, maxW, newW);
     }
 
-    customWidth_ = newW;
-    // Reposition: keep right edge anchored, adjust left edge
-    if (auto* parent = getParentComponent())
-        setBounds(parent->getWidth() - newW, 0, newW, parent->getHeight());
+    owner.customWidth_ = newW;
+    if (auto* parent = owner.getParentComponent())
+        owner.setBounds(parent->getWidth() - newW, 0, newW, parent->getHeight());
 }
 
-void DevPanelComponent::mouseMove(const juce::MouseEvent& event)
+void DevPanelComponent::DragHandle::mouseUp(const juce::MouseEvent&)
 {
-    if (event.eventComponent == this && isInDragZone(event.x))
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-    else if (event.eventComponent == this)
-        setMouseCursor(juce::MouseCursor::NormalCursor);
+    owner.dragging_ = false;
+}
+
+void DevPanelComponent::mouseWheelMove(const juce::MouseEvent& e,
+                                       const juce::MouseWheelDetails& wheel)
+{
+    // Swallow wheel events so they scroll the viewport instead of
+    // propagating to XYZPanGLView (which uses them for camera zoom).
+    viewport_.mouseWheelMove(e, wheel);
 }
 
 void DevPanelComponent::resized()
 {
-    // Inset viewport past the drag handle so the left edge receives mouse events
     auto area = getLocalBounds();
-    area.removeFromLeft(kDragHandleW);
+    area.removeFromBottom(kInfoBoxH);  // reserve space for info box
     viewport_.setBounds(area);
+    dragHandle_.setBounds(0, 0, kDragHandleW, getHeight());
+    dragHandle_.toFront(false);  // keep on top of viewport
 }
 
 void DevPanelComponent::paint(juce::Graphics& g)
@@ -455,4 +604,27 @@ void DevPanelComponent::paint(juce::Graphics& g)
     g.drawLine(static_cast<float>(getWidth() - 1), 0.0f,
                static_cast<float>(getWidth() - 1),
                static_cast<float>(getHeight()), 1.0f);
+
+    // Info box at bottom
+    auto infoArea = getLocalBounds().removeFromBottom(kInfoBoxH);
+    g.setColour(juce::Colour(0xFF252525));
+    g.fillRect(infoArea);
+
+    // Top separator line
+    g.setColour(juce::Colours::grey.withAlpha(0.4f));
+    g.drawHorizontalLine(infoArea.getY(), static_cast<float>(infoArea.getX()),
+                         static_cast<float>(infoArea.getRight()));
+
+    auto textArea = infoArea.reduced(kPadding + 2, 4);
+    if (currentInfoText_.isNotEmpty()) {
+        g.setColour(juce::Colours::silver);
+        g.setFont(juce::Font(10.5f));
+        g.drawFittedText(currentInfoText_, textArea,
+                         juce::Justification::topLeft, 4, 1.0f);
+    } else {
+        g.setColour(juce::Colours::grey.withAlpha(0.5f));
+        g.setFont(juce::Font(10.5f));
+        g.drawFittedText("Hover over a parameter for details", textArea,
+                         juce::Justification::centred, 1, 1.0f);
+    }
 }

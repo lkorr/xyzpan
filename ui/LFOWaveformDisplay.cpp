@@ -38,6 +38,11 @@ void LFOWaveformDisplay::setPhaseSource(std::atomic<float>* src)
     phaseSource_ = src;
 }
 
+void LFOWaveformDisplay::setSHSource(std::atomic<float>* src)
+{
+    shSource_ = src;
+}
+
 void LFOWaveformDisplay::readParams()
 {
     if (waveformParam_) {
@@ -124,10 +129,14 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
         const float frac = static_cast<float>(i) / static_cast<float>(numPoints - 1);
 
         // t = phase position in waveform, scrolling with animPhase
-        float t = frac * cycles + animPhase + phase_;
+        float t = frac * cycles + animPhase;
         t -= std::floor(t);  // wrap to [0, 1)
 
-        float y = LFOShapeSelector::computeWaveformY(t, waveform_) * depth_;
+        float y;
+        if (waveform_ == 5 && shSource_)
+            y = shSource_->load(std::memory_order_relaxed) * depth_;
+        else
+            y = LFOShapeSelector::computeWaveformY(t, waveform_) * depth_;
 
         // Apply visual smoothing
         if (smoothAlpha > 0.0f) {
@@ -155,9 +164,13 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
 
     // Bright gold dot at right edge marking "current" output
     {
-        float t = cycles + animPhase + phase_;
+        float t = animPhase;
         t -= std::floor(t);
-        float y = LFOShapeSelector::computeWaveformY(t, waveform_) * depth_;
+        float y;
+        if (waveform_ == 5 && shSource_)
+            y = shSource_->load(std::memory_order_relaxed) * depth_;
+        else
+            y = LFOShapeSelector::computeWaveformY(t, waveform_) * depth_;
 
         // Apply same smoothing as the line end
         if (smoothAlpha > 0.0f)

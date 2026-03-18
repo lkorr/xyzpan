@@ -24,6 +24,7 @@ public:
 
     void resized() override;
     void setPhaseSource(std::atomic<float>* src);
+    void setSHSource(std::atomic<float>* src);
 
 private:
     void init(const juce::String& rateID, const juce::String& depthID,

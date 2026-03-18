@@ -22,6 +22,7 @@ public:
                    const juce::String& depthID);
 
     void setPhaseSource(std::atomic<float>* src);
+    void setSHSource(std::atomic<float>* src);
 
     void paint(juce::Graphics& g) override;
     void visibilityChanged() override;
@@ -49,6 +50,8 @@ private:
 
     // Real LFO phase from audio thread (replaces free-running accumulator)
     std::atomic<float>* phaseSource_ = nullptr;
+    // S&H held value from audio thread (for accurate S&H display)
+    std::atomic<float>* shSource_ = nullptr;
 
     static constexpr int kFps = 30;
 
