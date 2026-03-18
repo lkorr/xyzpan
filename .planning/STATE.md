@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 07.4-01-PLAN.md (7 factory presets, APVTS program methods, 9 preset tests all green)
-last_updated: "2026-03-18T08:52:01.509Z"
+stopped_at: "07.4-02 Task 2 checkpoint: human-verify preset system end-to-end"
+last_updated: "2026-03-18T08:58:48.321Z"
 last_activity: 2026-03-17 -- Completed plan 07.2-01 (SineLUT, orbit cos/sin LUT, zero-LFO fast path, worst-case benchmark, 4 SineLUT + 7 LFO + 4 perf tests green)
 progress:
   total_phases: 12
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
   percent: 100
 ---
 
@@ -72,6 +72,7 @@ Progress: [██████████] 100%
 | Phase 07.1-optimization P02 | 3 | 2 tasks | 3 files |
 | Phase 07.2-optimization-round-2 P01 | 20 | 2 tasks | 6 files |
 | Phase 07.4-01 P01 | 7 | 2 tasks | 4 files |
+| Phase 07.4 P02 | 4 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,7 @@ Recent decisions affecting current work:
 - [Phase 07.4-01]: Beat div default index = 6 (kBeatDivDefaultIndex, quarter note); plan comment said 5 — corrected in Presets.h
 - [Phase 07.4-01]: Factory preset XMLs include all ~110 parameter IDs to prevent state bleed between presets (Pitfall 4 from research)
 - [Phase 07.4-01]: setCurrentProgram calls apvts.replaceState() on message thread only; processBlock reads only pre-cached atomics (INFRA-04)
+- [Phase 07.4-02]: Preset bar uses removeFromTop(kPresetBarH=32) as first resized() carve-out; leftColTop=leftCol.getY() anchors left-column Y after preset bar removal; XmlElement::writeTo() replaces deprecated writeToFile(); ComboBox deselected after user preset load
 
 ### Pending Todos
 
@@ -174,6 +176,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-18T08:52:01.504Z
-Stopped at: Completed 07.4-01-PLAN.md (7 factory presets, APVTS program methods, 9 preset tests all green)
+Last session: 2026-03-18T08:58:38.066Z
+Stopped at: 07.4-02 Task 2 checkpoint: human-verify preset system end-to-end
 Resume file: None
