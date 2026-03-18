@@ -80,6 +80,7 @@ Progress: [██████████] 100%
 - Phase 07.1 inserted after Phase 7: Optimization (URGENT)
 - Phase 07.2 inserted after Phase 7: Optimization Round 2 DSP and UI CPU Optimization (URGENT)
 - Phase 07.3 inserted after Phase 7: refactoring and codebase cleanup - remove redundancies and increase legibility and understandability of the codebase while retaining 100% functionality with tests (URGENT)
+- Phase 07.4 inserted after Phase 7: Presets - VST preset system for all twistable knobs with LFO parameters, user-saveable and factory preset support. Safety-critical: no audio-thread memory allocation (URGENT)
 
 ### Decisions
 

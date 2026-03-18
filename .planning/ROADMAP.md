@@ -161,6 +161,17 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 6. UI and Parameter System | 3/4 | In Progress|  |
 | 7. Integration and Validation | 2/2 | Complete   | 2026-03-17 |
 
+### Phase 07.4: Presets (INSERTED)
+
+**Goal:** Implement a safe VST preset system with 7 factory presets (embedded XML strings in Presets.h), PluginProcessor program methods (getNumPrograms/setCurrentProgram), in-editor preset dropdown with user save/load, and comprehensive round-trip tests -- all with zero audio-thread memory allocation
+**Requirements**: PARAM-04, PARAM-05, INFRA-04
+**Depends on:** Phase 7
+**Plans:** 2 plans
+
+Plans:
+- [ ] 07.4-01-PLAN.md — Factory preset backend: Presets.h with 7 embedded XML presets, PluginProcessor program methods, TestPresets.cpp round-trip and factory preset tests
+- [ ] 07.4-02-PLAN.md — Preset UI: ComboBox factory preset selector, user Save/Load buttons with FileChooser, human verification checkpoint
+
 ### Phase 07.3: refactoring and codebase cleanup - remove redundancies and increase legibility and understandability of the codebase while retaining 100% functionality with tests (INSERTED)
 
 **Goal:** [Urgent work - to be planned]
