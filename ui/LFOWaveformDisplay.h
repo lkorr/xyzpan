@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <array>
 #include <atomic>
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,15 @@ private:
     std::atomic<float>* shSource_ = nullptr;
 
     static constexpr int kFps = 30;
+
+    // S&H history ring buffer (message-thread only)
+    static constexpr int kSHHistorySize = 32;
+    std::array<float, kSHHistorySize> shHistory_{};
+    int   shWritePos_  = 0;
+    int   shCount_     = 0;     // valid entries (0..kSHHistorySize)
+    float shLastValue_ = 0.0f;  // for change detection
+    float shDisplayPhase_   = 0.0f;   // monotonic local phase for S&H scrolling
+    float shPrevAnimPhase_  = -1.0f;  // previous animPhase for delta computation
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LFOWaveformDisplay)
 };

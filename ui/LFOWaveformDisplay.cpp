@@ -45,10 +45,21 @@ void LFOWaveformDisplay::setSHSource(std::atomic<float>* src)
 
 void LFOWaveformDisplay::readParams()
 {
+    int prevWaveform = waveform_;
+
     if (waveformParam_) {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(waveformParam_);
         waveform_ = ranged ? static_cast<int>(std::round(ranged->convertFrom0to1(waveformParam_->getValue())))
                            : static_cast<int>(std::round(waveformParam_->getValue() * 5.0f));
+    }
+
+    // Reset S&H history when waveform selection changes
+    if (waveform_ != prevWaveform) {
+        shCount_          = 0;
+        shWritePos_       = 0;
+        shLastValue_      = 0.0f;
+        shDisplayPhase_   = 0.0f;
+        shPrevAnimPhase_  = -1.0f;
     }
     if (phaseParam_) {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(phaseParam_);
@@ -82,6 +93,32 @@ void LFOWaveformDisplay::visibilityChanged()
 
 void LFOWaveformDisplay::timerCallback()
 {
+    // Sample S&H history for staircase display
+    if (waveform_ == 5 && shSource_) {
+        float val = shSource_->load(std::memory_order_relaxed);
+        if (std::fabs(val - shLastValue_) > 0.001f) {
+            shHistory_[static_cast<size_t>(shWritePos_)] = val;
+            shWritePos_ = (shWritePos_ + 1) % kSHHistorySize;
+            if (shCount_ < kSHHistorySize) ++shCount_;
+            shLastValue_ = val;
+        }
+    }
+
+    // Maintain smooth monotonic S&H display phase
+    if (waveform_ == 5 && phaseSource_) {
+        float raw = phaseSource_->load(std::memory_order_relaxed);
+        if (shPrevAnimPhase_ < 0.0f) {
+            shPrevAnimPhase_ = raw;
+        } else {
+            float delta = raw - shPrevAnimPhase_;
+            if (delta < 0.0f) delta += 1.0f;  // handle wrap
+            if (delta > 0.5f) delta = 0.5f;   // clamp to prevent aliasing
+            shDisplayPhase_ += delta;
+            shDisplayPhase_ -= std::floor(shDisplayPhase_);
+            shPrevAnimPhase_ = raw;
+        }
+    }
+
     repaint();
 }
 
@@ -115,10 +152,10 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
     const int numPoints = juce::jmax(32, static_cast<int>(drawW));
     const float cycles = 2.0f;
 
-    // One-pole smoothing coefficient derived from smooth param [0..100 ms]
-    // Higher smooth_ => more filtering => smoother waveform preview
-    const float smoothAlpha = (smooth_ > 0.01f)
-        ? std::exp(-1.0f / (smooth_ * 0.001f * static_cast<float>(numPoints) * 0.5f))
+    // One-pole smoothing coefficient — convert [0,1] to ms like DSP (Engine.cpp:549)
+    const float smoothMs = smooth_ * 300.0f;  // 0-1 → 0-300 ms
+    const float smoothAlpha = (smoothMs > 0.1f)
+        ? std::exp(-1.0f / (smoothMs * 0.001f * static_cast<float>(numPoints) * 0.5f))
         : 0.0f;
 
     juce::Path path;
@@ -133,10 +170,33 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
         t -= std::floor(t);  // wrap to [0, 1)
 
         float y;
-        if (waveform_ == 5 && shSource_)
-            y = shSource_->load(std::memory_order_relaxed) * depth_;
-        else
+        if (waveform_ == 5) {
+            if (shCount_ > 0) {
+                // Use smooth local phase (immune to aliasing) at 2x scroll speed
+                float shPhase = shDisplayPhase_ * 2.0f;
+                shPhase -= std::floor(shPhase);
+
+                float distFromRight = 1.0f - frac;
+                float newestWidth = shPhase / cycles;
+                int stepsBack;
+                if (distFromRight <= newestWidth) {
+                    stepsBack = 0;
+                } else {
+                    stepsBack = 1 + static_cast<int>((distFromRight - newestWidth) * cycles);
+                }
+                int entryIdx = (shCount_ - 1) - stepsBack;
+                if (entryIdx >= 0 && entryIdx < shCount_) {
+                    int bufIdx = (shWritePos_ - shCount_ + entryIdx + kSHHistorySize) % kSHHistorySize;
+                    y = shHistory_[static_cast<size_t>(bufIdx)] * depth_;
+                } else {
+                    y = 0.0f;
+                }
+            } else {
+                y = 0.0f;
+            }
+        } else {
             y = LFOShapeSelector::computeWaveformY(t, waveform_) * depth_;
+        }
 
         // Apply visual smoothing
         if (smoothAlpha > 0.0f) {
