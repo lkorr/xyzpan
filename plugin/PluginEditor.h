@@ -6,6 +6,7 @@
 #include "LFOStrip.h"
 #include "DevPanelComponent.h"
 #include "ParamIDs.h"
+#include "Presets.h"
 
 // Forward declaration to break circular include; full type used in .cpp
 class XYZPanProcessor;
@@ -45,6 +46,7 @@ private:
     // Layout constants
     static constexpr int kLeftColW      = 400;     // wider for larger knobs
     static constexpr int kBottomH       = 240;     // was 400 — orbit moved here
+    static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
     static constexpr int kDefaultW      = 1100;
@@ -116,6 +118,11 @@ private:
     // Dev panel toggle (bottom row) + overlay panel
     juce::TextButton devToggle_{"DEV"};
     DevPanelComponent devPanel_;
+
+    // Preset controls -- top bar
+    juce::ComboBox presetCombo_;
+    juce::TextButton presetSaveBtn_{"Save"};
+    juce::TextButton presetLoadBtn_{"Load"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanEditor)
 };

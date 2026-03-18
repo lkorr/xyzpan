@@ -254,6 +254,55 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     devPanel_.setVisible(false);
     glView_.addAndMakeVisible(devPanel_);
 
+    // ----- Preset controls (top bar) -----
+    addAndMakeVisible(presetCombo_);
+    for (int i = 0; i < XYZPresets::kNumPresets; ++i)
+        presetCombo_.addItem(XYZPresets::kFactoryPresets[i].name, i + 1); // ComboBox IDs are 1-based
+    presetCombo_.setSelectedId(proc_.getCurrentProgram() + 1, juce::dontSendNotification);
+    presetCombo_.onChange = [this]() {
+        int idx = presetCombo_.getSelectedId() - 1; // Convert back to 0-based
+        if (idx >= 0 && idx < XYZPresets::kNumPresets)
+            proc_.setCurrentProgram(idx);
+    };
+
+    addAndMakeVisible(presetSaveBtn_);
+    presetSaveBtn_.onClick = [this]() {
+        auto chooser = std::make_shared<juce::FileChooser>(
+            "Save Preset", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+            "*.xml");
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser](const juce::FileChooser& fc) {
+                auto file = fc.getResult();
+                if (file == juce::File{})
+                    return;
+                // Ensure .xml extension
+                if (!file.hasFileExtension("xml"))
+                    file = file.withFileExtension("xml");
+                auto state = proc_.apvts.copyState();
+                auto xml = state.createXml();
+                if (xml != nullptr)
+                    xml->writeTo(file);
+            });
+    };
+
+    addAndMakeVisible(presetLoadBtn_);
+    presetLoadBtn_.onClick = [this]() {
+        auto chooser = std::make_shared<juce::FileChooser>(
+            "Load Preset", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+            "*.xml");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser](const juce::FileChooser& fc) {
+                auto file = fc.getResult();
+                if (file == juce::File{} || !file.existsAsFile())
+                    return;
+                auto xml = juce::parseXML(file);
+                if (xml != nullptr && xml->hasTagName(proc_.apvts.state.getType()))
+                    proc_.apvts.replaceState(juce::ValueTree::fromXml(*xml));
+                // After loading user preset, deselect factory preset in combo
+                presetCombo_.setSelectedId(0, juce::dontSendNotification);
+            });
+    };
+
     // Window sizing
     setResizable(true, true);
     setResizeLimits(950, 750, 1800, 1600);
@@ -275,12 +324,14 @@ XYZPanEditor::~XYZPanEditor()
 void XYZPanEditor::paint(juce::Graphics& g)
 {
     using ALF = xyzpan::AlchemyLookAndFeel;
-    const int leftColH = getHeight() - kBottomH;
+    // Content area starts below the preset bar
+    const int contentY = kPresetBarH;
+    const int leftColH = getHeight() - kBottomH - kPresetBarH;
 
     // Compute miscTop identically to resized()
     const int miscTotalH = kSectionHdrH + kMiscSectionH;
     const int posSectionH = leftColH - miscTotalH;
-    const int miscTop = posSectionH;
+    const int miscTop = contentY + posSectionH;
 
     // Bottom row geometry (matches resized())
     const int bx = 0;
@@ -294,9 +345,9 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // ===== BACKGROUNDS =====
     g.fillAll(juce::Colour(ALF::kBackground));
 
-    // Left column background
+    // Left column background (below preset bar)
     g.setColour(juce::Colour(ALF::kDarkIron));
-    g.fillRect(0, 0, kLeftColW, leftColH);
+    g.fillRect(0, contentY, kLeftColW, leftColH);
 
     // Bottom row background
     g.setColour(juce::Colour(ALF::kDarkIron));
@@ -318,8 +369,8 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
-    // "POSITION" header — top of left column
-    drawHeader(0, 0, kLeftColW, "POSITION");
+    // "POSITION" header — top of left column (below preset bar)
+    drawHeader(0, contentY, kLeftColW, "POSITION");
 
     // "UTILITIES" header — at position/utilities boundary
     drawHeader(0, miscTop, kLeftColW, "UTILITIES");
@@ -346,7 +397,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // Vertical dividers between X | Y | Z sub-columns
     {
         const int subColW = kLeftColW / 3;
-        const float divTop = static_cast<float>(kSectionHdrH);
+        const float divTop = static_cast<float>(contentY + kSectionHdrH);
         const float divBot = static_cast<float>(miscTop - 1);
         g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
@@ -375,12 +426,16 @@ void XYZPanEditor::paint(juce::Graphics& g)
     g.fillRect(reverbX - 1, by, 2, kBottomH);
 
     // ===== MAIN STRUCTURAL DIVIDERS =====
-    // Vertical separator (left column | GL view)
+    // Vertical separator (left column | GL view), from below preset bar
     g.setColour(juce::Colour(ALF::kBronze));
-    g.fillRect(kLeftColW - 1, 0, 2, leftColH);
+    g.fillRect(kLeftColW - 1, contentY, 2, leftColH);
 
     // Horizontal separator (above bottom row)
     g.fillRect(0, by, bw, 2);
+
+    // Thin separator below preset bar
+    g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
+    g.drawHorizontalLine(kPresetBarH - 1, 0.0f, static_cast<float>(bw));
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +444,16 @@ void XYZPanEditor::paint(juce::Graphics& g)
 void XYZPanEditor::resized()
 {
     auto b = getLocalBounds();
+
+    // Preset bar at the very top (full width)
+    {
+        auto presetBar = b.removeFromTop(kPresetBarH);
+        auto saveBtnArea = presetBar.removeFromRight(60);
+        auto loadBtnArea = presetBar.removeFromRight(60);
+        presetCombo_.setBounds(presetBar.reduced(kPadding, 2));
+        presetSaveBtn_.setBounds(saveBtnArea.reduced(2));
+        presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
+    }
 
     // Carve out bottom row
     auto bottomRow = b.removeFromBottom(kBottomH);
@@ -418,6 +483,7 @@ void XYZPanEditor::resized()
     devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
 
     // ===== LEFT COLUMN — POSITION + UTILITIES =====
+    const int leftColTop = leftCol.getY();  // = kPresetBarH after preset bar removed
     const int leftColH = leftCol.getHeight();
     const int posColW = kLeftColW / 3;
     const int knobH   = 108;
@@ -430,14 +496,15 @@ void XYZPanEditor::resized()
 
     // Position section gets everything above utilities
     const int posSectionH = leftColH - miscTotalH;
-    const int miscTop = posSectionH;
+    const int miscTop = leftColTop + posSectionH;
 
     // --- POSITION SECTION ---
     {
         // Reserve 32px at the bottom of the position section for the LFO Speed slider
         const int lfoSpeedRowH = 32;
-        const int posSectionBottom = kSectionHdrH + (posSectionH - kSectionHdrH) - lfoSpeedRowH;
-        auto posSection = juce::Rectangle<int>(0, kSectionHdrH, kLeftColW, posSectionBottom - kSectionHdrH);
+        const int posSectionBottom = leftColTop + kSectionHdrH + (posSectionH - kSectionHdrH) - lfoSpeedRowH;
+        auto posSection = juce::Rectangle<int>(0, leftColTop + kSectionHdrH, kLeftColW,
+                                               posSectionBottom - (leftColTop + kSectionHdrH));
 
         auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
                                 int colX, int colW, int colTop, int colBottom) {
