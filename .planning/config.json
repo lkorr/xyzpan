@@ -3,7 +3,8 @@
     "mode": "interactive",
     "granularity": "standard",
     "parallelization": true,
-    "gitTracking": "per-task"
+    "gitTracking": "per-task",
+    "_auto_chain_active": false
   },
   "agents": {
     "research": true,

@@ -48,6 +48,14 @@ public:
     // DSP state bridge for dev panel readouts (audio thread → UI thread)
     xyzpan::DSPStateBridge dspStateBridge;
 
+    // Momentary reset flags — set by UI, consumed (cleared) by processBlock
+    std::atomic<bool> resetXYZLfoPhases{false};
+    std::atomic<bool> resetOrbitLfoPhases{false};
+
+    // LFO phases — written by audio thread at end of processBlock, read by UI displays
+    std::atomic<float> lfoPhaseX{0.f}, lfoPhaseY{0.f}, lfoPhaseZ{0.f};
+    std::atomic<float> lfoPhaseOrbitXY{0.f}, lfoPhaseOrbitXZ{0.f}, lfoPhaseOrbitYZ{0.f};
+
 private:
     xyzpan::XYZPanEngine engine;
 
@@ -89,7 +97,6 @@ private:
     // Dev panel: Distance processing (Phase 4)
     std::atomic<float>* distDelayMaxMsParam = nullptr;
     std::atomic<float>* distSmoothMsParam   = nullptr;
-    std::atomic<float>* dopplerEnabledParam = nullptr;  // AudioParameterBool stores as float 0/1
     std::atomic<float>* airAbsMaxHzParam    = nullptr;
     std::atomic<float>* airAbsMinHzParam    = nullptr;
 
@@ -113,10 +120,14 @@ private:
     std::atomic<float>* lfoZDepthParam    = nullptr;
     std::atomic<float>* lfoZPhaseParam    = nullptr;
     std::atomic<float>* lfoZWaveformParam = nullptr;
+    std::atomic<float>* lfoXSmoothParam  = nullptr;
+    std::atomic<float>* lfoYSmoothParam  = nullptr;
+    std::atomic<float>* lfoZSmoothParam  = nullptr;
     std::atomic<float>* lfoTempoSyncParam = nullptr;
     std::atomic<float>* lfoXBeatDivParam  = nullptr;
     std::atomic<float>* lfoYBeatDivParam  = nullptr;
     std::atomic<float>* lfoZBeatDivParam  = nullptr;
+    std::atomic<float>* lfoSpeedMulParam  = nullptr;
 
     // Stereo source node splitting
     std::atomic<float>* stereoWidthParam        = nullptr;
@@ -131,6 +142,7 @@ private:
     std::atomic<float>* orbitXYPhaseParam      = nullptr;
     std::atomic<float>* orbitXYResetPhaseParam = nullptr;
     std::atomic<float>* orbitXYDepthParam      = nullptr;
+    std::atomic<float>* orbitXYSmoothParam     = nullptr;
 
     // Stereo orbit LFOs — XZ plane
     std::atomic<float>* orbitXZWaveformParam   = nullptr;
@@ -139,6 +151,7 @@ private:
     std::atomic<float>* orbitXZPhaseParam      = nullptr;
     std::atomic<float>* orbitXZResetPhaseParam = nullptr;
     std::atomic<float>* orbitXZDepthParam      = nullptr;
+    std::atomic<float>* orbitXZSmoothParam     = nullptr;
 
     // Stereo orbit LFOs — YZ plane
     std::atomic<float>* orbitYZWaveformParam   = nullptr;
@@ -147,6 +160,7 @@ private:
     std::atomic<float>* orbitYZPhaseParam      = nullptr;
     std::atomic<float>* orbitYZResetPhaseParam = nullptr;
     std::atomic<float>* orbitYZDepthParam      = nullptr;
+    std::atomic<float>* orbitYZSmoothParam     = nullptr;
 
     // Stereo orbit shared
     std::atomic<float>* orbitTempoSyncParam = nullptr;

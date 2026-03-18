@@ -45,7 +45,6 @@ namespace ParamID {
     // Dev panel: Distance processing tuning (Phase 4)
     constexpr const char* DIST_DELAY_MAX_MS = "dist_delay_max_ms";
     constexpr const char* DIST_SMOOTH_MS    = "dist_smooth_ms";
-    constexpr const char* DOPPLER_ENABLED   = "doppler_enabled";
     constexpr const char* AIR_ABS_MAX_HZ    = "air_abs_max_hz";
     constexpr const char* AIR_ABS_MIN_HZ    = "air_abs_min_hz";
 
@@ -69,8 +68,14 @@ namespace ParamID {
     constexpr const char* LFO_Z_DEPTH     = "lfo_z_depth";
     constexpr const char* LFO_Z_PHASE     = "lfo_z_phase";
     constexpr const char* LFO_Z_WAVEFORM  = "lfo_z_waveform";
+    // Per-axis LFO output smoothing (0=off, 1=max)
+    constexpr const char* LFO_X_SMOOTH   = "lfo_x_smooth";
+    constexpr const char* LFO_Y_SMOOTH   = "lfo_y_smooth";
+    constexpr const char* LFO_Z_SMOOTH   = "lfo_z_smooth";
     // Tempo sync (shared)
     constexpr const char* LFO_TEMPO_SYNC  = "lfo_tempo_sync";   // AudioParameterBool
+    // XYZ LFO speed multiplier (shared across all XYZ LFOs)
+    constexpr const char* LFO_SPEED_MUL   = "lfo_speed_mul";
     // Beat division per axis (float multiplier: 0.25=1/4, 0.5=1/2, 1.0=quarter, 2.0=half, 4.0=whole)
     constexpr const char* LFO_X_BEAT_DIV  = "lfo_x_beat_div";
     constexpr const char* LFO_Y_BEAT_DIV  = "lfo_y_beat_div";
@@ -89,6 +94,7 @@ namespace ParamID {
     constexpr const char* STEREO_ORBIT_XY_PHASE        = "stereo_orbit_xy_phase";
     constexpr const char* STEREO_ORBIT_XY_RESET_PHASE  = "stereo_orbit_xy_reset_phase";
     constexpr const char* STEREO_ORBIT_XY_DEPTH        = "stereo_orbit_xy_depth";
+    constexpr const char* STEREO_ORBIT_XY_SMOOTH       = "stereo_orbit_xy_smooth";
 
     // Stereo orbit LFOs — XZ plane
     constexpr const char* STEREO_ORBIT_XZ_WAVEFORM    = "stereo_orbit_xz_waveform";
@@ -97,6 +103,7 @@ namespace ParamID {
     constexpr const char* STEREO_ORBIT_XZ_PHASE        = "stereo_orbit_xz_phase";
     constexpr const char* STEREO_ORBIT_XZ_RESET_PHASE  = "stereo_orbit_xz_reset_phase";
     constexpr const char* STEREO_ORBIT_XZ_DEPTH        = "stereo_orbit_xz_depth";
+    constexpr const char* STEREO_ORBIT_XZ_SMOOTH       = "stereo_orbit_xz_smooth";
 
     // Stereo orbit LFOs — YZ plane
     constexpr const char* STEREO_ORBIT_YZ_WAVEFORM    = "stereo_orbit_yz_waveform";
@@ -105,6 +112,7 @@ namespace ParamID {
     constexpr const char* STEREO_ORBIT_YZ_PHASE        = "stereo_orbit_yz_phase";
     constexpr const char* STEREO_ORBIT_YZ_RESET_PHASE  = "stereo_orbit_yz_reset_phase";
     constexpr const char* STEREO_ORBIT_YZ_DEPTH        = "stereo_orbit_yz_depth";
+    constexpr const char* STEREO_ORBIT_YZ_SMOOTH       = "stereo_orbit_yz_smooth";
 
     // Stereo orbit shared
     constexpr const char* STEREO_ORBIT_TEMPO_SYNC = "stereo_orbit_tempo_sync";

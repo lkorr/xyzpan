@@ -78,6 +78,61 @@ void AlchemyLookAndFeel::drawRotarySlider(
 }
 
 // ---------------------------------------------------------------------------
+void AlchemyLookAndFeel::drawLinearSlider(
+    juce::Graphics& g,
+    int x, int y, int width, int height,
+    float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
+    const juce::Slider::SliderStyle style,
+    juce::Slider& slider)
+{
+    if (style != juce::Slider::LinearHorizontal) {
+        LookAndFeel_V4::drawLinearSlider(g, x, y, width, height,
+                                          sliderPos, 0.0f, 1.0f, style, slider);
+        return;
+    }
+
+    const bool hero = slider.findColour(juce::Slider::rotarySliderFillColourId)
+                      == juce::Colour(kBrightGold);
+    const float trackH  = hero ? 6.0f : 3.0f;
+    const float thumbR   = hero ? 5.0f : 3.5f;
+    const float cy       = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
+    const float left     = static_cast<float>(x) + thumbR;
+    const float right    = static_cast<float>(x + width) - thumbR;
+    const float trackTop = cy - trackH * 0.5f;
+
+    if (hero) {
+        // Outer glow — semi-transparent bright gold shadow behind track
+        g.setColour(juce::Colour(kBrightGold).withAlpha(0.15f));
+        g.fillRoundedRectangle(left - 2.0f, trackTop - 3.0f,
+                               (right - left) + 4.0f, trackH + 6.0f, 4.0f);
+    }
+
+    // Background track — dark iron with bronze outline
+    g.setColour(juce::Colour(kDarkIron));
+    g.fillRoundedRectangle(left, trackTop, right - left, trackH, trackH * 0.5f);
+    g.setColour(juce::Colour(kBronze).withAlpha(0.5f));
+    g.drawRoundedRectangle(left, trackTop, right - left, trackH, trackH * 0.5f, 1.0f);
+
+    // Value fill
+    const float fillW = sliderPos - left;
+    if (fillW > 0.5f) {
+        if (hero) {
+            // Warm-gold → bright-gold horizontal gradient
+            g.setGradientFill(juce::ColourGradient(
+                juce::Colour(kWarmGold), left, cy,
+                juce::Colour(kBrightGold), sliderPos, cy, false));
+        } else {
+            g.setColour(juce::Colour(kWarmGold));
+        }
+        g.fillRoundedRectangle(left, trackTop, fillW, trackH, trackH * 0.5f);
+    }
+
+    // Thumb
+    g.setColour(juce::Colour(kParchment));
+    g.fillEllipse(sliderPos - thumbR, cy - thumbR, thumbR * 2.0f, thumbR * 2.0f);
+}
+
+// ---------------------------------------------------------------------------
 void AlchemyLookAndFeel::drawButtonBackground(
     juce::Graphics& g,
     juce::Button& button,

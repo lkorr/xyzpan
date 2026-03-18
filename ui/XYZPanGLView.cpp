@@ -115,27 +115,8 @@ void XYZPanGLView::renderOpenGL()
 {
     jassert(juce::OpenGLHelpers::isContextActive());
 
-    // Frame rate throttle: 60fps when position is moving, 30fps when idle.
-    // Keeps setContinuousRepainting(true) for simplicity -- just skips frames.
-    {
-        const auto currentSnap = bridge_.read();
-        const bool positionChanged =
-            currentSnap.x != lastSnap_.x ||
-            currentSnap.y != lastSnap_.y ||
-            currentSnap.z != lastSnap_.z ||
-            currentSnap.stereoWidth != lastSnap_.stereoWidth ||
-            currentSnap.lNodeX != lastSnap_.lNodeX ||
-            currentSnap.lNodeY != lastSnap_.lNodeY ||
-            currentSnap.rNodeX != lastSnap_.rNodeX ||
-            currentSnap.rNodeY != lastSnap_.rNodeY;
-        lastSnap_ = currentSnap;
-
-        const double now = juce::Time::getMillisecondCounterHiRes();
-        // 60fps = 16.67ms when active, 30fps = 33.33ms when idle
-        const double minInterval = (positionChanged || isDraggingSource_ || isDraggingCamera_) ? 16.0 : 33.0;
-        if (now - lastRenderTime_ < minInterval) return;
-        lastRenderTime_ = now;
-    }
+    // Read current position snapshot from the lock-free bridge
+    const auto snap = bridge_.read();
 
     // Viewport
     const int w = getWidth();
@@ -163,8 +144,6 @@ void XYZPanGLView::renderOpenGL()
     }();
     const glm::mat4 roomModelMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(r, r, r));
 
-    // Reuse the snapshot already read in the throttle section above
-    const auto& snap = lastSnap_;
     // Coordinate convention mapping:
     //   XYZPan X = left/right  → GL X
     //   XYZPan Y = front/back  → GL -Z (GL +Z is toward viewer, +Y is front in XYZPan)
@@ -284,7 +263,7 @@ void XYZPanGLView::renderOpenGL()
             ? glm::vec3(0xFF / 255.0f, 0xD5 / 255.0f, 0x80 / 255.0f)  // hover: lighter gold
             : glm::vec3(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f); // normal: bright gold
         const float mainOpacity = stereoActive ? 0.1f : sourceOpacity;
-        const float mainRadius = stereoActive ? 0.006f : 0.048f;
+        const float mainRadius = stereoActive ? 0.015f : 0.048f;
         drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
     }
 

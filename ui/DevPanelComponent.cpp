@@ -36,7 +36,6 @@ namespace {
     // Distance
     constexpr const char* kDIST_DELAY_MAX_MS = "dist_delay_max_ms";
     constexpr const char* kDIST_SMOOTH_MS    = "dist_smooth_ms";
-    constexpr const char* kDOPPLER_ENABLED   = "doppler_enabled";
     constexpr const char* kAIR_ABS_MAX_HZ    = "air_abs_max_hz";
     constexpr const char* kAIR_ABS_MIN_HZ    = "air_abs_min_hz";
 
@@ -126,7 +125,6 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     beginSection("Distance");
     addDevSlider(kDIST_DELAY_MAX_MS, apvts);
     addDevSlider(kDIST_SMOOTH_MS,    apvts);
-    addDevToggle(kDOPPLER_ENABLED,   apvts);
     addDevSlider(kAIR_ABS_MAX_HZ,    apvts);
     addDevSlider(kAIR_ABS_MIN_HZ,    apvts);
     addDevSlider(kAUX_SEND_MAX_DB,   apvts);
@@ -378,6 +376,15 @@ void DevPanelComponent::timerCallback()
 
 void DevPanelComponent::mouseDown(const juce::MouseEvent& event)
 {
+    // Check for left-edge drag-to-resize
+    if (event.eventComponent == this && isInDragZone(event.x)) {
+        dragging_ = true;
+        dragStartX_ = event.getScreenX();
+        dragStartW_ = getWidth();
+        return;
+    }
+
+    // Collapsible section header click
     auto* source = event.eventComponent;
     for (auto& section : sections_) {
         if (section.header == source) {
@@ -388,15 +395,60 @@ void DevPanelComponent::mouseDown(const juce::MouseEvent& event)
     }
 }
 
+void DevPanelComponent::mouseUp(const juce::MouseEvent&)
+{
+    dragging_ = false;
+}
+
+void DevPanelComponent::mouseDrag(const juce::MouseEvent& event)
+{
+    if (!dragging_) return;
+
+    const int delta = dragStartX_ - event.getScreenX();  // dragging left = positive delta = wider
+    int newW = dragStartW_ + delta;
+
+    // Clamp to reasonable bounds
+    if (auto* parent = getParentComponent()) {
+        const int minW = 200;
+        const int maxW = parent->getWidth() - 50;
+        newW = juce::jlimit(minW, maxW, newW);
+    }
+
+    customWidth_ = newW;
+    // Reposition: keep right edge anchored, adjust left edge
+    if (auto* parent = getParentComponent())
+        setBounds(parent->getWidth() - newW, 0, newW, parent->getHeight());
+}
+
+void DevPanelComponent::mouseMove(const juce::MouseEvent& event)
+{
+    if (event.eventComponent == this && isInDragZone(event.x))
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else if (event.eventComponent == this)
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
 void DevPanelComponent::resized()
 {
-    viewport_.setBounds(getLocalBounds());
+    // Inset viewport past the drag handle so the left edge receives mouse events
+    auto area = getLocalBounds();
+    area.removeFromLeft(kDragHandleW);
+    viewport_.setBounds(area);
 }
 
 void DevPanelComponent::paint(juce::Graphics& g)
 {
     // Dark functional background — intentionally plain (not alchemy theme)
     g.fillAll(juce::Colour(0xFF1E1E1E));
+
+    // Left-edge drag handle — subtle grip indicator
+    g.setColour(juce::Colours::grey.withAlpha(0.5f));
+    g.fillRect(0, 0, 2, getHeight());
+    // Draw grip dots (3 small lines centered vertically)
+    const int midY = getHeight() / 2;
+    g.setColour(juce::Colours::grey.withAlpha(0.7f));
+    for (int i = -1; i <= 1; ++i)
+        g.fillRect(1, midY + i * 8 - 1, 3, 2);
 
     // Thin right-edge border
     g.setColour(juce::Colours::grey.darker(0.3f));

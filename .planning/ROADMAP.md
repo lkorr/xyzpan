@@ -161,6 +161,16 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 6. UI and Parameter System | 3/4 | In Progress|  |
 | 7. Integration and Validation | 2/2 | Complete   | 2026-03-17 |
 
+### Phase 07.3: refactoring and codebase cleanup - remove redundancies and increase legibility and understandability of the codebase while retaining 100% functionality with tests (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 7
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 07.3 to break down)
+
 ### Phase 07.2: Optimization Round 2 DSP and UI CPU Optimization (INSERTED)
 
 **Goal:** Comprehensive CPU optimization pass covering both DSP engine hot paths and OpenGL UI rendering -- SineLUT for LFO/orbit trig, zero-LFO fast path for sqrt elimination, GL frame rate throttling and draw call batching

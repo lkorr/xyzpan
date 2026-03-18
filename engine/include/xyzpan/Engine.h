@@ -129,6 +129,13 @@ public:
     // Live DSP state snapshot for dev panel display (UI-07).
     DSPStateSnapshot getLastDSPState() const noexcept { return lastDSPState_; }
 
+    // LFO phase snapshot — 6 accumulators [0, 1) for UI waveform displays.
+    struct LFOPhases {
+        float x = 0.f, y = 0.f, z = 0.f;
+        float orbitXY = 0.f, orbitXZ = 0.f, orbitYZ = 0.f;
+    };
+    LFOPhases getLastLFOPhases() const noexcept;
+
 private:
     EngineParams currentParams;
     std::vector<float> monoBuffer;  // pre-allocated in prepare() to maxBlockSize

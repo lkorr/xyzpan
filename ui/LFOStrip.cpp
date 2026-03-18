@@ -16,6 +16,7 @@ LFOStrip::LFOStrip(char axis, juce::AudioProcessorValueTreeState& apvts)
          "lfo_" + axisLower + "_depth",
          "lfo_" + axisLower + "_phase",
          "lfo_" + axisLower + "_waveform",
+         "lfo_" + axisLower + "_smooth",
          "lfo_" + axisLower + "_beat_div",
          juce::String(kLFOTempoSync),
          apvts);
@@ -28,6 +29,7 @@ LFOStrip::LFOStrip(const juce::String& prefix, const juce::String& syncParamID,
          prefix + "_depth",
          prefix + "_phase",
          prefix + "_waveform",
+         prefix + "_smooth",
          prefix + "_beat_div",
          syncParamID,
          apvts);
@@ -41,14 +43,15 @@ LFOStrip::~LFOStrip()
 
 void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
                     const juce::String& phaseID, const juce::String& waveformID,
-                    const juce::String& beatDivID, const juce::String& syncID,
+                    const juce::String& smoothID, const juce::String& beatDivID,
+                    const juce::String& syncID,
                     juce::AudioProcessorValueTreeState& apvts)
 {
     apvts_ = &apvts;
     syncParamID_ = syncID;
 
     // Configure knobs as small rotary sliders
-    for (auto* knob : { &rateKnob_, &depthKnob_, &phaseKnob_ }) {
+    for (auto* knob : { &rateKnob_, &depthKnob_, &phaseKnob_, &smoothKnob_ }) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 65, 13);
         addAndMakeVisible(knob);
@@ -58,7 +61,8 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
     rateLabel_.setText("Rate", juce::dontSendNotification);
     depthLabel_.setText("Depth", juce::dontSendNotification);
     phaseLabel_.setText("Phase", juce::dontSendNotification);
-    for (auto* lbl : { &rateLabel_, &depthLabel_, &phaseLabel_ }) {
+    smoothLabel_.setText("Smooth", juce::dontSendNotification);
+    for (auto* lbl : { &rateLabel_, &depthLabel_, &phaseLabel_, &smoothLabel_ }) {
         lbl->setJustificationType(juce::Justification::centred);
         lbl->setFont(juce::Font(10.0f));
         addAndMakeVisible(lbl);
@@ -74,18 +78,23 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
     syncBtn_.setButtonText("Sync");
     addAndMakeVisible(syncBtn_);
 
-    // Waveform display button
-    addAndMakeVisible(waveBtn_);
+    // Shape selector row
+    addAndMakeVisible(shapeSelector_);
 
     // APVTS attachments — must be created after addAndMakeVisible
     rateAtt_    = std::make_unique<SA>(apvts, rateID,    rateKnob_);
     depthAtt_   = std::make_unique<SA>(apvts, depthID,   depthKnob_);
     phaseAtt_   = std::make_unique<SA>(apvts, phaseID,   phaseKnob_);
+    smoothAtt_  = std::make_unique<SA>(apvts, smoothID,  smoothKnob_);
     beatDivAtt_ = std::make_unique<CA>(apvts, beatDivID, beatDivCombo_);
     syncAtt_    = std::make_unique<BA>(apvts, syncID,    syncBtn_);
 
-    // Bind waveform button to APVTS parameter
-    waveBtn_.setParam(apvts, waveformID);
+    // Bind shape selector to APVTS parameter
+    shapeSelector_.setParam(apvts, waveformID);
+
+    // Live waveform display
+    addAndMakeVisible(waveformDisplay_);
+    waveformDisplay_.setParams(apvts, waveformID, phaseID, smoothID, depthID);
 
     // Read initial sync state and register listener
     if (auto* syncParam = apvts.getRawParameterValue(syncID))
@@ -114,69 +123,90 @@ void LFOStrip::updateSyncVisibility()
     resized();
 }
 
+void LFOStrip::setPhaseSource(std::atomic<float>* src)
+{
+    waveformDisplay_.setPhaseSource(src);
+}
+
 void LFOStrip::resized()
 {
-    // 2-row layout with fixed pixel sizes.
+    // 4-row layout:
     //
-    // Row 1: [WaveBtn] [Depth knob (fills center)]
-    // Row 2: [SYNC btn above Rate] [Rate knob OR BeatDiv, left half] [Phase knob, right half]
+    // Row 0: Shape selector (full width, kShapeRowH px)
+    // Row 1: Live waveform display (flexible height, 30–80 px)
+    // Row 2: Depth knob (centered) + Smooth knob (small, bottom-right)
+    // Row 3: SYNC + Rate/BeatDiv (left) + Phase (right) — 42 px knobs
 
     auto b = getLocalBounds();
     const int totalW = b.getWidth();
     const int totalH = b.getHeight();
 
-    const int syncGap = 2;             // space between SYNC and rate knob
-    const int rowH    = kKnobSize + kLabelH;
-    const int row2H   = kSyncH + syncGap + rowH;  // SYNC + gap + knob + label
-    const int row1H   = rowH;
-    const int row1Y   = b.getY() + (totalH - row1H - row2H) / 2;
-    const int row2Y   = row1Y + row1H;
+    const int syncGap  = 2;
+    const int row2H    = kKnobSize + kLabelH;                                // 71 + 13 = 84
+    const int row3KnobH = kRatePhaseKnobSz + kLabelH;                        // 42 + 13 = 55
+    const int row3H    = kSyncH + syncGap + row3KnobH;                       // 18 + 2 + 55 = 75
+    const int row0H    = kShapeTopMargin + kShapeRowH + 2;                    // 4 + 18 + 2 = 24
+    const int fixedH   = row0H + row2H + row3H;                              // 24 + 84 + 75 = 183
+    const int displayH = juce::jlimit(kDisplayMinH, kDisplayMaxH,
+                                       totalH - fixedH);
+    const int contentH = fixedH + displayH;
+    const int topY     = b.getY() + juce::jmax(0, (totalH - contentH) / 2);
 
-    // Row 1: Waveform button (left, with small inset from divider)
-    waveBtn_.setBounds(b.getX() + kWavePadL, row1Y + (row1H - kWaveW) / 2, kWaveW, kWaveW);
+    const int row0Y    = topY;
+    const int row1Y    = row0Y + row0H;
+    const int row2Y    = row1Y + displayH;
+    const int row3Y    = row2Y + row2H;
 
-    // Row 1: Depth knob fills remaining center area
-    {
-        const int centerAreaX = b.getX() + kWavePadL + kWaveW + 2;
-        const int centerAreaW = totalW - kWavePadL - kWaveW - 4;
-        const int knobW = juce::jmin(kKnobSize, centerAreaW);
-        const int knobX = centerAreaX + (centerAreaW - knobW) / 2;
-        depthKnob_.setBounds(knobX, row1Y, knobW, kKnobSize);
-        depthLabel_.setBounds(centerAreaX, row1Y + kKnobSize, centerAreaW, kLabelH);
-    }
+    // Row 0: Shape selector
+    shapeSelector_.setBounds(b.getX() + kShapeLRMargin, row0Y + kShapeTopMargin,
+                             totalW - kShapeLRMargin * 2, kShapeRowH);
 
-    // Row 2: Rate (or BeatDiv) and Phase — each centered in their half
-    // SYNC button sits directly above Rate knob, centered in left half
+    // Row 1: Waveform display
+    waveformDisplay_.setBounds(b.getX() + kDisplayLRMargin, row1Y,
+                               totalW - kDisplayLRMargin * 2, displayH);
+
+    // Row 2: Depth knob (centered) + Smooth knob (small, bottom-right)
     const int halfW = totalW / 2;
-
     {
-        // SYNC button — centered in left half, at top of row 2
-        const int syncX = b.getX() + (halfW - kSyncW) / 2;
-        syncBtn_.setBounds(syncX, row2Y, kSyncW, kSyncH);
+        const int knobW = juce::jmin(kKnobSize, totalW - 4);
+        const int depthX = b.getX() + (totalW - knobW) / 2;
+        depthKnob_.setBounds(depthX, row2Y, knobW, kKnobSize);
+        depthLabel_.setBounds(b.getX(), row2Y + kKnobSize, totalW, kLabelH);
+    }
+    {
+        const int smW = juce::jmin(kSmallKnobSize, halfW - 4);
+        const int smoothX = b.getX() + totalW - smW - 2;
+        const int smoothY = row2Y + kKnobSize - kSmallKnobSize;
+        smoothKnob_.setBounds(smoothX, smoothY, smW, kSmallKnobSize);
+        smoothLabel_.setBounds(smoothX - 4, smoothY + kSmallKnobSize, smW + 8, kLabelH);
+        smoothLabel_.setJustificationType(juce::Justification::centred);
     }
 
-    const int rateAreaY = row2Y + kSyncH + syncGap;
+    // Row 3: SYNC + Rate/BeatDiv (left half) + Phase (right half) — smaller knobs
+    {
+        const int syncX = b.getX() + (halfW - kSyncW) / 2;
+        syncBtn_.setBounds(syncX, row3Y, kSyncW, kSyncH);
+    }
+
+    const int rateAreaY = row3Y + kSyncH + syncGap;
 
     if (syncOn_) {
-        // BeatDiv combo — centered in left half, below SYNC
         const int comboW = juce::jmin(64, halfW - 4);
         const int comboH = 22;
         const int comboX = b.getX() + (halfW - comboW) / 2;
-        const int comboY = rateAreaY + (rowH - comboH) / 2;
+        const int comboY = rateAreaY + (row3KnobH - comboH) / 2;
         beatDivCombo_.setBounds(comboX, comboY, comboW, comboH);
     } else {
-        // Rate knob — centered in left half, below SYNC
-        const int knobW = juce::jmin(kKnobSize, halfW - 4);
+        const int knobW = juce::jmin(kRatePhaseKnobSz, halfW - 4);
         const int rateX = b.getX() + (halfW - knobW) / 2;
-        rateKnob_.setBounds(rateX, rateAreaY, knobW, kKnobSize);
-        rateLabel_.setBounds(b.getX(), rateAreaY + kKnobSize, halfW, kLabelH);
+        rateKnob_.setBounds(rateX, rateAreaY, knobW, kRatePhaseKnobSz);
+        rateLabel_.setBounds(b.getX(), rateAreaY + kRatePhaseKnobSz, halfW, kLabelH);
     }
 
     {
-        // Phase knob — centered in right half, aligned with rate knob
-        const int knobW = juce::jmin(kKnobSize, halfW - 4);
+        const int knobW = juce::jmin(kRatePhaseKnobSz, halfW - 4);
         const int phaseX = b.getX() + halfW + (halfW - knobW) / 2;
-        phaseKnob_.setBounds(phaseX, rateAreaY, knobW, kKnobSize);
-        phaseLabel_.setBounds(b.getX() + halfW, rateAreaY + kKnobSize, halfW, kLabelH);
+        phaseKnob_.setBounds(phaseX, rateAreaY, knobW, kRatePhaseKnobSz);
+        phaseLabel_.setBounds(b.getX() + halfW, rateAreaY + kRatePhaseKnobSz, halfW, kLabelH);
     }
 }

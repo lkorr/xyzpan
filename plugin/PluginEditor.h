@@ -15,15 +15,14 @@ class XYZPanProcessor;
 //
 // Layout:
 //   Left column (400px):
-//     "POSITION" header + 3 sub-columns (X | Y | Z) with large knobs + LFO strips
-//     Horizontal divider
-//     "STEREO ORBIT" header + orbit controls (Width/Speed top, Phase/Offset/Face/Sync below)
-//     3 orbit LFO sub-columns (XY | XZ | YZ) with dividers
+//     "POSITION" header + 3 sub-columns (X | Y | Z) with large knobs + tall LFO strips
+//     "UTILITIES" header + Sphere Radius knob + Doppler knob (compact, 80px)
 //   Main area: XYZPanGLView (OpenGL 3D spatial view)
 //     Top-right corner: three snap buttons (XY, XZ, YZ)
-//     Top-left corner: DEV toggle button
 //     GL overlay (right 30%): DevPanelComponent — hidden by default
-//   Bottom row (400px): Sphere Radius knob, Reverb (Size/Decay/Damp/Wet), Doppler toggle
+//   Bottom row (240px), left-to-right:
+//     "STEREO ORBIT" — orbit sliders (240px) + 3 orbit LFO strips (flexible)
+//     "REVERB" — Size/Decay/Damp/Wet knobs (320px) + DEV toggle (48px)
 // ---------------------------------------------------------------------------
 class XYZPanEditor : public juce::AudioProcessorEditor {
 public:
@@ -44,15 +43,20 @@ private:
     juce::TextButton snapXY_{"XY"}, snapXZ_{"XZ"}, snapYZ_{"YZ"};
 
     // Layout constants
-    static constexpr int kLeftColW    = 400;     // wider for larger knobs
-    static constexpr int kBottomH     = 400;
-    static constexpr int kSnapBtnW    = 40;
-    static constexpr int kSnapBtnH    = 24;
-    static constexpr int kDefaultW    = 1100;
-    static constexpr int kDefaultH   = 1100;
-    static constexpr int kSectionHdrH = 24;      // section header height
-    static constexpr int kDividerW    = 1;        // vertical divider width
-    static constexpr int kPadding     = 6;        // general inner padding
+    static constexpr int kLeftColW      = 400;     // wider for larger knobs
+    static constexpr int kBottomH       = 240;     // was 400 — orbit moved here
+    static constexpr int kSnapBtnW      = 40;
+    static constexpr int kSnapBtnH      = 24;
+    static constexpr int kDefaultW      = 1100;
+    static constexpr int kDefaultH      = 1100;
+    static constexpr int kSectionHdrH   = 24;      // section header height
+    static constexpr int kDividerW      = 1;       // vertical divider width
+    static constexpr int kPadding       = 6;       // general inner padding
+    static constexpr int kOrbitCtrlW    = 240;     // orbit sliders+buttons width in bottom row
+    static constexpr int kReverbColW    = 56;      // reverb knob column width
+    static constexpr int kReverbKnobSz  = 48;      // reverb knob diameter (smaller to fit)
+    static constexpr int kReverbSectionW = kReverbColW * 4;  // 320px
+    static constexpr int kMiscSectionH  = 80;      // sphere+doppler area height (excl header)
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -69,10 +73,26 @@ private:
     // LFO strips — one per spatial axis (X, Y, Z only; R has no LFO)
     LFOStrip xLFO_, yLFO_, zLFO_;
 
+    // XYZ LFO speed multiplier slider (below LFO strips, above Utilities)
+    juce::Slider lfoSpeedMulKnob_;
+    juce::Label  lfoSpeedMulLabel_;
+    std::unique_ptr<SA> lfoSpeedMulAtt_;
+
+    // Reset All LFO Phases button (position section, next to LFO Speed)
+    juce::TextButton resetXYZPhasesBtn_{"Reset"};
+
+    // Stereo orbit toggle + mono
+    juce::TextButton stereoToggle_{"Stereo"};
+    bool stereoExpanded_ = false;
+    juce::TextButton monoBtn_{"Mono"};
+
     // Stereo orbit controls
     juce::Slider stereoWidthKnob_, orbitPhaseKnob_, orbitOffsetKnob_, orbitSpeedMulKnob_;
     juce::Label  stereoWidthLabel_, orbitPhaseLabel_, orbitOffsetLabel_, orbitSpeedMulLabel_;
     std::unique_ptr<SA> stereoWidthAtt_, orbitPhaseAtt_, orbitOffsetAtt_, orbitSpeedMulAtt_;
+
+    // Reset All Orbit LFO Phases button (orbit section)
+    juce::TextButton resetOrbitPhasesBtn_{"Reset"};
 
     juce::ToggleButton faceListenerToggle_;
     juce::ToggleButton orbitTempoSyncToggle_;
@@ -87,9 +107,11 @@ private:
     juce::Label  verbSizeL_, verbDecayL_, verbDampingL_, verbWetL_;
     std::unique_ptr<SA> verbSizeAtt_, verbDecayAtt_, verbDampingAtt_, verbWetAtt_;
 
-    // Doppler toggle — bottom row
-    juce::ToggleButton dopplerToggle_;
-    std::unique_ptr<BA> dopplerAtt_;
+    // Doppler knob (distance delay) — utilities section
+    juce::Slider dopplerKnob_;
+    juce::Label  dopplerLabel_;
+    juce::Label  dopplerSubLabel_;  // "(adds delay)" small text
+    std::unique_ptr<SA> dopplerAtt_;
 
     // Dev panel toggle (bottom row) + overlay panel
     juce::TextButton devToggle_{"DEV"};

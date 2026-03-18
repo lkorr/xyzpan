@@ -23,6 +23,12 @@ public:
     void paint(juce::Graphics& g) override;
     void timerCallback() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+
+    // Returns the custom width set by drag, or 0 if default
+    int getCustomWidth() const { return customWidth_; }
 
     // Collapsible section — holds header + child component pointers
     struct CollapsibleSection {
@@ -73,6 +79,15 @@ private:
 
     // Recalculates all component positions based on collapsed state
     void relayout();
+
+    // Drag-to-resize state
+    static constexpr int kDragHandleW = 6;  // left-edge drag zone width
+    int customWidth_ = 0;       // 0 = use parent default; >0 = user-dragged width
+    bool dragging_ = false;
+    int dragStartX_ = 0;
+    int dragStartW_ = 0;
+
+    bool isInDragZone(int localX) const { return localX < kDragHandleW; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DevPanelComponent)
 };

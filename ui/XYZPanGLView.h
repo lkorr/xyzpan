@@ -21,7 +21,7 @@ namespace xyzpan {
 struct TrailBuffer {
     static constexpr int kCapacity = 48;
     static constexpr float kMinPushDist = 0.003f;
-    static constexpr float kTrailLifetime = 0.8f;  // seconds before fully faded
+    static constexpr float kTrailLifetime = 1.6f;  // seconds before fully faded
 
     void push(const glm::vec3& pos, double timeSeconds) {
         if (count_ > 0) {
@@ -229,10 +229,6 @@ private:
     juce::AudioProcessorValueTreeState& apvts_;
     juce::AudioProcessor*               proc_;   // kept for future WeakReference use
     xyzpan::PositionBridge&             bridge_;
-
-    // Frame rate throttle: 30fps when idle, 60fps when position moving or dragging
-    double                              lastRenderTime_ = 0.0;
-    xyzpan::SourcePositionSnapshot      lastSnap_{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanGLView)
 };

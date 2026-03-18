@@ -70,13 +70,11 @@ XYZPanProcessor::XYZPanProcessor()
     // Dev panel: Distance processing (Phase 4)
     distDelayMaxMsParam = apvts.getRawParameterValue(ParamID::DIST_DELAY_MAX_MS);
     distSmoothMsParam   = apvts.getRawParameterValue(ParamID::DIST_SMOOTH_MS);
-    dopplerEnabledParam = apvts.getRawParameterValue(ParamID::DOPPLER_ENABLED);
     airAbsMaxHzParam    = apvts.getRawParameterValue(ParamID::AIR_ABS_MAX_HZ);
     airAbsMinHzParam    = apvts.getRawParameterValue(ParamID::AIR_ABS_MIN_HZ);
 
     jassert(distDelayMaxMsParam != nullptr);
     jassert(distSmoothMsParam   != nullptr);
-    jassert(dopplerEnabledParam != nullptr);
     jassert(airAbsMaxHzParam    != nullptr);
     jassert(airAbsMinHzParam    != nullptr);
 
@@ -123,10 +121,19 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(lfoZDepthParam    != nullptr);
     jassert(lfoZPhaseParam    != nullptr);
     jassert(lfoZWaveformParam != nullptr);
+    lfoXSmoothParam  = apvts.getRawParameterValue(ParamID::LFO_X_SMOOTH);
+    lfoYSmoothParam  = apvts.getRawParameterValue(ParamID::LFO_Y_SMOOTH);
+    lfoZSmoothParam  = apvts.getRawParameterValue(ParamID::LFO_Z_SMOOTH);
+    jassert(lfoXSmoothParam  != nullptr);
+    jassert(lfoYSmoothParam  != nullptr);
+    jassert(lfoZSmoothParam  != nullptr);
     jassert(lfoTempoSyncParam != nullptr);
     jassert(lfoXBeatDivParam  != nullptr);
     jassert(lfoYBeatDivParam  != nullptr);
     jassert(lfoZBeatDivParam  != nullptr);
+
+    lfoSpeedMulParam = apvts.getRawParameterValue(ParamID::LFO_SPEED_MUL);
+    jassert(lfoSpeedMulParam != nullptr);
 
     // Stereo source node splitting
     stereoWidthParam        = apvts.getRawParameterValue(ParamID::STEREO_WIDTH);
@@ -153,6 +160,8 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(orbitXYPhaseParam      != nullptr);
     jassert(orbitXYResetPhaseParam != nullptr);
     jassert(orbitXYDepthParam      != nullptr);
+    orbitXYSmoothParam     = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_SMOOTH);
+    jassert(orbitXYSmoothParam     != nullptr);
 
     // Stereo orbit LFOs — XZ
     orbitXZWaveformParam   = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_WAVEFORM);
@@ -168,6 +177,8 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(orbitXZPhaseParam      != nullptr);
     jassert(orbitXZResetPhaseParam != nullptr);
     jassert(orbitXZDepthParam      != nullptr);
+    orbitXZSmoothParam     = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_SMOOTH);
+    jassert(orbitXZSmoothParam     != nullptr);
 
     // Stereo orbit LFOs — YZ
     orbitYZWaveformParam   = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_WAVEFORM);
@@ -183,6 +194,8 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(orbitYZPhaseParam      != nullptr);
     jassert(orbitYZResetPhaseParam != nullptr);
     jassert(orbitYZDepthParam      != nullptr);
+    orbitYZSmoothParam     = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_SMOOTH);
+    jassert(orbitYZSmoothParam     != nullptr);
 
     // Stereo orbit shared
     orbitTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_TEMPO_SYNC);
@@ -294,7 +307,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Dev panel: Distance processing (Phase 4)
     params.distDelayMaxMs = distDelayMaxMsParam->load();
     params.distSmoothMs   = distSmoothMsParam->load();
-    params.dopplerEnabled = dopplerEnabledParam->load() >= 0.5f;  // float->bool conversion
+    params.dopplerEnabled = params.distDelayMaxMs > 0.0f;
     params.airAbsMaxHz    = airAbsMaxHzParam->load();
     params.airAbsMinHz    = airAbsMinHzParam->load();
 
@@ -318,6 +331,9 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.lfoZDepth     = lfoZDepthParam->load();
     params.lfoZPhase     = lfoZPhaseParam->load();
     params.lfoZWaveform  = static_cast<int>(std::round(lfoZWaveformParam->load()));
+    params.lfoXSmooth    = lfoXSmoothParam->load();
+    params.lfoYSmooth    = lfoYSmoothParam->load();
+    params.lfoZSmooth    = lfoZSmoothParam->load();
     params.lfoTempoSync  = lfoTempoSyncParam->load() >= 0.5f;
 
     // Beat div params are AudioParameterChoice — raw value is the choice index (0–10).
@@ -330,9 +346,14 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.lfoXBeatDiv   = beatDivFromChoice(lfoXBeatDivParam->load());
     params.lfoYBeatDiv   = beatDivFromChoice(lfoYBeatDivParam->load());
     params.lfoZBeatDiv   = beatDivFromChoice(lfoZBeatDivParam->load());
-    // Note: lfoXPhase (and Y/Z) are snapshotted but the engine applies them as initial
-    // accumulator offsets only via lfoX_.reset() in Engine::reset(). Live phase changes
-    // in a running LFO are not applied per-block — intentional for v1 (no phase-jump clicks).
+    params.lfoSpeedMul   = lfoSpeedMulParam->load();
+
+    // Momentary phase resets from UI buttons
+    if (resetXYZLfoPhases.exchange(false)) {
+        params.lfoXResetPhase = true;
+        params.lfoYResetPhase = true;
+        params.lfoZResetPhase = true;
+    }
 
     // Stereo source node splitting
     params.stereoWidth        = stereoWidthParam->load();
@@ -347,6 +368,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.stereoOrbitXYPhase      = orbitXYPhaseParam->load();
     params.stereoOrbitXYResetPhase = orbitXYResetPhaseParam->load() >= 0.5f;
     params.stereoOrbitXYDepth      = orbitXYDepthParam->load();
+    params.stereoOrbitXYSmooth     = orbitXYSmoothParam->load();
 
     // Stereo orbit LFOs — XZ
     params.stereoOrbitXZWaveform   = static_cast<int>(std::round(orbitXZWaveformParam->load()));
@@ -355,6 +377,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.stereoOrbitXZPhase      = orbitXZPhaseParam->load();
     params.stereoOrbitXZResetPhase = orbitXZResetPhaseParam->load() >= 0.5f;
     params.stereoOrbitXZDepth      = orbitXZDepthParam->load();
+    params.stereoOrbitXZSmooth     = orbitXZSmoothParam->load();
 
     // Stereo orbit LFOs — YZ
     params.stereoOrbitYZWaveform   = static_cast<int>(std::round(orbitYZWaveformParam->load()));
@@ -363,10 +386,18 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.stereoOrbitYZPhase      = orbitYZPhaseParam->load();
     params.stereoOrbitYZResetPhase = orbitYZResetPhaseParam->load() >= 0.5f;
     params.stereoOrbitYZDepth      = orbitYZDepthParam->load();
+    params.stereoOrbitYZSmooth     = orbitYZSmoothParam->load();
 
     // Stereo orbit shared
     params.stereoOrbitTempoSync = orbitTempoSyncParam->load() >= 0.5f;
     params.stereoOrbitSpeedMul  = orbitSpeedMulParam->load();
+
+    // Momentary orbit phase reset from UI button
+    if (resetOrbitLfoPhases.exchange(false)) {
+        params.stereoOrbitXYResetPhase = true;
+        params.stereoOrbitXZResetPhase = true;
+        params.stereoOrbitYZResetPhase = true;
+    }
 
     // Dev panel: Presence shelf
     params.presenceShelfFreqHz = presenceShelfFreqParam->load();
@@ -439,6 +470,15 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // DSP state bridge for dev panel readouts
     dspStateBridge.write(engine.getLastDSPState());
+
+    // LFO phases for UI waveform displays (drift-free sync)
+    auto phases = engine.getLastLFOPhases();
+    lfoPhaseX.store(phases.x, std::memory_order_relaxed);
+    lfoPhaseY.store(phases.y, std::memory_order_relaxed);
+    lfoPhaseZ.store(phases.z, std::memory_order_relaxed);
+    lfoPhaseOrbitXY.store(phases.orbitXY, std::memory_order_relaxed);
+    lfoPhaseOrbitXZ.store(phases.orbitXZ, std::memory_order_relaxed);
+    lfoPhaseOrbitYZ.store(phases.orbitYZ, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {

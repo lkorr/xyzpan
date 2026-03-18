@@ -1,10 +1,13 @@
 #pragma once
+#include <cstdint>
 
 namespace xyzpan::dsp {
 
-enum class LFOWaveform { Sine = 0, Triangle, Saw, Square, RampDown };
+// Saw and RampDown are adjacent (2,3) for UI grouping.
+enum class LFOWaveform { Sine = 0, Triangle, Saw, RampDown, Square, SampleHold };
+inline constexpr int kLFOWaveformCount = 6;
 
-// Phase accumulator LFO with 4 waveforms.
+// Phase accumulator LFO with 6 waveforms + optional output smoothing.
 // Output range: [-1, 1]. Use setRateHz() + tick() pattern.
 // Phase offset via reset(phaseOffsetNorm) before first tick.
 class LFO {
@@ -25,11 +28,18 @@ public:
     // Store a phase offset (normalized [0,1]) added to the accumulator each tick.
     void setPhaseOffset(float offset);
 
+    // Set output smoothing time in milliseconds (one-pole lowpass).
+    // 0 = no smoothing (bypass). Must be called after prepare().
+    void setSmoothMs(float ms);
+
     // Request a phase reset on the next tick().
     void requestReset();
 
     // Return current output in [-1, 1] without advancing the accumulator.
     float peek() const;
+
+    // Return raw phase accumulator value in [0, 1).
+    float getPhase() const noexcept { return accumulator_; }
 
     // Advance accumulator and return output in [-1, 1].
     float tick();
@@ -40,6 +50,20 @@ private:
     double sampleRate_   = 44100.0;
     float  phaseOffset_  = 0.0f;
     bool   resetPending_ = false;
+
+    // Sample & Hold state
+    float    shHeldValue_ = 0.0f;
+    float    shPrevPhase_ = 0.0f;
+    uint32_t shState_     = 123456789u;  // xorshift32 RNG seed
+
+    // Output smoother (one-pole lowpass)
+    float smoothMs_     = 0.0f;
+    float smoothCoeffA_ = 0.0f;  // feedback coefficient
+    float smoothCoeffB_ = 1.0f;  // input coefficient (1 - A)
+    float smoothZ_      = 0.0f;  // filter state
+
+    // Lightweight xorshift32 RNG, returns value in [-1, 1]
+    float xorshift32();
 };
 
 } // namespace xyzpan::dsp

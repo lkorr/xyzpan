@@ -38,6 +38,14 @@ public:
                         bool shouldDrawButtonAsHighlighted,
                         bool shouldDrawButtonAsDown) override;
 
+    // Linear slider: standard (dark iron) or hero (glowing gold gradient) mode
+    // Hero mode activated when slider's rotarySliderFillColourId == kBrightGold
+    void drawLinearSlider(juce::Graphics& g,
+                          int x, int y, int width, int height,
+                          float sliderPos, float minSliderPos, float maxSliderPos,
+                          const juce::Slider::SliderStyle style,
+                          juce::Slider& slider) override;
+
     // Label text: parchment colour on transparent background
     void drawLabel(juce::Graphics& g, juce::Label& label) override;
 

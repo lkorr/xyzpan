@@ -83,11 +83,12 @@ struct EngineParams {
     // Phase 5: LFO (LFO-01 through LFO-05)
     // =========================================================================
     // Per-axis: rate (Hz), depth (position units [0,1]), phase offset ([0,1]),
-    // waveform int (0=Sine 1=Triangle 2=Saw 3=Square).
+    // waveform int (0=Sine 1=Triangle 2=Saw 3=RampDown 4=Square 5=SampleHold).
     float lfoXRate      = kLFODefaultRate;  float lfoYRate      = kLFODefaultRate;  float lfoZRate      = kLFODefaultRate;
     float lfoXDepth     = 0.0f;             float lfoYDepth     = 0.0f;             float lfoZDepth     = 0.0f;
     float lfoXPhase     = 0.0f;             float lfoYPhase     = 0.0f;             float lfoZPhase     = 0.0f;
     int   lfoXWaveform  = 0;                int   lfoYWaveform  = 0;                int   lfoZWaveform  = 0;
+    float lfoXSmooth    = 0.0f;             float lfoYSmooth    = 0.0f;             float lfoZSmooth    = 0.0f;
     // Tempo sync (shared across all axes)
     bool  lfoTempoSync  = false;
     float hostBpm       = 120.0f;           // passed from processBlock AudioPlayHead
@@ -138,6 +139,7 @@ struct EngineParams {
     float stereoOrbitXYPhase      = 0.0f;                    float stereoOrbitXZPhase      = 0.0f;                    float stereoOrbitYZPhase      = 0.0f;
     bool  stereoOrbitXYResetPhase = false;                   bool  stereoOrbitXZResetPhase = false;                   bool  stereoOrbitYZResetPhase = false;
     float stereoOrbitXYDepth      = 0.0f;                    float stereoOrbitXZDepth      = 0.0f;                    float stereoOrbitYZDepth      = 0.0f;
+    float stereoOrbitXYSmooth     = 0.0f;                    float stereoOrbitXZSmooth     = 0.0f;                    float stereoOrbitYZSmooth     = 0.0f;
     bool  stereoOrbitTempoSync    = false;
     float stereoOrbitSpeedMul     = 1.0f;
 

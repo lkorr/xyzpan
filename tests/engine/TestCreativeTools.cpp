@@ -465,16 +465,16 @@ TEST_CASE("LFO-01: LFO waveform output values at known phases", "[LFO-01]") {
 }
 
 // ---------------------------------------------------------------------------
-// LFO-02: All four waveforms produce distinct output at same rate/phase
+// LFO-02: All six waveforms produce distinct output at same rate/phase
 // ---------------------------------------------------------------------------
-TEST_CASE("LFO-02: All four LFO waveforms produce distinct output", "[LFO-02]") {
+TEST_CASE("LFO-02: All six LFO waveforms produce distinct output", "[LFO-02]") {
     using namespace xyzpan::dsp;
     constexpr float sr = 44100.0f;
     constexpr float rate = 1.0f;
     constexpr int N = 44100;
 
-    // Run four LFOs, collect output series
-    std::vector<float> sineBuf(N), triaBuf(N), sawBuf(N), sqBuf(N);
+    // Run six LFOs, collect output series
+    std::vector<float> sineBuf(N), triaBuf(N), sawBuf(N), rampBuf(N), sqBuf(N), shBuf(N);
 
     auto runLFO = [&](LFOWaveform wf, std::vector<float>& buf) {
         LFO lfo;
@@ -485,20 +485,30 @@ TEST_CASE("LFO-02: All four LFO waveforms produce distinct output", "[LFO-02]") 
         for (int i = 0; i < N; ++i) buf[static_cast<size_t>(i)] = lfo.tick();
     };
 
-    runLFO(LFOWaveform::Sine,     sineBuf);
-    runLFO(LFOWaveform::Triangle, triaBuf);
-    runLFO(LFOWaveform::Saw,      sawBuf);
-    runLFO(LFOWaveform::Square,   sqBuf);
+    runLFO(LFOWaveform::Sine,       sineBuf);
+    runLFO(LFOWaveform::Triangle,   triaBuf);
+    runLFO(LFOWaveform::Saw,        sawBuf);
+    runLFO(LFOWaveform::RampDown,   rampBuf);
+    runLFO(LFOWaveform::Square,     sqBuf);
+    runLFO(LFOWaveform::SampleHold, shBuf);
 
     // At sample 11025 (quarter cycle):
     //   sine = sin(pi/2) ≈ 1.0
     //   triangle (1-4*|acc-0.5|) at acc=0.25 → 1-4*0.25 = 0.0 (zero crossing, going positive)
     //   saw = 2*0.25 - 1 = -0.5
+    //   rampDown = 1 - 2*0.25 = 0.5
     //   square = +1.0 (first half of cycle)
     REQUIRE(std::abs(sineBuf[11025] - 1.0f) < 0.01f);
-    REQUIRE(std::abs(triaBuf[11025]) < 0.01f); // triangle at quarter cycle = 0.0
-    REQUIRE(sawBuf[11025] < -0.4f); // saw at quarter cycle ≈ -0.5
+    REQUIRE(std::abs(triaBuf[11025]) < 0.01f);
+    REQUIRE(sawBuf[11025] < -0.4f);
+    REQUIRE(std::abs(rampBuf[11025] - 0.5f) < 0.01f);
     REQUIRE(sqBuf[11025] == 1.0f);
+
+    // Saw and RampDown must be mirror images: saw + ramp ≈ 0 for all samples
+    for (int i = 0; i < N; ++i) {
+        float sum = sawBuf[static_cast<size_t>(i)] + rampBuf[static_cast<size_t>(i)];
+        REQUIRE(std::abs(sum) < 0.01f);
+    }
 
     // Sine and saw must differ: sum of abs differences > 100
     float sineSawDiff = 0.0f;
@@ -511,6 +521,12 @@ TEST_CASE("LFO-02: All four LFO waveforms produce distinct output", "[LFO-02]") 
     for (int i = 0; i < N; ++i)
         sineSqDiff += std::abs(sineBuf[static_cast<size_t>(i)] - sqBuf[static_cast<size_t>(i)]);
     REQUIRE(sineSqDiff > 100.0f);
+
+    // S&H must differ from all continuous waveforms
+    float shSineDiff = 0.0f;
+    for (int i = 0; i < N; ++i)
+        shSineDiff += std::abs(shBuf[static_cast<size_t>(i)] - sineBuf[static_cast<size_t>(i)]);
+    REQUIRE(shSineDiff > 100.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -691,4 +707,103 @@ TEST_CASE("LFO-05: Tempo sync at 120 BPM produces 2Hz rate (22050-sample period)
         // Allow generous range: at least 2 crossings (proves oscillation)
         REQUIRE(zeroCrossings >= 2);
     }
+}
+
+// ---------------------------------------------------------------------------
+// LFO-06: Sample & Hold output is constant within a cycle, changes between cycles
+// ---------------------------------------------------------------------------
+TEST_CASE("LFO-06: Sample & Hold constancy within cycle and change between cycles", "[LFO-06]") {
+    using namespace xyzpan::dsp;
+    constexpr float sr = 44100.0f;
+    constexpr float rate = 2.0f;  // 2 Hz → period = 22050 samples
+    constexpr int period = 22050;
+    constexpr int totalSamples = period * 4;  // 4 full cycles
+
+    LFO lfo;
+    lfo.prepare(static_cast<double>(sr));
+    lfo.reset(0.0f);
+    lfo.waveform = LFOWaveform::SampleHold;
+    lfo.setRateHz(rate);
+
+    std::vector<float> output(static_cast<size_t>(totalSamples));
+    for (int i = 0; i < totalSamples; ++i)
+        output[static_cast<size_t>(i)] = lfo.tick();
+
+    // All output values must be in [-1, 1]
+    for (int i = 0; i < totalSamples; ++i) {
+        REQUIRE(output[static_cast<size_t>(i)] >= -1.0f);
+        REQUIRE(output[static_cast<size_t>(i)] <= 1.0f);
+    }
+
+    // Within the first ~90% of a cycle, all values should equal sample 0
+    // (Use 90% margin to avoid floating-point accumulator drift near the wrap boundary)
+    float firstVal = output[0];
+    const int safeEnd = static_cast<int>(period * 0.9);
+    for (int i = 1; i < safeEnd; ++i) {
+        REQUIRE(output[static_cast<size_t>(i)] == firstVal);
+    }
+
+    // Between cycles: at least one pair of adjacent cycles should have different values
+    // (with RNG it's astronomically unlikely all 4 cycles produce the same value)
+    bool anyChange = false;
+    for (int c = 0; c < 3; ++c) {
+        float cycleStart = output[static_cast<size_t>(c * period)];
+        float nextCycleStart = output[static_cast<size_t>((c + 1) * period)];
+        if (cycleStart != nextCycleStart) {
+            anyChange = true;
+            break;
+        }
+    }
+    REQUIRE(anyChange);
+}
+
+// ---------------------------------------------------------------------------
+// LFO-07: Smoothing causes gradual transition instead of instant step
+// ---------------------------------------------------------------------------
+TEST_CASE("LFO-07: Smoothing rounds square wave transitions", "[LFO-07]") {
+    using namespace xyzpan::dsp;
+    constexpr float sr = 44100.0f;
+    constexpr float rate = 2.0f;  // 2 Hz
+    constexpr int N = 22050;       // one full cycle
+
+    // Unsmoothed square
+    LFO lfoRaw;
+    lfoRaw.prepare(static_cast<double>(sr));
+    lfoRaw.reset(0.0f);
+    lfoRaw.waveform = LFOWaveform::Square;
+    lfoRaw.setRateHz(rate);
+
+    // Smoothed square (50ms)
+    LFO lfoSmooth;
+    lfoSmooth.prepare(static_cast<double>(sr));
+    lfoSmooth.reset(0.0f);
+    lfoSmooth.waveform = LFOWaveform::Square;
+    lfoSmooth.setRateHz(rate);
+    lfoSmooth.setSmoothMs(50.0f);
+
+    std::vector<float> rawBuf(static_cast<size_t>(N));
+    std::vector<float> smoothBuf(static_cast<size_t>(N));
+    for (int i = 0; i < N; ++i) {
+        rawBuf[static_cast<size_t>(i)]    = lfoRaw.tick();
+        smoothBuf[static_cast<size_t>(i)] = lfoSmooth.tick();
+    }
+
+    // Raw square: all values are exactly +1 or -1
+    for (int i = 0; i < N; ++i) {
+        float v = rawBuf[static_cast<size_t>(i)];
+        REQUIRE((v == 1.0f || v == -1.0f));
+    }
+
+    // Smoothed square: some values must be between -0.9 and 0.9 (transition region)
+    int intermediateCount = 0;
+    for (int i = 0; i < N; ++i) {
+        float v = smoothBuf[static_cast<size_t>(i)];
+        REQUIRE(v >= -1.1f);  // should stay bounded
+        REQUIRE(v <= 1.1f);
+        if (std::abs(v) < 0.9f)
+            ++intermediateCount;
+    }
+    // With 50ms smoothing at 44100Hz, transitions take ~2205 samples
+    // One cycle has 2 transitions → ~4410 intermediate samples out of 22050
+    REQUIRE(intermediateCount > 100);
 }

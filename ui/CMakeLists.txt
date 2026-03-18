@@ -6,7 +6,8 @@ add_library(xyzpan_ui STATIC
     Mesh.cpp
     AlchemyLookAndFeel.cpp
     XYZPanGLView.cpp
-    LFOWaveformButton.cpp   # Phase 6-03
+    LFOShapeSelector.cpp    # LFO shape selector row (replaces LFOWaveformButton)
+    LFOWaveformDisplay.cpp  # Live waveform display in LFO strips
     LFOStrip.cpp            # Phase 6-03
     DevPanelComponent.cpp   # Phase 6-03
 )

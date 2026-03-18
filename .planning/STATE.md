@@ -79,6 +79,7 @@ Progress: [██████████] 100%
 - Phase 06.1 inserted after Phase 6: Bug and dsp fixes (URGENT)
 - Phase 07.1 inserted after Phase 7: Optimization (URGENT)
 - Phase 07.2 inserted after Phase 7: Optimization Round 2 DSP and UI CPU Optimization (URGENT)
+- Phase 07.3 inserted after Phase 7: refactoring and codebase cleanup - remove redundancies and increase legibility and understandability of the codebase while retaining 100% functionality with tests (URGENT)
 
 ### Decisions
 

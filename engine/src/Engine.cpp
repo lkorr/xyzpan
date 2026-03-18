@@ -1495,4 +1495,9 @@ void XYZPanEngine::reset() {
     pulseLFO_.reset(0.0f);
 }
 
+XYZPanEngine::LFOPhases XYZPanEngine::getLastLFOPhases() const noexcept {
+    return { lfoX_.getPhase(), lfoY_.getPhase(), lfoZ_.getPhase(),
+             orbitLfoXY_.getPhase(), orbitLfoXZ_.getPhase(), orbitLfoYZ_.getPhase() };
+}
+
 } // namespace xyzpan
