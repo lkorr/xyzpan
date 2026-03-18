@@ -5,6 +5,7 @@
 #include "xyzpan/dsp/OnePoleSmooth.h"
 #include "ParamLayout.h"
 #include "PositionBridge.h"
+#include "Presets.h"
 
 class XYZPanProcessor : public juce::AudioProcessor {
 public:
@@ -29,10 +30,10 @@ public:
     double getTailLengthSeconds() const override { return 5.37; }
     // 300ms distance + 20ms floor bounce + 5000ms max reverb T60 + 50ms pre-delay max
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return "Default"; }
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
     void changeProgramName(int, const juce::String&) override {}
 
     void getStateInformation(juce::MemoryBlock& destData) override;
@@ -62,6 +63,10 @@ public:
 
 private:
     xyzpan::XYZPanEngine engine;
+
+    // Current factory preset index (not serialized in APVTS state; parameter
+    // values themselves are saved/restored by APVTS XML)
+    int currentPresetIndex_ = 0;
 
     // Raw parameter value pointers (thread-safe atomics managed by APVTS)
     // Spatial position (Phase 1)

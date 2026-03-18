@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ParamIDs.h"
+#include "Presets.h"
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
 #include <cmath>
@@ -501,6 +502,42 @@ void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
 
 void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
+    if (xml != nullptr && xml->hasTagName(apvts.state.getType()))
+        apvts.replaceState(juce::ValueTree::fromXml(*xml));
+}
+
+// ---------------------------------------------------------------------------
+// Factory preset program methods (PARAM-05)
+// setCurrentProgram() is called from the message thread — NEVER from processBlock.
+// replaceState() uses internal APVTS locks and is NOT realtime-safe; this is
+// correct because processBlock reads only pre-cached std::atomic<float>* pointers,
+// never the ValueTree itself (INFRA-04).
+// ---------------------------------------------------------------------------
+
+int XYZPanProcessor::getNumPrograms() {
+    return XYZPresets::kNumPresets;
+}
+
+int XYZPanProcessor::getCurrentProgram() {
+    return currentPresetIndex_;
+}
+
+const juce::String XYZPanProcessor::getProgramName(int index) {
+    if (index >= 0 && index < XYZPresets::kNumPresets)
+        return XYZPresets::kFactoryPresets[index].name;
+    return "Unknown";
+}
+
+void XYZPanProcessor::setCurrentProgram(int index) {
+    if (index < 0 || index >= XYZPresets::kNumPresets)
+        return;
+
+    currentPresetIndex_ = index;
+
+    // Parse XML and replace APVTS state.
+    // replaceState() is thread-safe (uses internal locks) but NOT realtime-safe.
+    // setCurrentProgram is called from the message thread by all major DAWs.
+    auto xml = juce::parseXML(XYZPresets::kFactoryPresets[index].xml);
     if (xml != nullptr && xml->hasTagName(apvts.state.getType()))
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
 }
