@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: Completed 07.2-01-PLAN.md (SineLUT 2048-point LUT eliminates per-sample trig, zero-LFO fast path skips sqrt, 81 tests with 7 pre-existing failures)
-last_updated: "2026-03-17T21:28:21.962Z"
+stopped_at: Completed 07.4-01-PLAN.md (7 factory presets, APVTS program methods, 9 preset tests all green)
+last_updated: "2026-03-18T08:52:01.509Z"
 last_activity: 2026-03-17 -- Completed plan 07.2-01 (SineLUT, orbit cos/sin LUT, zero-LFO fast path, worst-case benchmark, 4 SineLUT + 7 LFO + 4 perf tests green)
 progress:
-  total_phases: 10
+  total_phases: 12
   completed_phases: 8
-  total_plans: 21
-  completed_plans: 20
+  total_plans: 23
+  completed_plans: 21
   percent: 100
 ---
 
@@ -71,6 +71,7 @@ Progress: [██████████] 100%
 | Phase 07.1-optimization P01 | 9 | 2 tasks | 5 files |
 | Phase 07.1-optimization P02 | 3 | 2 tasks | 3 files |
 | Phase 07.2-optimization-round-2 P01 | 20 | 2 tasks | 6 files |
+| Phase 07.4-01 P01 | 7 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -159,6 +160,9 @@ Recent decisions affecting current work:
 - [Phase 07.2-optimization-round-2]: GL batch pattern: bind sphereShader + upload projection/view/lightDir once before all sphere/cone draws; each draw helper sets only model/color/opacity uniforms
 - [Phase 07.2-optimization-round-2]: isDraggingCamera_ tracks orbit drag state separately from isDraggingSource_ to keep 60fps during camera orbit regardless of position change detection
 - [Phase 07.2-optimization-round-2]: drawCone switches VAO mid-batch (vaoCone_) then restores vaoSphere_ to maintain batch invariant
+- [Phase 07.4-01]: Beat div default index = 6 (kBeatDivDefaultIndex, quarter note); plan comment said 5 — corrected in Presets.h
+- [Phase 07.4-01]: Factory preset XMLs include all ~110 parameter IDs to prevent state bleed between presets (Pitfall 4 from research)
+- [Phase 07.4-01]: setCurrentProgram calls apvts.replaceState() on message thread only; processBlock reads only pre-cached atomics (INFRA-04)
 
 ### Pending Todos
 
@@ -170,6 +174,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-17T21:20:12.000Z
-Stopped at: Completed 07.2-01-PLAN.md (SineLUT 2048-point LUT eliminates per-sample trig, zero-LFO fast path skips sqrt, 81 tests with 7 pre-existing failures)
+Last session: 2026-03-18T08:52:01.504Z
+Stopped at: Completed 07.4-01-PLAN.md (7 factory presets, APVTS program methods, 9 preset tests all green)
 Resume file: None

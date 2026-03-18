@@ -76,7 +76,7 @@
 - [x] **PARAM-02**: Dev panel exposes all internal constants (filter frequencies, delay ranges, dB values, comb tunings)
 - [x] **PARAM-03**: Parameter changes are smoothed to prevent zipper noise (no clicks on automation)
 - [x] **PARAM-04**: Plugin state saves and restores correctly across DAW sessions
-- [ ] **PARAM-05**: Factory presets demonstrating spatial positions and LFO patterns
+- [x] **PARAM-05**: Factory presets demonstrating spatial positions and LFO patterns
 
 ### User Interface (UI)
 
@@ -93,7 +93,7 @@
 - [ ] **INFRA-01**: Builds as VST3 on Windows
 - [ ] **INFRA-02**: Builds as Standalone on Windows
 - [x] **INFRA-03**: Adapts to DAW session sample rate (recalculates all coefficients on prepareToPlay)
-- [ ] **INFRA-04**: Zero memory allocations on audio thread (all pre-allocated in prepareToPlay)
+- [x] **INFRA-04**: Zero memory allocations on audio thread (all pre-allocated in prepareToPlay)
 - [ ] **INFRA-05**: Passes pluginval at strictness level 5
 - [ ] **INFRA-06**: Works correctly in Ableton, FL Studio, and Reaper
 - [ ] **INFRA-07**: Multiple instances can run simultaneously without interference
@@ -174,7 +174,7 @@
 | PARAM-02 | Phase 6: UI and Parameter System | Complete |
 | PARAM-03 | Phase 6: UI and Parameter System | Complete |
 | PARAM-04 | Phase 6: UI and Parameter System | Complete |
-| PARAM-05 | Phase 6: UI and Parameter System | Pending |
+| PARAM-05 | Phase 6: UI and Parameter System | Complete |
 | UI-01 | Phase 6: UI and Parameter System | Complete |
 | UI-02 | Phase 6: UI and Parameter System | Complete |
 | UI-03 | Phase 6: UI and Parameter System | Complete |
@@ -185,7 +185,7 @@
 | INFRA-01 | Phase 7: Integration and Validation | Pending |
 | INFRA-02 | Phase 7: Integration and Validation | Pending |
 | INFRA-03 | Phase 7: Integration and Validation | Complete |
-| INFRA-04 | Phase 7: Integration and Validation | Pending |
+| INFRA-04 | Phase 7: Integration and Validation | Complete |
 | INFRA-05 | Phase 7: Integration and Validation | Pending |
 | INFRA-06 | Phase 7: Integration and Validation | Pending |
 | INFRA-07 | Phase 7: Integration and Validation | Pending |
