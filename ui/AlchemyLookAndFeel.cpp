@@ -32,12 +32,14 @@ void AlchemyLookAndFeel::drawRotarySlider(
     const float centreX   = static_cast<float>(x) + static_cast<float>(width)  * 0.5f;
     const float centreY   = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
 
+    const float disabledAlpha = slider.isEnabled() ? 1.0f : 0.3f;
+
     // Background circle — dark iron
-    g.setColour(juce::Colour(kDarkIron));
+    g.setColour(juce::Colour(kDarkIron).withAlpha(disabledAlpha));
     g.fillEllipse(centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f);
 
     // Outer ring — bronze
-    g.setColour(juce::Colour(kBronze));
+    g.setColour(juce::Colour(kBronze).withAlpha(disabledAlpha));
     g.drawEllipse(centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f, 1.5f);
 
     // Arc track — very dark background arc from start to end
@@ -46,7 +48,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
         juce::Path trackArc;
         trackArc.addCentredArc(centreX, centreY, arcRadius, arcRadius,
                                0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(kBronze).withAlpha(0.3f));
+        g.setColour(juce::Colour(kBronze).withAlpha(0.3f * disabledAlpha));
         g.strokePath(trackArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
     }
@@ -59,7 +61,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
         juce::Path valueArc;
         valueArc.addCentredArc(centreX, centreY, arcRadius, arcRadius,
                                0.0f, rotaryStartAngle, angle, true);
-        g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId));
+        g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId).withAlpha(disabledAlpha));
         g.strokePath(valueArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
     }
@@ -72,7 +74,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
         const float dotR       = radius * 0.78f;
         const float dotX       = centreX + dotR * std::cos(angle);
         const float dotY       = centreY + dotR * std::sin(angle);
-        g.setColour(juce::Colour(kParchment));
+        g.setColour(juce::Colour(kParchment).withAlpha(disabledAlpha));
         g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
     }
 }
@@ -91,6 +93,8 @@ void AlchemyLookAndFeel::drawLinearSlider(
         return;
     }
 
+    const bool enabled = slider.isEnabled();
+    const float disabledAlpha = enabled ? 1.0f : 0.3f;
     const bool hero = slider.findColour(juce::Slider::rotarySliderFillColourId)
                       == juce::Colour(kBrightGold);
     const float trackH  = hero ? 6.0f : 3.0f;
@@ -100,7 +104,7 @@ void AlchemyLookAndFeel::drawLinearSlider(
     const float right    = static_cast<float>(x + width) - thumbR;
     const float trackTop = cy - trackH * 0.5f;
 
-    if (hero) {
+    if (hero && enabled) {
         // Outer glow — semi-transparent bright gold shadow behind track
         g.setColour(juce::Colour(kBrightGold).withAlpha(0.15f));
         g.fillRoundedRectangle(left - 2.0f, trackTop - 3.0f,
@@ -108,9 +112,9 @@ void AlchemyLookAndFeel::drawLinearSlider(
     }
 
     // Background track — dark iron with bronze outline
-    g.setColour(juce::Colour(kDarkIron));
+    g.setColour(juce::Colour(kDarkIron).withAlpha(disabledAlpha));
     g.fillRoundedRectangle(left, trackTop, right - left, trackH, trackH * 0.5f);
-    g.setColour(juce::Colour(kBronze).withAlpha(0.5f));
+    g.setColour(juce::Colour(kBronze).withAlpha(0.5f * disabledAlpha));
     g.drawRoundedRectangle(left, trackTop, right - left, trackH, trackH * 0.5f, 1.0f);
 
     // Value fill
@@ -119,16 +123,16 @@ void AlchemyLookAndFeel::drawLinearSlider(
         if (hero) {
             // Warm-gold → bright-gold horizontal gradient
             g.setGradientFill(juce::ColourGradient(
-                juce::Colour(kWarmGold), left, cy,
-                juce::Colour(kBrightGold), sliderPos, cy, false));
+                juce::Colour(kWarmGold).withAlpha(disabledAlpha), left, cy,
+                juce::Colour(kBrightGold).withAlpha(disabledAlpha), sliderPos, cy, false));
         } else {
-            g.setColour(juce::Colour(kWarmGold));
+            g.setColour(juce::Colour(kWarmGold).withAlpha(disabledAlpha));
         }
         g.fillRoundedRectangle(left, trackTop, fillW, trackH, trackH * 0.5f);
     }
 
     // Thumb
-    g.setColour(juce::Colour(kParchment));
+    g.setColour(juce::Colour(kParchment).withAlpha(disabledAlpha));
     g.fillEllipse(sliderPos - thumbR, cy - thumbR, thumbR * 2.0f, thumbR * 2.0f);
 }
 

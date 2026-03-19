@@ -60,6 +60,28 @@ struct EngineParams {
     float chestGainDb      = kChestGainDb;        // -8 dB  — chest bounce attenuation
     float floorDelayMaxMs  = kFloorDelayMaxMs;    // 20.0 ms — floor bounce max delay
     float floorGainDb      = kFloorGainDb;        // -5 dB  — floor bounce attenuation
+    float floorAbsHz       = kFloorAbsHz;         // 5000 Hz — floor HF absorption LPF
+
+    // Pinna P1 fixed peak
+    float pinnaP1FreqHz  = kPinnaP1FreqHz;    // 5000 Hz — fixed peak center
+    float pinnaP1GainDb  = kPinnaP1GainDb;    // +4 dB   — peak boost
+    float pinnaP1Q       = kPinnaP1Q;          // 1.5     — moderate width
+
+    // Pinna N2 secondary notch (offset from N1)
+    float pinnaN2OffsetHz = kPinnaN2OffsetHz;  // 3000 Hz — N2 = N1 + offset
+    float pinnaN2GainDb   = kPinnaN2GainDb;    // -8 dB   — notch depth
+    float pinnaN2Q        = kPinnaN2Q;          // 2.0     — bandwidth
+
+    // Pinna N1 range limits (elevation-dependent sweep)
+    float pinnaN1MinHz = kPinnaN1MinHz;        // 6500 Hz — at Z=-1 (below)
+    float pinnaN1MaxHz = kPinnaN1MaxHz;        // 10000 Hz — at Z=+1 (above)
+
+    // Near-field LF boost
+    float nearFieldLFHz    = kNearFieldLFHz;      // 200 Hz — low-shelf frequency
+    float nearFieldLFMaxDb = kNearFieldLFMaxDb;   // 6 dB   — max boost at close range
+
+    // Head shadow fully-open cap
+    float headShadowFullOpenHz = kHeadShadowFullOpenHz;  // 16000 Hz — safe SVF range
 
     // =========================================================================
     // Phase 4: Distance Processing (DIST-01 through DIST-06)
@@ -69,6 +91,10 @@ struct EngineParams {
     bool  dopplerEnabled = true;              // DIST-05: toggle delay+doppler
     float airAbsMaxHz    = kAirAbsMaxHz;      // 22000.0f — LPF cutoff at min distance
     float airAbsMinHz    = kAirAbsMinHz;      // 8000.0f  — LPF cutoff at max distance
+    float airAbs2MaxHz   = kAirAbs2MaxHz;     // 22000.0f — stage 2 close (flat)
+    float airAbs2MinHz   = kAirAbs2MinHz;     // 12000.0f — stage 2 far (extra HF loss)
+    float distGainFloorDb = kDistGainFloorDb;  // -72 dB  — gain at sphere boundary
+    float distGainMax     = kDistGainMax;      // 2.0     — max +6dB boost at close range
 
     // =========================================================================
     // Phase 5: Reverb (VERB-01 through VERB-04)

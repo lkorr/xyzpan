@@ -225,6 +225,54 @@ XYZPanProcessor::XYZPanProcessor()
     auxSendGainMaxDbParam = apvts.getRawParameterValue(ParamID::AUX_SEND_GAIN_MAX_DB);
     jassert(auxSendGainMaxDbParam != nullptr);
 
+    // Dev panel: Pinna P1 fixed peak
+    pinnaP1FreqHzParam = apvts.getRawParameterValue(ParamID::PINNA_P1_FREQ_HZ);
+    pinnaP1GainDbParam = apvts.getRawParameterValue(ParamID::PINNA_P1_GAIN_DB);
+    pinnaP1QParam      = apvts.getRawParameterValue(ParamID::PINNA_P1_Q);
+    jassert(pinnaP1FreqHzParam != nullptr);
+    jassert(pinnaP1GainDbParam != nullptr);
+    jassert(pinnaP1QParam      != nullptr);
+
+    // Dev panel: Pinna N2 secondary notch
+    pinnaN2OffsetHzParam = apvts.getRawParameterValue(ParamID::PINNA_N2_OFFSET_HZ);
+    pinnaN2GainDbParam   = apvts.getRawParameterValue(ParamID::PINNA_N2_GAIN_DB);
+    pinnaN2QParam        = apvts.getRawParameterValue(ParamID::PINNA_N2_Q);
+    jassert(pinnaN2OffsetHzParam != nullptr);
+    jassert(pinnaN2GainDbParam   != nullptr);
+    jassert(pinnaN2QParam        != nullptr);
+
+    // Dev panel: Pinna N1 range limits
+    pinnaN1MinHzParam = apvts.getRawParameterValue(ParamID::PINNA_N1_MIN_HZ);
+    pinnaN1MaxHzParam = apvts.getRawParameterValue(ParamID::PINNA_N1_MAX_HZ);
+    jassert(pinnaN1MinHzParam != nullptr);
+    jassert(pinnaN1MaxHzParam != nullptr);
+
+    // Dev panel: Floor bounce HF absorption
+    floorAbsHzParam = apvts.getRawParameterValue(ParamID::FLOOR_ABS_HZ);
+    jassert(floorAbsHzParam != nullptr);
+
+    // Dev panel: Near-field LF boost
+    nearFieldLFHzParam    = apvts.getRawParameterValue(ParamID::NEAR_FIELD_LF_HZ);
+    nearFieldLFMaxDbParam = apvts.getRawParameterValue(ParamID::NEAR_FIELD_LF_MAX_DB);
+    jassert(nearFieldLFHzParam    != nullptr);
+    jassert(nearFieldLFMaxDbParam != nullptr);
+
+    // Dev panel: Air absorption stage 2
+    airAbs2MaxHzParam = apvts.getRawParameterValue(ParamID::AIR_ABS_2_MAX_HZ);
+    airAbs2MinHzParam = apvts.getRawParameterValue(ParamID::AIR_ABS_2_MIN_HZ);
+    jassert(airAbs2MaxHzParam != nullptr);
+    jassert(airAbs2MinHzParam != nullptr);
+
+    // Dev panel: Distance gain law
+    distGainFloorDbParam = apvts.getRawParameterValue(ParamID::DIST_GAIN_FLOOR_DB);
+    distGainMaxParam     = apvts.getRawParameterValue(ParamID::DIST_GAIN_MAX);
+    jassert(distGainFloorDbParam != nullptr);
+    jassert(distGainMaxParam     != nullptr);
+
+    // Dev panel: Head shadow fully-open cap
+    headShadowFullOpenHzParam = apvts.getRawParameterValue(ParamID::HEAD_SHADOW_FULL_OPEN_HZ);
+    jassert(headShadowFullOpenHzParam != nullptr);
+
     // Dev panel: Geometry
     sphereRadiusParam      = apvts.getRawParameterValue(ParamID::SPHERE_RADIUS);
     vertMonoCylRadiusParam = apvts.getRawParameterValue(ParamID::VERT_MONO_CYLINDER_RADIUS);
@@ -412,6 +460,38 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Dev panel: Aux send
     params.auxSendGainMaxDb = auxSendGainMaxDbParam->load();
 
+    // Dev panel: Pinna P1 fixed peak
+    params.pinnaP1FreqHz  = pinnaP1FreqHzParam->load();
+    params.pinnaP1GainDb  = pinnaP1GainDbParam->load();
+    params.pinnaP1Q       = pinnaP1QParam->load();
+
+    // Dev panel: Pinna N2 secondary notch
+    params.pinnaN2OffsetHz = pinnaN2OffsetHzParam->load();
+    params.pinnaN2GainDb   = pinnaN2GainDbParam->load();
+    params.pinnaN2Q        = pinnaN2QParam->load();
+
+    // Dev panel: Pinna N1 range limits
+    params.pinnaN1MinHz = pinnaN1MinHzParam->load();
+    params.pinnaN1MaxHz = pinnaN1MaxHzParam->load();
+
+    // Dev panel: Floor bounce HF absorption
+    params.floorAbsHz = floorAbsHzParam->load();
+
+    // Dev panel: Near-field LF boost
+    params.nearFieldLFHz    = nearFieldLFHzParam->load();
+    params.nearFieldLFMaxDb = nearFieldLFMaxDbParam->load();
+
+    // Dev panel: Air absorption stage 2
+    params.airAbs2MaxHz = airAbs2MaxHzParam->load();
+    params.airAbs2MinHz = airAbs2MinHzParam->load();
+
+    // Dev panel: Distance gain law
+    params.distGainFloorDb = distGainFloorDbParam->load();
+    params.distGainMax     = distGainMaxParam->load();
+
+    // Dev panel: Head shadow fully-open cap
+    params.headShadowFullOpenHz = headShadowFullOpenHzParam->load();
+
     // Dev panel: Geometry
     params.sphereRadius           = sphereRadiusParam->load();
     params.vertMonoCylinderRadius = vertMonoCylRadiusParam->load();
@@ -472,22 +552,14 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // DSP state bridge for dev panel readouts
     dspStateBridge.write(engine.getLastDSPState());
 
-    // LFO phases for UI waveform displays (drift-free sync)
-    auto phases = engine.getLastLFOPhases();
-    lfoPhaseX.store(phases.x, std::memory_order_relaxed);
-    lfoPhaseY.store(phases.y, std::memory_order_relaxed);
-    lfoPhaseZ.store(phases.z, std::memory_order_relaxed);
-    lfoPhaseOrbitXY.store(phases.orbitXY, std::memory_order_relaxed);
-    lfoPhaseOrbitXZ.store(phases.orbitXZ, std::memory_order_relaxed);
-    lfoPhaseOrbitYZ.store(phases.orbitYZ, std::memory_order_relaxed);
-
-    // S&H held values for accurate waveform display
-    lfoSHValueX.store(phases.shX, std::memory_order_relaxed);
-    lfoSHValueY.store(phases.shY, std::memory_order_relaxed);
-    lfoSHValueZ.store(phases.shZ, std::memory_order_relaxed);
-    lfoSHValueOrbitXY.store(phases.shOrbitXY, std::memory_order_relaxed);
-    lfoSHValueOrbitXZ.store(phases.shOrbitXZ, std::memory_order_relaxed);
-    lfoSHValueOrbitYZ.store(phases.shOrbitYZ, std::memory_order_relaxed);
+    // LFO output values for UI waveform displays
+    auto lfoOut = engine.getLastLFOOutputs();
+    lfoOutputX.store(lfoOut.x, std::memory_order_relaxed);
+    lfoOutputY.store(lfoOut.y, std::memory_order_relaxed);
+    lfoOutputZ.store(lfoOut.z, std::memory_order_relaxed);
+    lfoOutputOrbitXY.store(lfoOut.orbitXY, std::memory_order_relaxed);
+    lfoOutputOrbitXZ.store(lfoOut.orbitXZ, std::memory_order_relaxed);
+    lfoOutputOrbitYZ.store(lfoOut.orbitYZ, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {

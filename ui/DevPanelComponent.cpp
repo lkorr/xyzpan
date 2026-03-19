@@ -28,16 +28,36 @@ namespace {
     constexpr const char* kPINNA_NOTCH_HZ   = "pinna_notch_hz";
     constexpr const char* kPINNA_NOTCH_Q    = "pinna_notch_q";
     constexpr const char* kPINNA_SHELF_HZ   = "pinna_shelf_hz";
+    constexpr const char* kPINNA_P1_FREQ_HZ = "pinna_p1_freq_hz";
+    constexpr const char* kPINNA_P1_GAIN_DB = "pinna_p1_gain_db";
+    constexpr const char* kPINNA_P1_Q       = "pinna_p1_q";
+    constexpr const char* kPINNA_N2_OFFSET  = "pinna_n2_offset_hz";
+    constexpr const char* kPINNA_N2_GAIN_DB = "pinna_n2_gain_db";
+    constexpr const char* kPINNA_N2_Q       = "pinna_n2_q";
+    constexpr const char* kPINNA_N1_MIN_HZ  = "pinna_n1_min_hz";
+    constexpr const char* kPINNA_N1_MAX_HZ  = "pinna_n1_max_hz";
     constexpr const char* kCHEST_DELAY_MS   = "chest_delay_ms";
     constexpr const char* kCHEST_GAIN_DB    = "chest_gain_db";
     constexpr const char* kFLOOR_DELAY_MS   = "floor_delay_ms";
     constexpr const char* kFLOOR_GAIN_DB    = "floor_gain_db";
+    constexpr const char* kFLOOR_ABS_HZ     = "floor_abs_hz";
+
+    // Near-field
+    constexpr const char* kNEAR_FIELD_LF_HZ     = "near_field_lf_hz";
+    constexpr const char* kNEAR_FIELD_LF_MAX_DB = "near_field_lf_max_db";
 
     // Distance
     constexpr const char* kDIST_DELAY_MAX_MS = "dist_delay_max_ms";
     constexpr const char* kDIST_SMOOTH_MS    = "dist_smooth_ms";
     constexpr const char* kAIR_ABS_MAX_HZ    = "air_abs_max_hz";
     constexpr const char* kAIR_ABS_MIN_HZ    = "air_abs_min_hz";
+    constexpr const char* kAIR_ABS_2_MAX_HZ  = "air_abs_2_max_hz";
+    constexpr const char* kAIR_ABS_2_MIN_HZ  = "air_abs_2_min_hz";
+    constexpr const char* kDIST_GAIN_FLOOR_DB = "dist_gain_floor_db";
+    constexpr const char* kDIST_GAIN_MAX      = "dist_gain_max";
+
+    // Head shadow
+    constexpr const char* kHEAD_SHADOW_FULL_OPEN_HZ = "head_shadow_full_open_hz";
 
     // Presence shelf
     constexpr const char* kPRES_SHELF_FREQ   = "presence_shelf_freq_hz";
@@ -88,13 +108,24 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "ear_canal_max_db",    "Maximum boost of the ear-canal resonance in dB. Applied at full strength when the source is directly in front; fades to zero behind." },
 
         // Z-Axis: Above/Below
-        { "pinna_notch_hz",      "Centre frequency of the pinna notch filter. The pinna creates a narrow spectral notch whose frequency shifts with elevation — higher source = higher notch frequency." },
-        { "pinna_notch_q",       "Q of the pinna notch. Narrow notch (high Q) gives a sharper elevation cue. Real pinna notches are fairly narrow (Q ~ 5-15)." },
+        { "pinna_notch_hz",      "Centre frequency of the pinna N1 notch filter. The pinna creates a narrow spectral notch whose frequency shifts with elevation — higher source = higher notch frequency." },
+        { "pinna_notch_q",       "Q of the pinna N1 notch. Narrow notch (high Q) gives a sharper elevation cue. Real pinna notches are fairly narrow (Q ~ 5-15)." },
         { "pinna_shelf_hz",      "Cutoff of the pinna high-shelf filter. Elevated sources receive a subtle high-frequency boost from outer-ear reflections." },
+        { "pinna_p1_freq_hz",    "Centre frequency of the P1 fixed pinna peak. A broadband peak around 5 kHz models outer-ear resonance. Does not shift with elevation." },
+        { "pinna_p1_gain_db",    "Gain of the P1 pinna peak in dB. Positive = boost. Models the broadband gain of the outer-ear scapha resonance." },
+        { "pinna_p1_q",          "Q of the P1 pinna peak. Lower Q = broader peak. Real pinna P1 is fairly broad (Q ~ 1-3)." },
+        { "pinna_n2_offset_hz",  "Frequency offset of the N2 secondary notch from N1. N2 = N1 + offset. Models a second pinna interference notch." },
+        { "pinna_n2_gain_db",    "Gain of the N2 secondary notch in dB. Typically negative (attenuation). Depth of the second pinna spectral notch." },
+        { "pinna_n2_q",          "Q of the N2 secondary notch. Higher Q = narrower, sharper notch." },
+        { "pinna_n1_min_hz",     "N1 frequency at Z=-1 (source below). The lowest the pinna notch sweeps. Together with N1 Max Hz defines the elevation-dependent frequency range." },
+        { "pinna_n1_max_hz",     "N1 frequency at Z=+1 (source above). The highest the pinna notch sweeps. The notch interpolates linearly between min and max with elevation." },
         { "chest_delay_ms",      "Delay of the chest-bounce reflection in ms. Sound from below bounces off the torso, arriving ~0.4 ms late. Cues the brain that the source is low." },
         { "chest_gain_db",       "Gain of the chest-bounce reflection in dB. Typically negative (attenuated). Stronger reflection = stronger below cue." },
         { "floor_delay_ms",      "Delay of the floor reflection in ms. A second early reflection off the ground plane reinforces the below cue." },
         { "floor_gain_db",       "Gain of the floor reflection in dB. Typically well below 0 dB. Combined with chest bounce creates a convincing below sensation." },
+        { "floor_abs_hz",        "HF absorption cutoff for the floor reflection in Hz. Models the fact that floors absorb high frequencies — lower value = more absorption." },
+        { "near_field_lf_hz",    "Frequency of the near-field LF boost low-shelf filter. At close range, the ipsilateral ear gets a bass boost (proximity effect). Models real head-diffraction LF lift." },
+        { "near_field_lf_max_db","Maximum near-field LF boost in dB at close range and full azimuth. Higher values give a stronger bass proximity effect." },
         { "comb_delay_",         "Delay time for one line of the pinna comb filter bank. Ten parallel delay lines model the complex interference pattern of the outer ear at different elevations." },
         { "comb_fb_",            "Feedback coefficient for one comb filter line. Controls how many times the signal recirculates. Higher values = more resonant, coloured sound." },
         { "comb_wet_max",        "Maximum wet mix of the pinna comb filter bank. Blends the comb-filtered signal with dry. Scales with elevation distance from the horizontal plane." },
@@ -102,8 +133,13 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         // Distance
         { "dist_delay_max_ms",   "Maximum propagation delay in ms at the far edge of the sphere. Models speed-of-sound travel time. This is a creative effect, not latency-compensated." },
         { "dist_smooth_ms",      "Smoothing time for distance parameter changes in ms. Prevents clicks when the source jumps in distance. Affects delay interpolation ramp." },
-        { "air_abs_max_hz",      "Low-pass cutoff at the far edge (maximum distance). Models high-frequency absorption by air — distant sounds lose treble." },
-        { "air_abs_min_hz",      "Low-pass cutoff at minimum distance. Even a close source gets some gentle roll-off for naturalness. Should be well above audible range." },
+        { "air_abs_max_hz",      "Stage 1 low-pass cutoff at minimum distance (close, open/flat). At close range the filter is wide open. Stage 1 of 2." },
+        { "air_abs_min_hz",      "Stage 1 low-pass cutoff at maximum distance (far, strong HF loss). Models high-frequency absorption by air — distant sounds lose treble." },
+        { "air_abs_2_max_hz",    "Stage 2 low-pass cutoff at minimum distance (close, flat). Second cascade stage for steeper HF rolloff at distance. Stage 2 of 2." },
+        { "air_abs_2_min_hz",    "Stage 2 low-pass cutoff at maximum distance (far). Combined with stage 1 gives ~12 dB/octave effective rolloff. Stage 2 of 2." },
+        { "dist_gain_floor_db",  "Gain floor in dB at sphere boundary. Controls distance attenuation law steepness. -72 dB = strong inverse-square. Higher (less negative) = gentler rolloff." },
+        { "dist_gain_max",       "Maximum distance gain multiplier (linear). Clamps close-range gain boost. 2.0 = up to +6 dB at very close range. 1.0 = no close-range boost." },
+        { "head_shadow_full_open_hz", "Head shadow SVF cutoff when fully open (no shadowing). Caps the SVF frequency to prevent instability. Higher = wider open, but may cause SVF issues above 16 kHz at 44.1 kHz." },
         { "aux_send_gain_max_db","Maximum aux send level in dB at the far edge. Drives an external reverb bus to increase wet ratio with distance, simulating room reflections." },
 
         // Smoothing
@@ -118,11 +154,11 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "section:Test Tone",        "Built-in signal generator for auditioning spatial DSP cues without needing external audio input." },
         { "section:X-Axis: Left/Right", "Azimuth (left/right) cues: interaural time difference (ITD), interaural level difference (ILD), and head shadow filtering." },
         { "section:Y-Axis: Front/Back", "Front/back disambiguation cues: rear shadow, presence shelf, and ear-canal resonance model." },
-        { "section:Z-Axis: Above/Below","Elevation cues: pinna notch/shelf, chest and floor reflections, and the 10-line pinna comb filter bank." },
+        { "section:Z-Axis: Above",      "Upward elevation cues: pinna notch (N1/N2), P1 peak, and high-shelf — models outer-ear spectral shaping for sources above the horizontal plane." },
+        { "section:Z-Axis: Below",      "Downward elevation cues: chest-bounce and floor reflections that cue the brain to below-horizon sources." },
+        { "section:Comb Filters",        "10-line pinna comb filter bank. Models complex interference patterns of the outer ear at different elevations." },
         { "section:Distance",          "Distance rendering: propagation delay, air absorption low-pass, gain attenuation, and aux reverb send." },
         { "section:Smoothing",         "Parameter smoothing time constants. Control how quickly DSP coefficients update during source motion to balance responsiveness vs. artefacts." },
-        { "section:DSP Readouts",      "Live telemetry from the audio thread. Shows current computed DSP values for the active source position." },
-
         // Readout descriptions
         { "readout:ITD Samples",   "Current interaural time difference in samples. Positive = right ear delayed. Derived from azimuth angle and itd_max_ms." },
         { "readout:Shadow Cutoff", "Current head-shadow low-pass cutoff in Hz. Varies with azimuth — lower when source is far to one side." },
@@ -165,10 +201,19 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     // Section 2: X-Axis — Left/Right (binaural azimuth cues)
     // -------------------------------------------------------------------
     beginSection("X-Axis: Left/Right");
-    addDevSlider(kITD_MAX_MS,     apvts);
-    addDevSlider(kHEAD_SHADOW_HZ, apvts);
-    addDevSlider(kILD_MAX_DB,     apvts);
-    addDevSlider(kVERT_MONO_CYL,  apvts);
+    addDevSlider(kITD_MAX_MS,               apvts);
+    addDevSlider(kHEAD_SHADOW_HZ,           apvts);
+    addDevSlider(kHEAD_SHADOW_FULL_OPEN_HZ, apvts);
+    addDevSlider(kILD_MAX_DB,               apvts);
+    addDevSlider(kNEAR_FIELD_LF_HZ,         apvts);
+    addDevSlider(kNEAR_FIELD_LF_MAX_DB,     apvts);
+    addDevSlider(kVERT_MONO_CYL,            apvts);
+    if (dspBridge_ != nullptr) {
+        addReadonlyLabel("ITD Samples");
+        addReadonlyLabel("Shadow Cutoff");
+        addReadonlyLabel("ILD Gain");
+        addReadonlyLabel("Mono Blend");
+    }
 
     // -------------------------------------------------------------------
     // Section 3: Y-Axis — Front/Back (front-rear spectral cues)
@@ -180,36 +225,70 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kEAR_CANAL_FREQ,    apvts);
     addDevSlider(kEAR_CANAL_Q,       apvts);
     addDevSlider(kEAR_CANAL_MAX_DB,  apvts);
+    if (dspBridge_ != nullptr) {
+        addReadonlyLabel("Rear Cutoff");
+    }
 
     // -------------------------------------------------------------------
-    // Section 4: Z-Axis — Above/Below (elevation cues)
+    // Section 4: Z-Axis — Above (pinna spectral shaping)
     // -------------------------------------------------------------------
-    beginSection("Z-Axis: Above/Below");
-    addDevSlider(kPINNA_NOTCH_HZ, apvts);
-    addDevSlider(kPINNA_NOTCH_Q,  apvts);
-    addDevSlider(kPINNA_SHELF_HZ, apvts);
-    addDevSlider(kCHEST_DELAY_MS, apvts);
-    addDevSlider(kCHEST_GAIN_DB,  apvts);
-    addDevSlider(kFLOOR_DELAY_MS, apvts);
-    addDevSlider(kFLOOR_GAIN_DB,  apvts);
+    beginSection("Z-Axis: Above");
+    addDevSlider(kPINNA_NOTCH_HZ,    apvts);
+    addDevSlider(kPINNA_NOTCH_Q,     apvts);
+    addDevSlider(kPINNA_N1_MIN_HZ,   apvts);
+    addDevSlider(kPINNA_N1_MAX_HZ,   apvts);
+    addDevSlider(kPINNA_P1_FREQ_HZ,  apvts);
+    addDevSlider(kPINNA_P1_GAIN_DB,  apvts);
+    addDevSlider(kPINNA_P1_Q,        apvts);
+    addDevSlider(kPINNA_N2_OFFSET,   apvts);
+    addDevSlider(kPINNA_N2_GAIN_DB,  apvts);
+    addDevSlider(kPINNA_N2_Q,        apvts);
+    addDevSlider(kPINNA_SHELF_HZ,    apvts);
+
+    // -------------------------------------------------------------------
+    // Section 5: Z-Axis — Below (chest/floor reflections)
+    // -------------------------------------------------------------------
+    beginSection("Z-Axis: Below");
+    addDevSlider(kCHEST_DELAY_MS,    apvts);
+    addDevSlider(kCHEST_GAIN_DB,     apvts);
+    addDevSlider(kFLOOR_DELAY_MS,    apvts);
+    addDevSlider(kFLOOR_GAIN_DB,     apvts);
+    addDevSlider(kFLOOR_ABS_HZ,      apvts);
+
+    // -------------------------------------------------------------------
+    // Section 6: Comb Filters (pinna comb bank)
+    // -------------------------------------------------------------------
+    beginSection("Comb Filters");
     for (int i = 0; i < 10; ++i)
         addDevSlider(kCOMB_DELAY[i], apvts);
     for (int i = 0; i < 10; ++i)
         addDevSlider(kCOMB_FB[i], apvts);
     addDevSlider(kCOMB_WET_MAX, apvts);
+    if (dspBridge_ != nullptr) {
+        addReadonlyLabel("Comb Wet");
+    }
 
     // -------------------------------------------------------------------
-    // Section 5: Distance (propagation cues)
+    // Section 7: Distance (propagation cues)
     // -------------------------------------------------------------------
     beginSection("Distance");
-    addDevSlider(kDIST_DELAY_MAX_MS, apvts);
-    addDevSlider(kDIST_SMOOTH_MS,    apvts);
-    addDevSlider(kAIR_ABS_MAX_HZ,    apvts);
-    addDevSlider(kAIR_ABS_MIN_HZ,    apvts);
-    addDevSlider(kAUX_SEND_MAX_DB,   apvts);
+    addDevSlider(kDIST_DELAY_MAX_MS,  apvts);
+    addDevSlider(kDIST_SMOOTH_MS,     apvts);
+    addDevSlider(kDIST_GAIN_FLOOR_DB, apvts);
+    addDevSlider(kDIST_GAIN_MAX,      apvts);
+    addDevSlider(kAIR_ABS_MAX_HZ,     apvts);
+    addDevSlider(kAIR_ABS_MIN_HZ,     apvts);
+    addDevSlider(kAIR_ABS_2_MAX_HZ,   apvts);
+    addDevSlider(kAIR_ABS_2_MIN_HZ,   apvts);
+    addDevSlider(kAUX_SEND_MAX_DB,    apvts);
+    if (dspBridge_ != nullptr) {
+        addReadonlyLabel("Dist Delay");
+        addReadonlyLabel("Dist Gain");
+        addReadonlyLabel("Air Cutoff");
+    }
 
     // -------------------------------------------------------------------
-    // Section 6: Smoothing (cross-axis utility)
+    // Section 8: Smoothing (cross-axis utility)
     // -------------------------------------------------------------------
     beginSection("Smoothing");
     addDevSlider(kSMOOTH_ITD_MS,    apvts);
@@ -217,34 +296,20 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kSMOOTH_GAIN_MS,   apvts);
 
     // -------------------------------------------------------------------
-    // DSP Readouts (live telemetry — always last, not collapsible)
+    // Status (non-collapsible, always visible at bottom)
     // -------------------------------------------------------------------
     if (dspBridge_ != nullptr) {
-        // Use beginSection but mark it non-collapsible by not adding to
-        // the clickable set — we handle this in relayout() by never hiding
-        // readout children. Actually simpler: just use a plain header label.
         auto* header = groupHeaders_.emplace_back(
             std::make_unique<juce::Label>()).get();
-        header->setText("DSP Readouts", juce::dontSendNotification);
+        header->setText("Status", juce::dontSendNotification);
         header->setFont(juce::Font(12.0f, juce::Font::bold));
         header->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
         content_.addAndMakeVisible(header);
 
-        // Hover info for DSP Readouts header
-        header->setInterceptsMouseClicks(true, false);
-        header->addMouseListener(this, false);
-        componentToDescKey_[header] = "section:DSP Readouts";
+        // Not added to sections_ — non-collapsible
+        currentSectionIdx_ = -1;  // readouts below go to statusReadoutChildren_
 
-        addReadonlyLabel("ITD Samples");
-        addReadonlyLabel("Shadow Cutoff");
-        addReadonlyLabel("ILD Gain");
-        addReadonlyLabel("Rear Cutoff");
-        addReadonlyLabel("Comb Wet");
-        addReadonlyLabel("Mono Blend");
         addReadonlyLabel("Sample Rate");
-        addReadonlyLabel("Dist Delay");
-        addReadonlyLabel("Dist Gain");
-        addReadonlyLabel("Air Cutoff");
         addReadonlyLabel("Mod X");
 
         startTimerHz(15);
@@ -369,6 +434,18 @@ void DevPanelComponent::addReadonlyLabel(const juce::String& name)
     valLbl->setJustificationType(juce::Justification::centredLeft);
     content_.addAndMakeVisible(valLbl);
 
+    // Name-based lookup for timerCallback
+    readoutValueMap_[name] = valLbl;
+
+    // Register with current section (or status if no section active)
+    if (currentSectionIdx_ >= 0) {
+        sections_[static_cast<size_t>(currentSectionIdx_)].children.push_back(nameLbl);
+        sections_[static_cast<size_t>(currentSectionIdx_)].children.push_back(valLbl);
+    } else {
+        statusReadoutChildren_.push_back(nameLbl);
+        statusReadoutChildren_.push_back(valLbl);
+    }
+
     // Hover info: map both labels to readout key
     juce::String key = "readout:" + name;
     nameLbl->addMouseListener(this, false);
@@ -426,25 +503,24 @@ void DevPanelComponent::relayout()
         yPos += kPadding;  // gap between sections
     }
 
-    // Layout DSP Readouts (non-collapsible, always last)
-    // The readout header is the last groupHeader_ that isn't part of sections_
+    // Layout Status readouts (non-collapsible, always last)
     if (dspBridge_ != nullptr && !groupHeaders_.empty()) {
-        auto* readoutHeader = groupHeaders_.back().get();
-        // Only position if it's the DSP Readouts header (not a section header)
-        bool isReadoutHeader = true;
+        auto* statusHeader = groupHeaders_.back().get();
+        // Only position if it's not a section header
+        bool isStatusHeader = true;
         for (auto& section : sections_) {
-            if (section.header == readoutHeader) {
-                isReadoutHeader = false;
+            if (section.header == statusHeader) {
+                isStatusHeader = false;
                 break;
             }
         }
-        if (isReadoutHeader) {
-            readoutHeader->setBounds(kPadding, yPos, kLabelW + kSliderW + 8, kGroupH);
+        if (isStatusHeader) {
+            statusHeader->setBounds(kPadding, yPos, kLabelW + kSliderW + 8, kGroupH);
             yPos += kGroupH;
 
-            for (size_t i = 0; i < readoutNameLabels_.size(); ++i) {
-                readoutNameLabels_[i]->setBounds(kPadding, yPos, kLabelW, kRowH);
-                readoutValueLabels_[i]->setBounds(kPadding + kLabelW + 4, yPos, kSliderW, kRowH);
+            for (size_t i = 0; i + 1 < statusReadoutChildren_.size(); i += 2) {
+                statusReadoutChildren_[i]->setBounds(kPadding, yPos, kLabelW, kRowH);
+                statusReadoutChildren_[i + 1]->setBounds(kPadding + kLabelW + 4, yPos, kSliderW, kRowH);
                 yPos += kRowH;
             }
         }
@@ -456,28 +532,31 @@ void DevPanelComponent::relayout()
 
 void DevPanelComponent::timerCallback()
 {
-    if (dspBridge_ == nullptr || readoutValueLabels_.size() < 11)
+    if (dspBridge_ == nullptr)
         return;
 
     auto s = dspBridge_->read();
     char buf[32];
 
-    auto fmt = [&](int idx, const char* format, float val) {
-        std::snprintf(buf, sizeof(buf), format, static_cast<double>(val));
-        readoutValueLabels_[static_cast<size_t>(idx)]->setText(buf, juce::dontSendNotification);
+    auto set = [&](const char* name, const char* format, float val) {
+        auto it = readoutValueMap_.find(name);
+        if (it != readoutValueMap_.end()) {
+            std::snprintf(buf, sizeof(buf), format, static_cast<double>(val));
+            it->second->setText(buf, juce::dontSendNotification);
+        }
     };
 
-    fmt(0,  "%.2f",   s.itdSamples);
-    fmt(1,  "%.0f Hz", s.shadowCutoffHz);
-    fmt(2,  "%.4f",   s.ildGainLinear);
-    fmt(3,  "%.0f Hz", s.rearCutoffHz);
-    fmt(4,  "%.3f",   s.combWet);
-    fmt(5,  "%.3f",   s.monoBlend);
-    fmt(6,  "%.0f",   s.sampleRate);
-    fmt(7,  "%.1f",   s.distDelaySamp);
-    fmt(8,  "%.4f",   s.distGainLinear);
-    fmt(9,  "%.0f Hz", s.airCutoffHz);
-    fmt(10, "%.4f",   s.modX);
+    set("ITD Samples",   "%.2f",    s.itdSamples);
+    set("Shadow Cutoff", "%.0f Hz", s.shadowCutoffHz);
+    set("ILD Gain",      "%.4f",    s.ildGainLinear);
+    set("Mono Blend",    "%.3f",    s.monoBlend);
+    set("Rear Cutoff",   "%.0f Hz", s.rearCutoffHz);
+    set("Comb Wet",      "%.3f",    s.combWet);
+    set("Dist Delay",    "%.1f",    s.distDelaySamp);
+    set("Dist Gain",     "%.4f",    s.distGainLinear);
+    set("Air Cutoff",    "%.0f Hz", s.airCutoffHz);
+    set("Sample Rate",   "%.0f",    s.sampleRate);
+    set("Mod X",         "%.4f",    s.modX);
 }
 
 void DevPanelComponent::mouseEnter(const juce::MouseEvent& event)

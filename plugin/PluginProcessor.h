@@ -53,13 +53,9 @@ public:
     std::atomic<bool> resetXYZLfoPhases{false};
     std::atomic<bool> resetOrbitLfoPhases{false};
 
-    // LFO phases — written by audio thread at end of processBlock, read by UI displays
-    std::atomic<float> lfoPhaseX{0.f}, lfoPhaseY{0.f}, lfoPhaseZ{0.f};
-    std::atomic<float> lfoPhaseOrbitXY{0.f}, lfoPhaseOrbitXZ{0.f}, lfoPhaseOrbitYZ{0.f};
-
-    // S&H held values — written by audio thread, read by UI displays
-    std::atomic<float> lfoSHValueX{0.f}, lfoSHValueY{0.f}, lfoSHValueZ{0.f};
-    std::atomic<float> lfoSHValueOrbitXY{0.f}, lfoSHValueOrbitXZ{0.f}, lfoSHValueOrbitYZ{0.f};
+    // LFO output values (tick*depth) — written by audio thread, read by UI displays
+    std::atomic<float> lfoOutputX{0.f}, lfoOutputY{0.f}, lfoOutputZ{0.f};
+    std::atomic<float> lfoOutputOrbitXY{0.f}, lfoOutputOrbitXZ{0.f}, lfoOutputOrbitYZ{0.f};
 
 private:
     xyzpan::XYZPanEngine engine;
@@ -186,6 +182,38 @@ private:
 
     // Dev panel: Aux send
     std::atomic<float>* auxSendGainMaxDbParam = nullptr;
+
+    // Dev panel: Pinna P1 fixed peak
+    std::atomic<float>* pinnaP1FreqHzParam = nullptr;
+    std::atomic<float>* pinnaP1GainDbParam = nullptr;
+    std::atomic<float>* pinnaP1QParam      = nullptr;
+
+    // Dev panel: Pinna N2 secondary notch
+    std::atomic<float>* pinnaN2OffsetHzParam = nullptr;
+    std::atomic<float>* pinnaN2GainDbParam   = nullptr;
+    std::atomic<float>* pinnaN2QParam        = nullptr;
+
+    // Dev panel: Pinna N1 range limits
+    std::atomic<float>* pinnaN1MinHzParam = nullptr;
+    std::atomic<float>* pinnaN1MaxHzParam = nullptr;
+
+    // Dev panel: Floor bounce HF absorption
+    std::atomic<float>* floorAbsHzParam = nullptr;
+
+    // Dev panel: Near-field LF boost
+    std::atomic<float>* nearFieldLFHzParam    = nullptr;
+    std::atomic<float>* nearFieldLFMaxDbParam = nullptr;
+
+    // Dev panel: Air absorption stage 2
+    std::atomic<float>* airAbs2MaxHzParam = nullptr;
+    std::atomic<float>* airAbs2MinHzParam = nullptr;
+
+    // Dev panel: Distance gain law
+    std::atomic<float>* distGainFloorDbParam = nullptr;
+    std::atomic<float>* distGainMaxParam     = nullptr;
+
+    // Dev panel: Head shadow fully-open cap
+    std::atomic<float>* headShadowFullOpenHzParam = nullptr;
 
     // Dev panel: Geometry
     std::atomic<float>* sphereRadiusParam       = nullptr;

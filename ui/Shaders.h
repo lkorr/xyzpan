@@ -43,6 +43,44 @@ void main()
 )";
 
 // ---------------------------------------------------------------------------
+// Colored-line shader — per-vertex RGB for room wireframe (axis-colored edges)
+// ---------------------------------------------------------------------------
+
+inline constexpr const char* kColorLineVertShader = R"(
+#version 150 core
+
+in vec3 position;
+in vec3 vertColor;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;
+
+out vec3 vColor;
+
+void main()
+{
+    vColor      = vertColor;
+    gl_Position = projection * view * model * vec4(position, 1.0);
+}
+)";
+
+inline constexpr const char* kColorLineFragShader = R"(
+#version 150 core
+
+in vec3 vColor;
+
+uniform float opacity;
+
+out vec4 outColor;
+
+void main()
+{
+    outColor = vec4(vColor, opacity);
+}
+)";
+
+// ---------------------------------------------------------------------------
 // Sphere shader — used for listener and source nodes
 // Simple diffuse + ambient lighting; normal computed from sphere mesh normals.
 // ---------------------------------------------------------------------------

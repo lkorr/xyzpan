@@ -68,6 +68,11 @@ void DistancePipeline::prepare(float sr) {
     distDelayR.prepare(distDelayCap);
     distDelayL.reset();
     distDelayR.reset();
+    const float aaCutoff = std::min(kDopplerAAMaxHz, sr * 0.45f);
+    dopplerAA_L.setCoefficients(aaCutoff, sr);
+    dopplerAA_R.setCoefficients(aaCutoff, sr);
+    dopplerAA_L.reset();
+    dopplerAA_R.reset();
     airLPF_L.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_R.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_L.reset();
@@ -80,19 +85,19 @@ void DistancePipeline::prepare(float sr) {
     distDelaySmooth.reset(2.0f);
     distGainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
     distGainSmooth.reset(1.0f);
-    lastDistDelaySamp = 2.0f;
 }
 
 void DistancePipeline::reset() {
     distDelayL.reset();
     distDelayR.reset();
+    dopplerAA_L.reset();
+    dopplerAA_R.reset();
     airLPF_L.reset();
     airLPF_R.reset();
     airLPF2_L.reset();
     airLPF2_R.reset();
     distDelaySmooth.reset(2.0f);
     distGainSmooth.reset(1.0f);
-    lastDistDelaySamp = 2.0f;
 }
 
 // ============================================================================
@@ -210,6 +215,13 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
         distDelayL_.reset();
         distDelayR_.reset();
     }
+    {
+        const float aaCutoff = std::min(kDopplerAAMaxHz, sr);
+        dopplerAA_L_.setCoefficients(aaCutoff, sr);
+        dopplerAA_R_.setCoefficients(aaCutoff, sr);
+        dopplerAA_L_.reset();
+        dopplerAA_R_.reset();
+    }
     airLPF_L_.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_R_.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_L_.reset();
@@ -225,7 +237,6 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     distGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     distGainSmooth_.reset(1.0f);
     lastDistSmoothMs_    = kDistSmoothMs;
-    lastDistDelaySamp_   = 2.0f;
 
     // -------------------------------------------------------------------------
     // Phase 5: Reverb
@@ -339,8 +350,8 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     // Per-node binaural cue targets (signed azimuth: +right, -left)
     const float nodeAbsEffAzimuth = std::abs(nodeEffAzimuth);
     const float nodeItdTarget = currentParams.maxITD_ms * nodeEffAzimuth * sr / 1000.0f;
-    const float nodeShadowCutTarget = kHeadShadowFullOpenHz
-        + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz) * nodeAbsEffAzimuth;
+    const float nodeShadowCutTarget = currentParams.headShadowFullOpenHz
+        + (currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz) * nodeAbsEffAzimuth;
     // Pre-computed per-block: ildGainBase = std::pow(10.0f, -ildMaxDb/20.0f)
     const float nodeIldTarget = 1.0f - (1.0f - ildGainBase_)
         * nodeAbsEffAzimuth;
@@ -385,9 +396,13 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     if (!std::isfinite(dL)) dL = 0.0f;
     if (!std::isfinite(dR)) dR = 0.0f;
 
-    // ILD — attenuate far ear based on smoothed ITD sign
-    if (itdSamples > 0.0f)       dL *= ildGain;
-    else if (itdSamples < 0.0f)  dR *= ildGain;
+    // ILD — smooth crossfade around ITD zero to avoid gain discontinuity
+    {
+        const float ildAtten = 1.0f - ildGain;
+        const float blend = std::clamp(itdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
+        dL *= 1.0f - ildAtten * std::max(0.0f,  blend);
+        dR *= 1.0f - ildAtten * std::max(0.0f, -blend);
+    }
 
     // Near-field ILD — coefficients pre-set per-block, only .process() here
     dL = nfL.process(dL);
@@ -413,11 +428,11 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
     float nodeX, float nodeY, float nodeZ,
     float sr, bool dopplerOn,
     dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
+    dsp::OnePoleLP& aaL, dsp::OnePoleLP& aaR,
     dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
     dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
     dsp::OnePoleSmooth& dgSmooth,
-    dsp::OnePoleSmooth& ddSmooth,
-    float& lastDelaySamp
+    dsp::OnePoleSmooth& ddSmooth
 ) {
     const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
     const float nodeDist = std::max(rawDist, kMinDistance);
@@ -426,10 +441,10 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
     const float rawNodeDistFrac = std::clamp(rawDist / kSqrt3, 0.0f, 1.0f);
 
     // Distance gain (inverse-square law)
-    constexpr float kDistRefScale = 0.047546796f;
-    const float distRef = currentParams.sphereRadius * kDistRefScale;
+    const float distRefScale = std::pow(10.0f, currentParams.distGainFloorDb / 40.0f);
+    const float distRef = currentParams.sphereRadius * distRefScale;
     const float distRatio = distRef / nodeDist;
-    const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, kDistGainMax);
+    const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
     const float distGain = dgSmooth.process(distGainTarget);
     dL *= distGain;
     dR *= distGain;
@@ -438,19 +453,16 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
     const float delayTargetSamples = std::max(2.0f,
         rawNodeDistFrac * currentParams.distDelayMaxMs * 0.001f * sr);
 
+    dL = aaL.process(dL);
+    dR = aaR.process(dR);
     ddL.push(dL);
     ddR.push(dR);
     if (dopplerOn) {
-        const float rawDelay = ddSmooth.process(delayTargetSamples);
-        const float deltaDelay = rawDelay - lastDelaySamp;
-        const float clampedDelta = std::clamp(deltaDelay, -kDopplerMaxDeltaSamp, kDopplerMaxDeltaSamp);
-        lastDelaySamp += clampedDelta;
-        const float delaySamp = std::max(2.0f, lastDelaySamp);
+        const float delaySamp = std::max(2.0f, ddSmooth.process(delayTargetSamples));
         dL = ddL.read(delaySamp);
         dR = ddR.read(delaySamp);
     } else {
         ddSmooth.process(2.0f);
-        lastDelaySamp = 2.0f;
         dL = ddL.read(2.0f);
         dR = ddR.read(2.0f);
     }
@@ -519,7 +531,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     }
 
     pinnaP1_.setCoefficients(dsp::BiquadType::PeakingEQ,
-        kPinnaP1FreqHz, sr, kPinnaP1Q, kPinnaP1GainDb);
+        currentParams.pinnaP1FreqHz, sr, currentParams.pinnaP1Q, currentParams.pinnaP1GainDb);
 
     // -------------------------------------------------------------------------
     // Phase 4: per-block distance processing
@@ -624,12 +636,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float floorGainLin   = std::pow(10.0f, currentParams.floorGainDb / 20.0f);
     ildGainBase_               = std::pow(10.0f, -currentParams.ildMaxDb / 20.0f);
     const float auxMaxBoostLin = std::pow(10.0f, currentParams.auxSendGainMaxDb / 20.0f);
+    blkDistRefScale_           = std::pow(10.0f, currentParams.distGainFloorDb / 40.0f);
 
-    // Block-start position (unmodulated — LFO adds per-sample delta which is
-    // negligible for coefficient purposes within one 64-128 sample block)
-    const float blkX = currentParams.x;
-    const float blkY = currentParams.y;
-    const float blkZ = currentParams.z;
+    // Block-start position: peek LFO at block start (no phase advance) so
+    // per-block filter coefficients track the modulated position.  LFO delta
+    // within one 64-128 sample block is negligible for coefficient purposes.
+    const float blkX = currentParams.x + lfoX_.peek() * lfoDepthXSmooth_.current();
+    const float blkY = currentParams.y + lfoY_.peek() * lfoDepthYSmooth_.current();
+    const float blkZ = currentParams.z + lfoZ_.peek() * lfoDepthZSmooth_.current();
     const float blkHorizMag  = std::sqrt(blkX * blkX + blkY * blkY);
     const float blkRearFactor = (blkHorizMag > 1e-7f) ? (-blkY / blkHorizMag) : blkY;
 
@@ -639,8 +653,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float blkZ_clamped       = std::clamp(blkZ, 0.0f, 1.0f);
     const float blkPinnaGainDb     = -15.0f + 20.0f * blkZ_clamped;
     const float blkShelfGainDb     = 3.0f * std::clamp(blkZ + 1.0f, 0.0f, 1.0f);
-    const float blkPinnaN1Freq     = std::clamp(kPinnaN1MinHz + (kPinnaN1MaxHz - kPinnaN1MinHz) * ((blkZ + 1.0f) * 0.5f), kPinnaN1MinHz, kPinnaN1MaxHz);
-    const float blkPinnaN2Freq     = blkPinnaN1Freq + kPinnaN2OffsetHz;
+    const float blkPinnaN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * ((blkZ + 1.0f) * 0.5f), currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
+    const float blkPinnaN2Freq     = blkPinnaN1Freq + currentParams.pinnaN2OffsetHz;
 
     // Block-start binaural targets (mono path)
     const float blkAzimuthFactor   = (blkHorizMag > 1e-7f) ? blkX / blkHorizMag : 0.0f;
@@ -649,12 +663,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float blkMonoBlend       = 1.0f - blkT * blkT * (3.0f - 2.0f * blkT);
     const float blkEffAzimuth      = blkAzimuthFactor * (1.0f - blkMonoBlend);
     const float blkAbsEffAzimuth   = std::abs(blkEffAzimuth);
-    const float blkShadowCutoffTgt = kHeadShadowFullOpenHz
-        + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz) * blkAbsEffAzimuth;
+    const float blkShadowCutoffTgt = currentParams.headShadowFullOpenHz
+        + (currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz) * blkAbsEffAzimuth;
     const float blkRearAmount      = std::max(0.0f, blkRearFactor);
     const float blkRearCutoffTgt   = kRearShadowFullOpenHz
         + (currentParams.rearShadowMinHz - kRearShadowFullOpenHz) * blkRearAmount;
-    const float blkNFGainDb        = kNearFieldLFMaxDb * (1.0f - std::clamp(
+    const float blkNFGainDb        = currentParams.nearFieldLFMaxDb * (1.0f - std::clamp(
         (std::sqrt(blkX*blkX + blkY*blkY + blkZ*blkZ) - kMinDistance)
         / std::max(currentParams.sphereRadius - kMinDistance, 0.001f), 0.0f, 1.0f))
         * blkAbsEffAzimuth;
@@ -665,8 +679,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float blkDistFrac = std::clamp((blkDist - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
     const float blkAirCutoff1 = currentParams.airAbsMaxHz
         + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * blkDistFrac;
-    const float blkAirCutoff2 = kAirAbs2MaxHz
-        + (kAirAbs2MinHz - kAirAbs2MaxHz) * blkDistFrac;
+    const float blkAirCutoff2 = currentParams.airAbs2MaxHz
+        + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * blkDistFrac;
 
     // --- Mono path per-block setCoefficients ---
     // Pinna EQ biquads (setCoefficients contains cos/sin/pow/sqrt)
@@ -677,28 +691,28 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     pinnaNotch_.setCoefficients(dsp::BiquadType::PeakingEQ,
         blkPinnaN1Freq, sr, currentParams.pinnaNotchQ, blkPinnaGainDb);
     pinnaNotch2_.setCoefficients(dsp::BiquadType::PeakingEQ,
-        blkPinnaN2Freq, sr, kPinnaN2Q, kPinnaN2GainDb);
+        blkPinnaN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb);
     pinnaShelf_.setCoefficients(dsp::BiquadType::HighShelf,
         currentParams.pinnaShelfFreqHz, sr, 0.7071f, blkShelfGainDb);
 
     // Near-field ILD biquads (mono path)
     if (blkEffAzimuth > 0.0f) {
-        nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, blkNFGainDb);
-        nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+        nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainDb);
+        nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
     } else if (blkEffAzimuth < 0.0f) {
-        nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, blkNFGainDb);
-        nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+        nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainDb);
+        nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
     } else {
-        nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
-        nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+        nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
+        nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
     }
 
     // Head shadow SVFs (mono path) — cutoff stepped once per block
     if (blkEffAzimuth >= 0.0f) {
         shadowL_.setCoefficients(blkShadowCutoffTgt, sr);
-        shadowR_.setCoefficients(kHeadShadowFullOpenHz, sr);
+        shadowR_.setCoefficients(currentParams.headShadowFullOpenHz, sr);
     } else {
-        shadowL_.setCoefficients(kHeadShadowFullOpenHz, sr);
+        shadowL_.setCoefficients(currentParams.headShadowFullOpenHz, sr);
         shadowR_.setCoefficients(blkShadowCutoffTgt, sr);
     }
 
@@ -711,6 +725,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     airLPF_R_.setCoefficients(blkAirCutoff1, sr);
     airLPF2_L_.setCoefficients(blkAirCutoff2, sr);
     airLPF2_R_.setCoefficients(blkAirCutoff2, sr);
+
+    // Floor bounce HF absorption LPF — update per block from params
+    floorLPF_.setCoefficients(currentParams.floorAbsHz, sr);
 
     // --- Stereo path per-block setCoefficients ---
     // For the stereo path, compute L-node and R-node block-start positions using
@@ -793,22 +810,22 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float lZ_cl       = std::clamp(blkLNodeZ, 0.0f, 1.0f);
         const float lPinnaGain  = -15.0f + 20.0f * lZ_cl;
         const float lShelfGain  = 3.0f * std::clamp(blkLNodeZ + 1.0f, 0.0f, 1.0f);
-        const float lN1Freq     = std::clamp(kPinnaN1MinHz + (kPinnaN1MaxHz - kPinnaN1MinHz) * ((blkLNodeZ + 1.0f) * 0.5f), kPinnaN1MinHz, kPinnaN1MaxHz);
-        const float lN2Freq     = lN1Freq + kPinnaN2OffsetHz;
+        const float lN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * ((blkLNodeZ + 1.0f) * 0.5f), currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
+        const float lN2Freq     = lN1Freq + currentParams.pinnaN2OffsetHz;
         const float lAzFactor   = (lHorizMag > 1e-7f) ? blkLNodeX / lHorizMag : 0.0f;
         const float lCylT       = std::clamp(lHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
         const float lMonoBlend  = 1.0f - lCylT * lCylT * (3.0f - 2.0f * lCylT);
         const float lEffAz      = lAzFactor * (1.0f - lMonoBlend);
         const float lAbsEffAz   = std::abs(lEffAz);
-        const float lShadowCut  = kHeadShadowFullOpenHz + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz) * lAbsEffAz;
+        const float lShadowCut  = currentParams.headShadowFullOpenHz + (currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz) * lAbsEffAz;
         const float lRearAmt    = std::max(0.0f, lRearFactor);
         const float lRearCut    = kRearShadowFullOpenHz + (currentParams.rearShadowMinHz - kRearShadowFullOpenHz) * lRearAmt;
         const float lProx       = 1.0f - std::clamp((std::sqrt(blkLNodeX*blkLNodeX+blkLNodeY*blkLNodeY+blkLNodeZ*blkLNodeZ)-kMinDistance)/blkMaxRange, 0.0f, 1.0f);
-        const float lNFGainDb   = kNearFieldLFMaxDb * lProx * lAbsEffAz;
+        const float lNFGainDb   = currentParams.nearFieldLFMaxDb * lProx * lAbsEffAz;
         const float lLNodeDistFrac = std::clamp(
             (std::sqrt(blkLNodeX*blkLNodeX+blkLNodeY*blkLNodeY+blkLNodeZ*blkLNodeZ) - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
         const float lAirCut1    = currentParams.airAbsMaxHz + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * lLNodeDistFrac;
-        const float lAirCut2    = kAirAbs2MaxHz + (kAirAbs2MinHz - kAirAbs2MaxHz) * lLNodeDistFrac;
+        const float lAirCut2    = currentParams.airAbs2MaxHz + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * lLNodeDistFrac;
 
         // R node EQ targets
         const float rHorizMag   = std::sqrt(blkRNodeX*blkRNodeX + blkRNodeY*blkRNodeY);
@@ -818,22 +835,22 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float rZ_cl       = std::clamp(blkRNodeZ, 0.0f, 1.0f);
         const float rPinnaGain  = -15.0f + 20.0f * rZ_cl;
         const float rShelfGain  = 3.0f * std::clamp(blkRNodeZ + 1.0f, 0.0f, 1.0f);
-        const float rN1Freq     = std::clamp(kPinnaN1MinHz + (kPinnaN1MaxHz - kPinnaN1MinHz) * ((blkRNodeZ + 1.0f) * 0.5f), kPinnaN1MinHz, kPinnaN1MaxHz);
-        const float rN2Freq     = rN1Freq + kPinnaN2OffsetHz;
+        const float rN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * ((blkRNodeZ + 1.0f) * 0.5f), currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
+        const float rN2Freq     = rN1Freq + currentParams.pinnaN2OffsetHz;
         const float rAzFactor   = (rHorizMag > 1e-7f) ? blkRNodeX / rHorizMag : 0.0f;
         const float rCylT       = std::clamp(rHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
         const float rMonoBlend  = 1.0f - rCylT * rCylT * (3.0f - 2.0f * rCylT);
         const float rEffAz      = rAzFactor * (1.0f - rMonoBlend);
         const float rAbsEffAz   = std::abs(rEffAz);
-        const float rShadowCut  = kHeadShadowFullOpenHz + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz) * rAbsEffAz;
+        const float rShadowCut  = currentParams.headShadowFullOpenHz + (currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz) * rAbsEffAz;
         const float rRearAmt    = std::max(0.0f, rRearFactor);
         const float rRearCut    = kRearShadowFullOpenHz + (currentParams.rearShadowMinHz - kRearShadowFullOpenHz) * rRearAmt;
         const float rProx       = 1.0f - std::clamp((std::sqrt(blkRNodeX*blkRNodeX+blkRNodeY*blkRNodeY+blkRNodeZ*blkRNodeZ)-kMinDistance)/blkMaxRange, 0.0f, 1.0f);
-        const float rNFGainDb   = kNearFieldLFMaxDb * rProx * rAbsEffAz;
+        const float rNFGainDb   = currentParams.nearFieldLFMaxDb * rProx * rAbsEffAz;
         const float rRNodeDistFrac = std::clamp(
             (std::sqrt(blkRNodeX*blkRNodeX+blkRNodeY*blkRNodeY+blkRNodeZ*blkRNodeZ) - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
         const float rAirCut1    = currentParams.airAbsMaxHz + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * rRNodeDistFrac;
-        const float rAirCut2    = kAirAbs2MaxHz + (kAirAbs2MinHz - kAirAbs2MaxHz) * rRNodeDistFrac;
+        const float rAirCut2    = currentParams.airAbs2MaxHz + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * rRNodeDistFrac;
 
         // L pipeline EQ setCoefficients (stereo path)
         presenceShelf_.setCoefficients(dsp::BiquadType::HighShelf,
@@ -843,24 +860,24 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         pinnaNotch_.setCoefficients(dsp::BiquadType::PeakingEQ,
             lN1Freq, sr, currentParams.pinnaNotchQ, lPinnaGain);
         pinnaNotch2_.setCoefficients(dsp::BiquadType::PeakingEQ,
-            lN2Freq, sr, kPinnaN2Q, kPinnaN2GainDb);
+            lN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb);
         pinnaShelf_.setCoefficients(dsp::BiquadType::HighShelf,
             currentParams.pinnaShelfFreqHz, sr, 0.7071f, lShelfGain);
         if (lEffAz > 0.0f) {
-            nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, lNFGainDb);
-            nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+            nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainDb);
+            nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
         } else if (lEffAz < 0.0f) {
-            nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, lNFGainDb);
-            nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+            nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainDb);
+            nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
         } else {
-            nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
-            nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+            nearFieldLF_L_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
+            nearFieldLF_R_.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
         }
         if (lEffAz >= 0.0f) {
             shadowL_.setCoefficients(lShadowCut, sr);
-            shadowR_.setCoefficients(kHeadShadowFullOpenHz, sr);
+            shadowR_.setCoefficients(currentParams.headShadowFullOpenHz, sr);
         } else {
-            shadowL_.setCoefficients(kHeadShadowFullOpenHz, sr);
+            shadowL_.setCoefficients(currentParams.headShadowFullOpenHz, sr);
             shadowR_.setCoefficients(lShadowCut, sr);
         }
         rearSvfL_.setCoefficients(lRearCut, sr);
@@ -876,28 +893,28 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         srcR_.earCanalPeak.setCoefficients(dsp::BiquadType::PeakingEQ,
             currentParams.earCanalFreqHz, sr, currentParams.earCanalQ, rEarGainDb);
         srcR_.pinnaP1.setCoefficients(dsp::BiquadType::PeakingEQ,
-            kPinnaP1FreqHz, sr, kPinnaP1Q, kPinnaP1GainDb);
+            currentParams.pinnaP1FreqHz, sr, currentParams.pinnaP1Q, currentParams.pinnaP1GainDb);
         srcR_.pinnaNotch.setCoefficients(dsp::BiquadType::PeakingEQ,
             rN1Freq, sr, currentParams.pinnaNotchQ, rPinnaGain);
         srcR_.pinnaNotch2.setCoefficients(dsp::BiquadType::PeakingEQ,
-            rN2Freq, sr, kPinnaN2Q, kPinnaN2GainDb);
+            rN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb);
         srcR_.pinnaShelf.setCoefficients(dsp::BiquadType::HighShelf,
             currentParams.pinnaShelfFreqHz, sr, 0.7071f, rShelfGain);
         if (rEffAz > 0.0f) {
-            srcR_.nearFieldLF_R.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, rNFGainDb);
-            srcR_.nearFieldLF_L.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+            srcR_.nearFieldLF_R.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, rNFGainDb);
+            srcR_.nearFieldLF_L.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
         } else if (rEffAz < 0.0f) {
-            srcR_.nearFieldLF_L.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, rNFGainDb);
-            srcR_.nearFieldLF_R.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+            srcR_.nearFieldLF_L.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, rNFGainDb);
+            srcR_.nearFieldLF_R.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
         } else {
-            srcR_.nearFieldLF_L.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
-            srcR_.nearFieldLF_R.setCoefficients(dsp::BiquadType::LowShelf, kNearFieldLFHz, sr, 0.7071f, 0.0f);
+            srcR_.nearFieldLF_L.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
+            srcR_.nearFieldLF_R.setCoefficients(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, 0.0f);
         }
         if (rEffAz >= 0.0f) {
             srcR_.shadowL.setCoefficients(rShadowCut, sr);
-            srcR_.shadowR.setCoefficients(kHeadShadowFullOpenHz, sr);
+            srcR_.shadowR.setCoefficients(currentParams.headShadowFullOpenHz, sr);
         } else {
-            srcR_.shadowL.setCoefficients(kHeadShadowFullOpenHz, sr);
+            srcR_.shadowL.setCoefficients(currentParams.headShadowFullOpenHz, sr);
             srcR_.shadowR.setCoefficients(rShadowCut, sr);
         }
         srcR_.rearSvfL.setCoefficients(rRearCut, sr);
@@ -987,13 +1004,18 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const bool lfoActive = depthX > 1e-7f || depthY > 1e-7f || depthZ > 1e-7f;
 
         float modX, modY, modZ;
+        float lfoValX, lfoValY, lfoValZ;
         if (lfoActive) {
-            modX = currentParams.x + lfoX_.tick() * depthX;
-            modY = currentParams.y + lfoY_.tick() * depthY;
-            modZ = currentParams.z + lfoZ_.tick() * depthZ;
+            lfoValX = lfoX_.tick() * depthX;
+            lfoValY = lfoY_.tick() * depthY;
+            lfoValZ = lfoZ_.tick() * depthZ;
+            modX = currentParams.x + lfoValX;
+            modY = currentParams.y + lfoValY;
+            modZ = currentParams.z + lfoValZ;
         } else {
             // Still tick LFOs to keep phase accumulation consistent (no jump when depth goes non-zero)
             lfoX_.tick(); lfoY_.tick(); lfoZ_.tick();
+            lfoValX = 0.f; lfoValY = 0.f; lfoValZ = 0.f;
             // Use block-start values -- position is constant when LFO depths are all zero
             modX = currentParams.x;
             modY = currentParams.y;
@@ -1014,8 +1036,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float maxRange    = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
         const float modDistFrac = std::clamp((modDist - kMinDistance) / maxRange, 0.0f, 1.0f);
 
-        constexpr float kDistRefScale = 0.047546796f;
-        const float distRef = currentParams.sphereRadius * kDistRefScale;
+        const float distRefScale = blkDistRefScale_;
+        const float distRef = currentParams.sphereRadius * distRefScale;
 
         const float rawDistFrac = std::clamp(rawModDist / kSqrt3, 0.0f, 1.0f);
 
@@ -1026,7 +1048,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // Distance targets
         const float distRatio = distRef / modDist;
-        const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, kDistGainMax);
+        const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
         const float delayTargetSamples = std::max(2.0f,
             rawDistFrac * currentParams.distDelayMaxMs * 0.001f * sr);
 
@@ -1062,6 +1084,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float orbitRawXY = orbitLfoXY_.tick();
         const float orbitRawXZ = orbitLfoXZ_.tick();
         const float orbitRawYZ = orbitLfoYZ_.tick();
+        const float orbitValXY = orbitRawXY * orbitDepXY;
+        const float orbitValXZ = orbitRawXZ * orbitDepXZ;
+        const float orbitValYZ = orbitRawYZ * orbitDepYZ;
 
         float dL, dR;
         float effectiveDistGain = 1.0f;
@@ -1173,13 +1198,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Per-node distance processing BEFORE summing
             auto distL_result = processDistanceForNode(dL_L, dR_L, lNodeX, lNodeY, lNodeZ, sr, dopplerOn,
-                distDelayL_, distDelayR_, airLPF_L_, airLPF_R_, airLPF2_L_, airLPF2_R_,
-                distGainSmooth_, distDelaySmooth_, lastDistDelaySamp_);
+                distDelayL_, distDelayR_, dopplerAA_L_, dopplerAA_R_,
+                airLPF_L_, airLPF_R_, airLPF2_L_, airLPF2_R_,
+                distGainSmooth_, distDelaySmooth_);
 
             auto distR_result = processDistanceForNode(dL_R, dR_R, rNodeX, rNodeY, rNodeZ, sr, dopplerOn,
-                distR_.distDelayL, distR_.distDelayR, distR_.airLPF_L, distR_.airLPF_R,
-                distR_.airLPF2_L, distR_.airLPF2_R, distR_.distGainSmooth, distR_.distDelaySmooth,
-                distR_.lastDistDelaySamp);
+                distR_.distDelayL, distR_.distDelayR, distR_.dopplerAA_L, distR_.dopplerAA_R,
+                distR_.airLPF_L, distR_.airLPF_R,
+                distR_.airLPF2_L, distR_.airLPF2_R, distR_.distGainSmooth, distR_.distDelaySmooth);
 
             dL = distL_result.left + distR_result.left;
             dR = distL_result.right + distR_result.right;
@@ -1214,8 +1240,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             const float absEffAzimuth = std::abs(effectiveAzimuth);
             const float itdTargetMod = currentParams.maxITD_ms * effectiveAzimuth * sr / 1000.0f;
-            const float shadowCutoffTargetMod = kHeadShadowFullOpenHz
-                + (currentParams.headShadowMinHz - kHeadShadowFullOpenHz) * absEffAzimuth;
+            const float shadowCutoffTargetMod = currentParams.headShadowFullOpenHz
+                + (currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz) * absEffAzimuth;
             // Use pre-computed ildGainBase_ (no std::pow per sample)
             const float ildTargetMod = 1.0f - (1.0f - ildGainBase_) * absEffAzimuth;
 
@@ -1254,9 +1280,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             if (!std::isfinite(dL)) dL = 0.0f;
             if (!std::isfinite(dR)) dR = 0.0f;
 
-            // ILD — attenuate far ear based on smoothed ITD sign
-            if (itdSamples > 0.0f)       dL *= ildGain;
-            else if (itdSamples < 0.0f)  dR *= ildGain;
+            // ILD — smooth crossfade around ITD zero to avoid gain discontinuity
+            {
+                const float ildAtten = 1.0f - ildGain;
+                const float blend = std::clamp(itdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
+                dL *= 1.0f - ildAtten * std::max(0.0f,  blend);
+                dR *= 1.0f - ildAtten * std::max(0.0f, -blend);
+            }
 
             // Near-field ILD — coefficients pre-set per-block, only .process() here
             dL = nearFieldLF_L_.process(dL);
@@ -1328,19 +1358,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             dR *= distGain;
             effectiveDistGain = distGainSmooth_.current();
 
+            dL = dopplerAA_L_.process(dL);
+            dR = dopplerAA_R_.process(dR);
             distDelayL_.push(dL);
             distDelayR_.push(dR);
             if (dopplerOn) {
-                const float rawDelay = distDelaySmooth_.process(delayTargetSamples);
-                const float deltaDelay = rawDelay - lastDistDelaySamp_;
-                const float clampedDelta = std::clamp(deltaDelay, -kDopplerMaxDeltaSamp, kDopplerMaxDeltaSamp);
-                lastDistDelaySamp_ += clampedDelta;
-                const float delaySamp = std::max(2.0f, lastDistDelaySamp_);
+                const float delaySamp = std::max(2.0f, distDelaySmooth_.process(delayTargetSamples));
                 dL = distDelayL_.read(delaySamp);
                 dR = distDelayR_.read(delaySamp);
             } else {
                 distDelaySmooth_.process(2.0f);
-                lastDistDelaySamp_ = 2.0f;
                 dL = distDelayL_.read(2.0f);
                 dR = distDelayR_.read(2.0f);
             }
@@ -1388,10 +1415,18 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // DSP state capture (shared fields)
         lastDSPState_.sampleRate     = static_cast<float>(sampleRate);
-        lastDSPState_.distDelaySamp  = lastDistDelaySamp_;
+        lastDSPState_.distDelaySamp  = distDelaySmooth_.current();
         lastDSPState_.distGainLinear = stereoActive ? 0.0f : distGainSmooth_.current();
         lastDSPState_.airCutoffHz    = stereoActive ? 0.0f : airCutoffMod;
         lastDSPState_.modX           = modX;
+
+        // Capture last-sample LFO output values for UI display
+        lastLfoOutX_ = lfoValX;
+        lastLfoOutY_ = lfoValY;
+        lastLfoOutZ_ = lfoValZ;
+        lastLfoOutOrbitXY_ = orbitValXY;
+        lastLfoOutOrbitXZ_ = orbitValXZ;
+        lastLfoOutOrbitYZ_ = orbitValYZ;
     }
 }
 
@@ -1448,6 +1483,8 @@ void XYZPanEngine::reset() {
     // Phase 4: distance processing
     distDelayL_.reset();
     distDelayR_.reset();
+    dopplerAA_L_.reset();
+    dopplerAA_R_.reset();
     airLPF_L_.reset();
     airLPF_R_.reset();
     airLPF2_L_.reset();
@@ -1456,7 +1493,6 @@ void XYZPanEngine::reset() {
     nearFieldLF_R_.reset();
     distDelaySmooth_.reset(2.0f);
     distGainSmooth_.reset(1.0f);
-    lastDistDelaySamp_ = 2.0f;
 
     // Aux reverb send
     auxPreDelayL_.reset();
@@ -1490,16 +1526,18 @@ void XYZPanEngine::reset() {
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;
 
+    // LFO output values for UI display
+    lastLfoOutX_ = 0.f; lastLfoOutY_ = 0.f; lastLfoOutZ_ = 0.f;
+    lastLfoOutOrbitXY_ = 0.f; lastLfoOutOrbitXZ_ = 0.f; lastLfoOutOrbitYZ_ = 0.f;
+
     // Dev tool: test tone oscillator
     sawPhase_ = 0.0f;
     pulseLFO_.reset(0.0f);
 }
 
-XYZPanEngine::LFOPhases XYZPanEngine::getLastLFOPhases() const noexcept {
-    return { lfoX_.getPhase(), lfoY_.getPhase(), lfoZ_.getPhase(),
-             orbitLfoXY_.getPhase(), orbitLfoXZ_.getPhase(), orbitLfoYZ_.getPhase(),
-             lfoX_.getHeldValue(), lfoY_.getHeldValue(), lfoZ_.getHeldValue(),
-             orbitLfoXY_.getHeldValue(), orbitLfoXZ_.getHeldValue(), orbitLfoYZ_.getHeldValue() };
+XYZPanEngine::LFOOutputs XYZPanEngine::getLastLFOOutputs() const noexcept {
+    return { lastLfoOutX_, lastLfoOutY_, lastLfoOutZ_,
+             lastLfoOutOrbitXY_, lastLfoOutOrbitXZ_, lastLfoOutOrbitYZ_ };
 }
 
 } // namespace xyzpan

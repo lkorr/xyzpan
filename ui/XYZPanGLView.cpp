@@ -79,9 +79,10 @@ void XYZPanGLView::newOpenGLContextCreated()
     compileShaders();
 
     // Build room wireframe (half-size=1.0 → fits in [-1,1]^3 coordinate space)
+    // Interleaved [x,y,z, r,g,b] — per-vertex colored by axis
     std::vector<float> roomVerts = buildRoomWireframe(1.0f);
-    roomVertexCount_ = static_cast<int>(roomVerts.size()) / 3;
-    uploadLineVAO(vaoRoom_, vboRoom_, roomVerts);
+    roomVertexCount_ = static_cast<int>(roomVerts.size()) / 6;
+    uploadColorLineVAO(vaoRoom_, vboRoom_, roomVerts);
 
     // Build floor grid (8×8 divisions)
     std::vector<float> gridVerts = buildFloorGrid(1.0f, 8);
@@ -180,16 +181,13 @@ void XYZPanGLView::renderOpenGL()
         trailR_.clear();
     }
 
-    // Draw room wireframe — scaled by R (model = roomModelMatrix)
-    {
-        const glm::vec3 bronzeColor(0x8B / 255.0f, 0x5E / 255.0f, 0x2E / 255.0f);
-        drawLines(vaoRoom_, roomVertexCount_, bronzeColor, 0.7f, roomModelMatrix);
-    }
+    // Draw room wireframe — scaled by R, per-vertex axis colors
+    drawColorLines(vaoRoom_, roomVertexCount_, 0.7f, roomModelMatrix);
 
     // Draw floor grid — scaled by R (model = roomModelMatrix)
     {
-        const glm::vec3 earthColor(0x3D / 255.0f, 0x2A / 255.0f, 0x10 / 255.0f);
-        drawLines(vaoGrid_, gridVertexCount_, earthColor, 0.5f, roomModelMatrix);
+        const glm::vec3 gridColor(0.75f, 0.75f, 0.75f);
+        drawLines(vaoGrid_, gridVertexCount_, gridColor, 0.4f, roomModelMatrix);
     }
 
     // Begin sphere/cone shader batch -- bind once, upload shared uniforms once
@@ -204,7 +202,7 @@ void XYZPanGLView::renderOpenGL()
 
     // Draw listener node at origin — warm gold, always full opacity
     {
-        const glm::vec3 listenerColor(0xC8 / 255.0f, 0xA8 / 255.0f, 0x6B / 255.0f);
+        const glm::vec3 listenerColor(0xD4 / 255.0f, 0xA8 / 255.0f, 0x43 / 255.0f);
         drawSphere(glm::vec3(0.0f), 0.045f, listenerColor, 1.0f);
     }
 
@@ -221,7 +219,7 @@ void XYZPanGLView::renderOpenGL()
         arrowModel = glm::rotate(arrowModel, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         arrowModel = glm::scale(arrowModel, glm::vec3(kArrowBaseRadius, kArrowLength, kArrowBaseRadius));
 
-        const glm::vec3 arrowColor(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f);
+        const glm::vec3 arrowColor(0xFF / 255.0f, 0xD7 / 255.0f, 0x00 / 255.0f);
         drawCone(arrowModel, arrowColor, 0.9f);
     }
 
@@ -231,7 +229,7 @@ void XYZPanGLView::renderOpenGL()
         constexpr float kEarFlatten   = 0.5f;    // squish along X (radial axis)
         constexpr float kEarOffset    = 0.045f;   // sit on listener sphere surface
 
-        const glm::vec3 earColor(0xD4 / 255.0f, 0xA0 / 255.0f, 0x60 / 255.0f);
+        const glm::vec3 earColor(0xB0 / 255.0f, 0x8A / 255.0f, 0x38 / 255.0f);
 
         // Left ear (-X)
         {
@@ -251,7 +249,7 @@ void XYZPanGLView::renderOpenGL()
     // Draw audible radius sphere — semi-transparent gold boundary at origin
     {
         glDepthMask(GL_FALSE);
-        const glm::vec3 sphereColor(0xC8 / 255.0f, 0xA8 / 255.0f, 0x6B / 255.0f);
+        const glm::vec3 sphereColor(0xD4 / 255.0f, 0xA8 / 255.0f, 0x43 / 255.0f);
         drawSphere(glm::vec3(0.0f), sr, sphereColor, 0.08f);
         glDepthMask(GL_TRUE);
     }
@@ -260,10 +258,10 @@ void XYZPanGLView::renderOpenGL()
     // 0.8x base size; 10% opacity when stereo split is active
     {
         const glm::vec3 sourceColor = isSourceHovered_
-            ? glm::vec3(0xFF / 255.0f, 0xD5 / 255.0f, 0x80 / 255.0f)  // hover: lighter gold
-            : glm::vec3(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f); // normal: bright gold
+            ? glm::vec3(0xFF / 255.0f, 0xE5 / 255.0f, 0x66 / 255.0f)  // hover: light gold-yellow
+            : glm::vec3(0xFF / 255.0f, 0xD7 / 255.0f, 0x00 / 255.0f); // normal: bright gold
         const float mainOpacity = stereoActive ? 0.1f : sourceOpacity;
-        const float mainRadius = stereoActive ? 0.015f : 0.048f;
+        const float mainRadius = stereoActive ? 0.0375f : 0.048f;
         drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
     }
 
@@ -289,7 +287,7 @@ void XYZPanGLView::renderOpenGL()
     {
         // Center trail only in mono mode; stereo mode uses L/R trails instead
         if (!stereoActive) {
-            const glm::vec3 goldTrail(0xE8 / 255.0f, 0xC4 / 255.0f, 0x6A / 255.0f);
+            const glm::vec3 goldTrail(0xFF / 255.0f, 0xD7 / 255.0f, 0x00 / 255.0f);
             drawTrail(trailSource_, vaoTrailSource_, vboTrailSource_,
                       goldTrail, sourceOpacity * 0.6f, now);
         }
@@ -320,6 +318,7 @@ void XYZPanGLView::renderOpenGL()
 void XYZPanGLView::openGLContextClosing()
 {
     lineShader_.reset();
+    colorLineShader_.reset();
     sphereShader_.reset();
     trailShader_.reset();
 
@@ -470,6 +469,16 @@ void XYZPanGLView::compileShaders()
         return;
     }
 
+    // Colored-line shader (room wireframe with per-vertex axis colors)
+    colorLineShader_ = std::make_unique<juce::OpenGLShaderProgram>(glContext_);
+    if (!colorLineShader_->addVertexShader(kColorLineVertShader) ||
+        !colorLineShader_->addFragmentShader(kColorLineFragShader) ||
+        !colorLineShader_->link()) {
+        colorLineShader_.reset();
+        jassertfalse;
+        return;
+    }
+
     // Sphere shader (listener + source nodes)
     sphereShader_ = std::make_unique<juce::OpenGLShaderProgram>(glContext_);
     if (!sphereShader_->addVertexShader(kSphereVertShader) ||
@@ -515,6 +524,56 @@ void XYZPanGLView::uploadLineVAO(GLuint& vao, GLuint& vbo,
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+// ---------------------------------------------------------------------------
+// uploadColorLineVAO — interleaved [x,y,z, r,g,b] per vertex
+// ---------------------------------------------------------------------------
+void XYZPanGLView::uploadColorLineVAO(GLuint& vao, GLuint& vbo,
+                                        const std::vector<float>& vertices)
+{
+    if (vao) glDeleteVertexArrays(1, &vao);
+    if (vbo) glDeleteBuffers(1, &vbo);
+
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(float)),
+                 vertices.data(), GL_STATIC_DRAW);
+
+    const GLsizei stride = 6 * sizeof(float);
+    // attribute 0: position (vec3)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+    // attribute 1: vertColor (vec3)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride,
+                          reinterpret_cast<const void*>(3 * sizeof(float)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+// ---------------------------------------------------------------------------
+// drawColorLines — draw per-vertex colored lines with the color-line shader
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawColorLines(GLuint vao, int vertexCount,
+                                    float opacity, const glm::mat4& modelMatrix)
+{
+    if (!colorLineShader_ || vao == 0 || vertexCount == 0) return;
+
+    colorLineShader_->use();
+    colorLineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    colorLineShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    colorLineShader_->setUniformMat4("model",      glm::value_ptr(modelMatrix), 1, GL_FALSE);
+    colorLineShader_->setUniform("opacity", opacity);
+
+    glBindVertexArray(vao);
+    glDrawArrays(GL_LINES, 0, vertexCount);
+    glBindVertexArray(0);
 }
 
 // ---------------------------------------------------------------------------

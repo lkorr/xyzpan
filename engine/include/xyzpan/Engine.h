@@ -59,9 +59,9 @@ struct DistancePipeline {
     dsp::FractionalDelayLine distDelayL, distDelayR;
     dsp::OnePoleLP airLPF_L, airLPF_R;    // stage 1
     dsp::OnePoleLP airLPF2_L, airLPF2_R;  // stage 2
+    dsp::OnePoleLP dopplerAA_L, dopplerAA_R;  // pre-delay anti-alias LP
     dsp::OnePoleSmooth distGainSmooth;
     dsp::OnePoleSmooth distDelaySmooth;
-    float lastDistDelaySamp = 2.0f;
     void prepare(float sr);
     void reset();
 };
@@ -129,15 +129,12 @@ public:
     // Live DSP state snapshot for dev panel display (UI-07).
     DSPStateSnapshot getLastDSPState() const noexcept { return lastDSPState_; }
 
-    // LFO phase snapshot — 6 accumulators [0, 1) for UI waveform displays.
-    struct LFOPhases {
+    // LFO output snapshot — final tick()*depth values for UI waveform displays.
+    struct LFOOutputs {
         float x = 0.f, y = 0.f, z = 0.f;
         float orbitXY = 0.f, orbitXZ = 0.f, orbitYZ = 0.f;
-        // S&H held values for accurate display
-        float shX = 0.f, shY = 0.f, shZ = 0.f;
-        float shOrbitXY = 0.f, shOrbitXZ = 0.f, shOrbitYZ = 0.f;
     };
-    LFOPhases getLastLFOPhases() const noexcept;
+    LFOOutputs getLastLFOOutputs() const noexcept;
 
 private:
     EngineParams currentParams;
@@ -211,6 +208,8 @@ private:
     // =========================================================================
     dsp::FractionalDelayLine distDelayL_;     // propagation delay + doppler, left
     dsp::FractionalDelayLine distDelayR_;     // propagation delay + doppler, right
+    dsp::OnePoleLP           dopplerAA_L_;    // pre-delay anti-alias LP, left
+    dsp::OnePoleLP           dopplerAA_R_;    // pre-delay anti-alias LP, right
     dsp::OnePoleLP           airLPF_L_;       // air absorption LPF stage 1, left
     dsp::OnePoleLP           airLPF_R_;       // air absorption LPF stage 1, right
     dsp::OnePoleLP           airLPF2_L_;      // air absorption LPF stage 2 (cascade → 12dB/oct), left
@@ -220,7 +219,6 @@ private:
     dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
     dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
     float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
-    float lastDistDelaySamp_ = 2.0f;          // tracks per-sample delay for rate-of-change clamp
 
     // =========================================================================
     // Phase 5: Reverb (VERB-01 through VERB-04)
@@ -258,6 +256,10 @@ private:
     dsp::LFO orbitLfoXY_, orbitLfoXZ_, orbitLfoYZ_;
     dsp::OnePoleSmooth orbitDepthXYSmooth_, orbitDepthXZSmooth_, orbitDepthYZSmooth_;
 
+    // Last LFO output values (tick()*depth) — captured per block for UI display
+    float lastLfoOutX_ = 0.f, lastLfoOutY_ = 0.f, lastLfoOutZ_ = 0.f;
+    float lastLfoOutOrbitXY_ = 0.f, lastLfoOutOrbitXZ_ = 0.f, lastLfoOutOrbitYZ_ = 0.f;
+
     // Width transition smoother (avoids pops when width changes)
     dsp::OnePoleSmooth stereoWidthSmooth_;
 
@@ -275,11 +277,11 @@ private:
         float nodeX, float nodeY, float nodeZ,
         float sr, bool dopplerOn,
         dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
+        dsp::OnePoleLP& aaL, dsp::OnePoleLP& aaR,
         dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
         dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
         dsp::OnePoleSmooth& dgSmooth,
-        dsp::OnePoleSmooth& ddSmooth,
-        float& lastDelaySamp
+        dsp::OnePoleSmooth& ddSmooth
     );
 
     // Helper: run comb bank + mono EQ + binaural split for one source node
@@ -319,6 +321,7 @@ private:
     // Used by processBinauralForSource() to compute per-node ILD target without
     // re-calling std::pow on every sample.
     float ildGainBase_ = 1.0f;
+    float blkDistRefScale_ = 0.047546796f;  // 10^(kDistGainFloorDb/40), recomputed per block
 };
 
 } // namespace xyzpan

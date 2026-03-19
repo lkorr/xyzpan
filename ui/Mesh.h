@@ -29,7 +29,11 @@ SphereGeometry buildCone(float baseRadius, float height, int slices);
 
 // Build a box wireframe (12 edges of a cube) centred at origin.
 // halfSize controls the half-extent of the box on each axis.
-// Returns [x,y,z] flat vertex list — each pair of consecutive vertices is one edge.
+// Returns interleaved [x,y,z, r,g,b] per vertex — each pair of consecutive
+// vertices is one edge.  Parallel edges share the same color:
+//   X-axis edges (left/right) = color A
+//   Y-axis edges (up/down)    = color B
+//   Z-axis edges (depth)      = color C
 std::vector<float> buildRoomWireframe(float halfSize);
 
 // Build an NxN grid of lines on the XZ plane centred at origin.

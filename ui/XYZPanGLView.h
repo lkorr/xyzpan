@@ -135,6 +135,9 @@ private:
     // Upload mesh geometry to a VAO/VBO (line mesh: flat [x,y,z] list)
     void uploadLineVAO(GLuint& vao, GLuint& vbo, const std::vector<float>& vertices);
 
+    // Upload interleaved [x,y,z, r,g,b] line VAO (for per-vertex colored lines)
+    void uploadColorLineVAO(GLuint& vao, GLuint& vbo, const std::vector<float>& vertices);
+
     // Upload sphere geometry (interleaved pos+normal) with index buffer
     void uploadSphereVAO();
 
@@ -145,6 +148,10 @@ private:
     void drawLines(GLuint vao, int vertexCount,
                    const glm::vec3& color, float opacity,
                    const glm::mat4& modelMatrix);
+
+    // Draw per-vertex colored lines (room wireframe)
+    void drawColorLines(GLuint vao, int vertexCount, float opacity,
+                        const glm::mat4& modelMatrix);
 
     void drawSphere(const glm::vec3& position, float radius,
                     const glm::vec3& color, float opacity);
@@ -174,6 +181,7 @@ private:
     // ------------------------------------------------------------------
     juce::OpenGLContext glContext_;
     std::unique_ptr<juce::OpenGLShaderProgram> lineShader_;
+    std::unique_ptr<juce::OpenGLShaderProgram> colorLineShader_;
     std::unique_ptr<juce::OpenGLShaderProgram> sphereShader_;
     std::unique_ptr<juce::OpenGLShaderProgram> trailShader_;
 

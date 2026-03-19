@@ -130,6 +130,38 @@ namespace ParamID {
     // Dev panel: Aux reverb send
     constexpr const char* AUX_SEND_GAIN_MAX_DB = "aux_send_gain_max_db";
 
+    // Dev panel: Pinna P1 fixed peak
+    constexpr const char* PINNA_P1_FREQ_HZ = "pinna_p1_freq_hz";
+    constexpr const char* PINNA_P1_GAIN_DB = "pinna_p1_gain_db";
+    constexpr const char* PINNA_P1_Q       = "pinna_p1_q";
+
+    // Dev panel: Pinna N2 secondary notch
+    constexpr const char* PINNA_N2_OFFSET_HZ = "pinna_n2_offset_hz";
+    constexpr const char* PINNA_N2_GAIN_DB   = "pinna_n2_gain_db";
+    constexpr const char* PINNA_N2_Q         = "pinna_n2_q";
+
+    // Dev panel: Pinna N1 range limits
+    constexpr const char* PINNA_N1_MIN_HZ = "pinna_n1_min_hz";
+    constexpr const char* PINNA_N1_MAX_HZ = "pinna_n1_max_hz";
+
+    // Dev panel: Floor bounce HF absorption
+    constexpr const char* FLOOR_ABS_HZ = "floor_abs_hz";
+
+    // Dev panel: Near-field LF boost
+    constexpr const char* NEAR_FIELD_LF_HZ     = "near_field_lf_hz";
+    constexpr const char* NEAR_FIELD_LF_MAX_DB = "near_field_lf_max_db";
+
+    // Dev panel: Air absorption stage 2
+    constexpr const char* AIR_ABS_2_MAX_HZ = "air_abs_2_max_hz";
+    constexpr const char* AIR_ABS_2_MIN_HZ = "air_abs_2_min_hz";
+
+    // Dev panel: Distance gain law
+    constexpr const char* DIST_GAIN_FLOOR_DB = "dist_gain_floor_db";
+    constexpr const char* DIST_GAIN_MAX      = "dist_gain_max";
+
+    // Dev panel: Head shadow fully-open cap
+    constexpr const char* HEAD_SHADOW_FULL_OPEN_HZ = "head_shadow_full_open_hz";
+
     // Dev panel: Geometry
     constexpr const char* SPHERE_RADIUS             = "sphere_radius";
     constexpr const char* VERT_MONO_CYLINDER_RADIUS = "vert_mono_cyl_radius";

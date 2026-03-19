@@ -59,6 +59,10 @@ private:
     // DSP readout value labels (updated by timer)
     std::vector<std::unique_ptr<juce::Label>> readoutNameLabels_;
     std::vector<std::unique_ptr<juce::Label>> readoutValueLabels_;
+    std::unordered_map<juce::String, juce::Label*> readoutValueMap_;
+
+    // Status readout labels (non-collapsible, not in any section)
+    std::vector<juce::Component*> statusReadoutChildren_;
 
     // Collapsible sections
     std::vector<CollapsibleSection> sections_;

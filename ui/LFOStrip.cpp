@@ -53,9 +53,20 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
     // Configure knobs as small rotary sliders
     for (auto* knob : { &rateKnob_, &depthKnob_, &phaseKnob_, &smoothKnob_ }) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 65, 13);
+        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 54, 14);
         addAndMakeVisible(knob);
     }
+
+    // BeatDiv knob — discrete rotary that snaps through musical values
+    beatDivKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    beatDivKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 54, 14);
+    beatDivKnob_.textFromValueFunction = [](double value) {
+        int idx = juce::roundToInt(value);
+        if (idx >= 0 && idx < xyzpan::kBeatDivCount)
+            return juce::String(xyzpan::kBeatDivLabels[idx]);
+        return juce::String(value, 0);
+    };
+    addChildComponent(beatDivKnob_);  // hidden by default (shown when sync on)
 
     // Labels
     rateLabel_.setText("Rate", juce::dontSendNotification);
@@ -67,11 +78,6 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
         lbl->setFont(juce::Font(10.0f));
         addAndMakeVisible(lbl);
     }
-
-    // BeatDiv combo box — discrete musical values
-    for (int i = 0; i < xyzpan::kBeatDivCount; ++i)
-        beatDivCombo_.addItem(xyzpan::kBeatDivLabels[i], i + 1);  // JUCE ComboBox IDs are 1-based
-    addChildComponent(beatDivCombo_);  // hidden by default (shown when sync on)
 
     // SYNC button — small font to fit in compact button
     syncBtn_.setClickingTogglesState(true);
@@ -86,7 +92,7 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
     depthAtt_   = std::make_unique<SA>(apvts, depthID,   depthKnob_);
     phaseAtt_   = std::make_unique<SA>(apvts, phaseID,   phaseKnob_);
     smoothAtt_  = std::make_unique<SA>(apvts, smoothID,  smoothKnob_);
-    beatDivAtt_ = std::make_unique<CA>(apvts, beatDivID, beatDivCombo_);
+    beatDivAtt_ = std::make_unique<SA>(apvts, beatDivID, beatDivKnob_);
     syncAtt_    = std::make_unique<BA>(apvts, syncID,    syncBtn_);
 
     // Bind shape selector to APVTS parameter
@@ -94,7 +100,6 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
 
     // Live waveform display
     addAndMakeVisible(waveformDisplay_);
-    waveformDisplay_.setParams(apvts, waveformID, phaseID, smoothID, depthID);
 
     // Read initial sync state and register listener
     if (auto* syncParam = apvts.getRawParameterValue(syncID))
@@ -118,44 +123,35 @@ void LFOStrip::parameterChanged(const juce::String& /*parameterID*/, float newVa
 void LFOStrip::updateSyncVisibility()
 {
     rateKnob_.setVisible(!syncOn_);
-    rateLabel_.setVisible(!syncOn_);
-    beatDivCombo_.setVisible(syncOn_);
+    beatDivKnob_.setVisible(syncOn_);
+    rateLabel_.setVisible(true);  // always visible — label stays "Rate" for both modes
     resized();
 }
 
-void LFOStrip::setPhaseSource(std::atomic<float>* src)
+void LFOStrip::setOutputSource(std::atomic<float>* src)
 {
-    waveformDisplay_.setPhaseSource(src);
-}
-
-void LFOStrip::setSHSource(std::atomic<float>* src)
-{
-    waveformDisplay_.setSHSource(src);
+    waveformDisplay_.setOutputSource(src);
 }
 
 void LFOStrip::resized()
 {
-    // 4-row layout:
+    // Compact 4-row layout:
     //
-    // Row 0: Shape selector (full width, kShapeRowH px)
-    // Row 1: Live waveform display (flexible height, 30–80 px)
-    // Row 2: Depth knob (centered) + Smooth knob (small, bottom-right)
-    // Row 3: SYNC + Rate/BeatDiv (left) + Phase (right) — 42 px knobs
+    // Row 0: Shape selector (full width, 24px)
+    // Row 1: Waveform display (flexible height, 30–80px)
+    // Row 2: [Rate] [Depth] [Phase] [Smooth] — 4 knobs horizontal, 54px + 13px label = 67px
+    // Row 3: [Sync] button below Rate — 18px
 
     auto b = getLocalBounds();
     const int totalW = b.getWidth();
     const int totalH = b.getHeight();
 
-    const int syncGap  = 2;
-    const int row2H    = kKnobSize + kLabelH;                                // 71 + 13 = 84
-    const int row3KnobH = kRatePhaseKnobSz + kLabelH;                        // 42 + 13 = 55
-    const int row3H    = kSyncH + syncGap + row3KnobH;                       // 18 + 2 + 55 = 75
-    const int row0H    = kShapeTopMargin + kShapeRowH + 2;                    // 4 + 18 + 2 = 24
-    const int fixedH   = row0H + row2H + row3H;                              // 24 + 84 + 75 = 183
-    const int displayH = juce::jlimit(kDisplayMinH, kDisplayMaxH,
-                                       totalH - fixedH);
-    const int contentH = fixedH + displayH;
-    const int topY     = b.getY() + juce::jmax(0, (totalH - contentH) / 2);
+    const int row0H    = kShapeTopMargin + kShapeRowH + 2;        // 24
+    const int row2H    = kKnobSz + kLabelH;                       // 54 + 13 = 67
+    const int row3H    = kSyncH;                                   // 18
+    const int fixedH   = row0H + row2H + row3H;                   // 109
+    const int displayH = juce::jlimit(0, kDisplayMaxH, totalH - fixedH);
+    const int topY     = b.getY();
 
     const int row0Y    = topY;
     const int row1Y    = row0Y + row0H;
@@ -169,49 +165,38 @@ void LFOStrip::resized()
     // Row 1: Waveform display
     waveformDisplay_.setBounds(b.getX() + kDisplayLRMargin, row1Y,
                                totalW - kDisplayLRMargin * 2, displayH);
+    waveformDisplay_.setVisible(displayH >= kDisplayMinH);
 
-    // Row 2: Depth knob (centered) + Smooth knob (small, bottom-right)
-    const int halfW = totalW / 2;
+    // Row 2: 4 knobs in equal horizontal columns — Rate, Depth, Phase, Smooth
+    const int colW = totalW / 4;
+    const int knobW = juce::jmin(kKnobSz, colW - 2);
+
     {
-        const int knobW = juce::jmin(kKnobSize, totalW - 4);
-        const int depthX = b.getX() + (totalW - knobW) / 2;
-        depthKnob_.setBounds(depthX, row2Y, knobW, kKnobSize);
-        depthLabel_.setBounds(b.getX(), row2Y + kKnobSize, totalW, kLabelH);
-    }
-    {
-        const int smW = juce::jmin(kSmallKnobSize, halfW - 4);
-        const int smoothX = b.getX() + totalW - smW - 2;
-        const int smoothY = row2Y + kKnobSize - kSmallKnobSize;
-        smoothKnob_.setBounds(smoothX, smoothY, smW, kSmallKnobSize);
-        smoothLabel_.setBounds(smoothX - 4, smoothY + kSmallKnobSize, smW + 8, kLabelH);
-        smoothLabel_.setJustificationType(juce::Justification::centred);
+        struct KnobSlot { juce::Slider* knob; juce::Label* label; int col; };
+        KnobSlot slots[] = {
+            { &rateKnob_,   &rateLabel_,   0 },
+            { &depthKnob_,  &depthLabel_,  1 },
+            { &phaseKnob_,  &phaseLabel_,  2 },
+            { &smoothKnob_, &smoothLabel_, 3 },
+        };
+
+        for (auto& s : slots) {
+            const int colX = b.getX() + s.col * colW;
+            const int knobX = colX + (colW - knobW) / 2;
+            s.knob->setBounds(knobX, row2Y, knobW, kKnobSz);
+            s.label->setBounds(colX, row2Y + kKnobSz, colW, kLabelH);
+        }
+
+        // BeatDiv occupies the same slot as Rate (column 0)
+        const int col0X = b.getX();
+        const int bdX = col0X + (colW - knobW) / 2;
+        beatDivKnob_.setBounds(bdX, row2Y, knobW, kKnobSz);
     }
 
-    // Row 3: SYNC + Rate/BeatDiv (left half) + Phase (right half) — smaller knobs
+    // Row 3: Sync button centered below Rate knob (column 0)
     {
-        const int syncX = b.getX() + (halfW - kSyncW) / 2;
+        const int col0X = b.getX();
+        const int syncX = col0X + (colW - kSyncW) / 2;
         syncBtn_.setBounds(syncX, row3Y, kSyncW, kSyncH);
-    }
-
-    const int rateAreaY = row3Y + kSyncH + syncGap;
-
-    if (syncOn_) {
-        const int comboW = juce::jmin(64, halfW - 4);
-        const int comboH = 22;
-        const int comboX = b.getX() + (halfW - comboW) / 2;
-        const int comboY = rateAreaY + (row3KnobH - comboH) / 2;
-        beatDivCombo_.setBounds(comboX, comboY, comboW, comboH);
-    } else {
-        const int knobW = juce::jmin(kRatePhaseKnobSz, halfW - 4);
-        const int rateX = b.getX() + (halfW - knobW) / 2;
-        rateKnob_.setBounds(rateX, rateAreaY, knobW, kRatePhaseKnobSz);
-        rateLabel_.setBounds(b.getX(), rateAreaY + kRatePhaseKnobSz, halfW, kLabelH);
-    }
-
-    {
-        const int knobW = juce::jmin(kRatePhaseKnobSz, halfW - 4);
-        const int phaseX = b.getX() + halfW + (halfW - knobW) / 2;
-        phaseKnob_.setBounds(phaseX, rateAreaY, knobW, kRatePhaseKnobSz);
-        phaseLabel_.setBounds(b.getX() + halfW, rateAreaY + kRatePhaseKnobSz, halfW, kLabelH);
     }
 }

@@ -83,11 +83,6 @@ private:
     // Reset All LFO Phases button (position section, next to LFO Speed)
     juce::TextButton resetXYZPhasesBtn_{"Reset"};
 
-    // Stereo orbit toggle + mono
-    juce::TextButton stereoToggle_{"Stereo"};
-    bool stereoExpanded_ = false;
-    juce::TextButton monoBtn_{"Mono"};
-
     // Stereo orbit controls
     juce::Slider stereoWidthKnob_, orbitPhaseKnob_, orbitOffsetKnob_, orbitSpeedMulKnob_;
     juce::Label  stereoWidthLabel_, orbitPhaseLabel_, orbitOffsetLabel_, orbitSpeedMulLabel_;
@@ -123,6 +118,8 @@ private:
     juce::ComboBox presetCombo_;
     juce::TextButton presetSaveBtn_{"Save"};
     juce::TextButton presetLoadBtn_{"Load"};
+
+    void updateOrbitEnabled();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanEditor)
 };

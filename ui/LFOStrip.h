@@ -23,8 +23,7 @@ public:
     ~LFOStrip() override;
 
     void resized() override;
-    void setPhaseSource(std::atomic<float>* src);
-    void setSHSource(std::atomic<float>* src);
+    void setOutputSource(std::atomic<float>* src);
 
 private:
     void init(const juce::String& rateID, const juce::String& depthID,
@@ -39,15 +38,13 @@ private:
     void updateSyncVisibility();
 
     // Layout constants — fixed pixel sizes
-    static constexpr int kKnobSize      = 71;
-    static constexpr int kSmallKnobSize = 36;
+    static constexpr int kKnobSz       = 54;  // uniform knob size for all 4 knobs (50% larger)
     static constexpr int kLabelH        = 13;
     static constexpr int kSyncW         = 30;
     static constexpr int kSyncH         = 18;
     static constexpr int kShapeRowH     = 18;
     static constexpr int kShapeTopMargin = 4;
     static constexpr int kShapeLRMargin = 6;   // left/right padding for shape selector row
-    static constexpr int kRatePhaseKnobSz = 42;
     static constexpr int kDisplayMinH  = 30;
     static constexpr int kDisplayMaxH  = 80;
     static constexpr int kDisplayLRMargin = 4;
@@ -56,18 +53,15 @@ private:
     LFOWaveformDisplay waveformDisplay_;
 
     juce::Slider rateKnob_, depthKnob_, phaseKnob_, smoothKnob_;
+    juce::Slider beatDivKnob_;   // discrete rotary knob for synced beat division
     juce::Label  rateLabel_, depthLabel_, phaseLabel_, smoothLabel_;
     juce::TextButton syncBtn_{"Sync"};
 
-    // BeatDiv as discrete ComboBox (replaces old slider)
-    juce::ComboBox beatDivCombo_;
-
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
     using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using CA = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     std::unique_ptr<SA> rateAtt_, depthAtt_, phaseAtt_, smoothAtt_;
-    std::unique_ptr<CA> beatDivAtt_;
+    std::unique_ptr<SA> beatDivAtt_;
     std::unique_ptr<BA> syncAtt_;
 
     // Sync state tracking for visibility toggle

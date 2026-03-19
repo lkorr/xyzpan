@@ -138,21 +138,38 @@ std::vector<float> buildRoomWireframe(float halfSize)
         {-h, -h,  h}, { h, -h,  h}, { h,  h,  h}, {-h,  h,  h},   // front face
     };
 
-    // 12 edges: 4 bottom, 4 top, 4 vertical pillars
-    const int edges[12][2] = {
-        {0, 1}, {1, 2}, {2, 3}, {3, 0},   // back face
-        {4, 5}, {5, 6}, {6, 7}, {7, 4},   // front face
-        {0, 4}, {1, 5}, {2, 6}, {3, 7},   // side connectors
+    // Colors per axis — parallel edges share color
+    const float xColor[3] = { 0xC4 / 255.0f, 0x7A / 255.0f, 0x5A / 255.0f };  // rose-gold
+    const float yColor[3] = { 0x8B / 255.0f, 0x6B / 255.0f, 0xBF / 255.0f };  // lavender
+    const float zColor[3] = { 0x7A / 255.0f, 0xA8 / 255.0f, 0x8C / 255.0f };  // sage-green
+
+    // Edge definitions grouped by axis direction:
+    //   X-axis (left/right): edges along ±X
+    //   Y-axis (up/down):    edges along ±Y
+    //   Z-axis (depth):      edges along ±Z
+    struct ColoredEdge { int a, b; const float* color; };
+    const ColoredEdge edges[] = {
+        // X-axis edges (4)
+        {0, 1, xColor}, {3, 2, xColor}, {4, 5, xColor}, {7, 6, xColor},
+        // Y-axis edges (4)
+        {0, 3, yColor}, {1, 2, yColor}, {4, 7, yColor}, {5, 6, yColor},
+        // Z-axis edges (4)
+        {0, 4, zColor}, {1, 5, zColor}, {2, 6, zColor}, {3, 7, zColor},
     };
 
+    // Interleaved: [x, y, z, r, g, b] per vertex, 2 vertices per edge
     std::vector<float> verts;
-    verts.reserve(12 * 2 * 3);
+    verts.reserve(12 * 2 * 6);
 
     for (const auto& e : edges) {
         for (int v = 0; v < 2; ++v) {
-            verts.push_back(corners[e[v]][0]);
-            verts.push_back(corners[e[v]][1]);
-            verts.push_back(corners[e[v]][2]);
+            const int idx = (v == 0) ? e.a : e.b;
+            verts.push_back(corners[idx][0]);
+            verts.push_back(corners[idx][1]);
+            verts.push_back(corners[idx][2]);
+            verts.push_back(e.color[0]);
+            verts.push_back(e.color[1]);
+            verts.push_back(e.color[2]);
         }
     }
 

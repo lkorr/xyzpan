@@ -39,6 +39,11 @@ constexpr float kHeadShadowMinHz       = 1200.0f;   // LPF at full azimuth (~12d
 // At max distance: negligible boost (both ears roughly equal).
 constexpr float kDefaultILDMaxDb       = 8.0f;      // max ILD boost in dB (near ear, far ear = unity)
 
+// ILD crossfade width: smooth linear crossfade over this ITD range (in samples)
+// to avoid gain discontinuity when ITD crosses zero (median plane crossing).
+// 1.0 sample ≈ 0.023ms at 44.1kHz — matches exactly at |itdSamples| >= 1.
+constexpr float kILDCrossfadeWidth     = 1.0f;
+
 // Near-field ILD scaling: boost ildMaxDb at close range for stronger panning
 constexpr float kNearFieldILDThreshold = 0.3f;       // distance fraction below which scaling kicks in
 constexpr float kNearFieldILDMaxDb     = 15.0f;      // max ILD at very close range
@@ -151,6 +156,12 @@ constexpr float kVertMonoCylinderRadiusMax = 1.0f;
 // Phase 4: Distance Processing (DIST-01 through DIST-06)
 // ============================================================================
 
+// Doppler anti-alias LP cutoff: band-limits signal before distance delay line
+// to prevent Catmull-Rom interpolation aliasing during delay modulation.
+// 18kHz is above audible range; combined with Hermite ~20dB stopband rejection,
+// total fold-back attenuation is 24+ dB.
+constexpr float kDopplerAAMaxHz = 18000.0f;
+
 // Maximum propagation delay for distance effect (DIST-03).
 // At the unit-cube corner (sqrt(3) away), the source has a 300ms delay offset.
 constexpr float kDistDelayMaxMs = 300.0f;
@@ -166,11 +177,6 @@ constexpr float kDistGainMax = 2.0f;        // max +6dB boost for very close sou
 // Longer = smoother pitch glide, shorter = tighter tracking.
 // 150ms gives ~150ms ramp time for delay changes — audible doppler without glitching.
 constexpr float kDistSmoothMs = 150.0f;
-
-// Maximum per-sample change in doppler delay (samples/sample).
-// Clamps the rate-of-change to prevent extreme pitch artifacts on large position jumps.
-// 0.15 ≈ ±15% pitch shift max — dramatic enough for spatial audio, clean enough to avoid crackling.
-constexpr float kDopplerMaxDeltaSamp = 0.15f;
 
 // Air absorption LPF cutoff range (DIST-02).
 // At minimum distance: LPF fully open (no absorption).
@@ -208,10 +214,10 @@ constexpr float kAuxSendGainMaxDb     = 6.0f;
 // ============================================================================
 constexpr float kLFODefaultRate   = 0.5f;   // Hz, free-running default
 constexpr float kLFOMinRate       = 0.0f;   // Hz minimum (0 = stopped)
-constexpr float kLFOMaxRate       = 50.0f;  // Hz maximum
+constexpr float kLFOMaxRate       = 10.0f;  // Hz maximum
 constexpr float kLFOMaxDepth      = 1.0f;   // max depth = full ±1 axis swing
 constexpr float kLFOSpeedMulMin     = 0.0f;
-constexpr float kLFOSpeedMulMax     = 2.0f;
+constexpr float kLFOSpeedMulMax     = 3.0f;
 constexpr float kLFOSpeedMulDefault = 1.0f;
 
 // Beat division discrete values for tempo-synced LFOs

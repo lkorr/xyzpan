@@ -53,15 +53,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(yLFO_);
     addAndMakeVisible(zLFO_);
 
-    // Wire real LFO phase sources (drift-free sync with DSP)
-    xLFO_.setPhaseSource(&p.lfoPhaseX);
-    yLFO_.setPhaseSource(&p.lfoPhaseY);
-    zLFO_.setPhaseSource(&p.lfoPhaseZ);
-
-    // Wire S&H held value sources for accurate S&H waveform display
-    xLFO_.setSHSource(&p.lfoSHValueX);
-    yLFO_.setSHSource(&p.lfoSHValueY);
-    zLFO_.setSHSource(&p.lfoSHValueZ);
+    // Wire LFO output sources for waveform history display
+    xLFO_.setOutputSource(&p.lfoOutputX);
+    yLFO_.setOutputSource(&p.lfoOutputY);
+    zLFO_.setOutputSource(&p.lfoOutputZ);
 
     // ----- XYZ LFO Speed slider (below LFO strips, above Utilities) -----
     lfoSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -101,11 +96,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     orbitOffsetAtt_  = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_OFFSET,   orbitOffsetKnob_);
     orbitSpeedMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_SPEED_MUL, orbitSpeedMulKnob_);
 
-    // Hero styling for Width and Speed orbit sliders
-    stereoWidthKnob_.setColour(juce::Slider::rotarySliderFillColourId,
-                               juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
-    orbitSpeedMulKnob_.setColour(juce::Slider::rotarySliderFillColourId,
-                                 juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
+    // Hero styling for all orbit sliders
+    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitOffsetKnob_, &orbitPhaseKnob_})
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                         juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
 
     faceListenerToggle_.setButtonText("Always Face Observer");
     faceListenerToggle_.setClickingTogglesState(true);
@@ -128,63 +122,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(orbitXZLFO_);
     addAndMakeVisible(orbitYZLFO_);
 
-    orbitXYLFO_.setPhaseSource(&p.lfoPhaseOrbitXY);
-    orbitXZLFO_.setPhaseSource(&p.lfoPhaseOrbitXZ);
-    orbitYZLFO_.setPhaseSource(&p.lfoPhaseOrbitYZ);
+    orbitXYLFO_.setOutputSource(&p.lfoOutputOrbitXY);
+    orbitXZLFO_.setOutputSource(&p.lfoOutputOrbitXZ);
+    orbitYZLFO_.setOutputSource(&p.lfoOutputOrbitYZ);
 
-    orbitXYLFO_.setSHSource(&p.lfoSHValueOrbitXY);
-    orbitXZLFO_.setSHSource(&p.lfoSHValueOrbitXZ);
-    orbitYZLFO_.setSHSource(&p.lfoSHValueOrbitYZ);
-
-    // ----- Stereo toggle button — click to expand (hides itself) -----
-    stereoToggle_.onClick = [this] {
-        stereoExpanded_ = true;
-        stereoToggle_.setVisible(false);
-        for (auto* c : {(juce::Component*)&stereoWidthKnob_, (juce::Component*)&stereoWidthLabel_,
-                        (juce::Component*)&orbitPhaseKnob_,  (juce::Component*)&orbitPhaseLabel_,
-                        (juce::Component*)&orbitOffsetKnob_, (juce::Component*)&orbitOffsetLabel_,
-                        (juce::Component*)&orbitSpeedMulKnob_, (juce::Component*)&orbitSpeedMulLabel_,
-                        (juce::Component*)&faceListenerToggle_, (juce::Component*)&orbitTempoSyncToggle_,
-                        (juce::Component*)&resetOrbitPhasesBtn_,
-                        (juce::Component*)&orbitXYLFO_, (juce::Component*)&orbitXZLFO_,
-                        (juce::Component*)&orbitYZLFO_, (juce::Component*)&monoBtn_})
-            c->setVisible(true);
-        resized();
-        repaint();
-    };
-    addAndMakeVisible(stereoToggle_);
-
-    // All orbit controls start hidden
-    for (auto* c : {(juce::Component*)&stereoWidthKnob_, (juce::Component*)&stereoWidthLabel_,
-                    (juce::Component*)&orbitPhaseKnob_,  (juce::Component*)&orbitPhaseLabel_,
-                    (juce::Component*)&orbitOffsetKnob_, (juce::Component*)&orbitOffsetLabel_,
-                    (juce::Component*)&orbitSpeedMulKnob_, (juce::Component*)&orbitSpeedMulLabel_,
-                    (juce::Component*)&faceListenerToggle_, (juce::Component*)&orbitTempoSyncToggle_,
-                    (juce::Component*)&resetOrbitPhasesBtn_,
-                    (juce::Component*)&orbitXYLFO_, (juce::Component*)&orbitXZLFO_,
-                    (juce::Component*)&orbitYZLFO_})
-        c->setVisible(false);
-
-    // ----- Mono button — collapses orbit panel and re-shows Stereo button -----
-    monoBtn_.onClick = [this] {
-        if (auto* param = proc_.apvts.getParameter(ParamID::STEREO_WIDTH))
-            param->setValueNotifyingHost(0.0f);
-        stereoExpanded_ = false;
-        for (auto* c : {(juce::Component*)&stereoWidthKnob_, (juce::Component*)&stereoWidthLabel_,
-                        (juce::Component*)&orbitPhaseKnob_,  (juce::Component*)&orbitPhaseLabel_,
-                        (juce::Component*)&orbitOffsetKnob_, (juce::Component*)&orbitOffsetLabel_,
-                        (juce::Component*)&orbitSpeedMulKnob_, (juce::Component*)&orbitSpeedMulLabel_,
-                        (juce::Component*)&faceListenerToggle_, (juce::Component*)&orbitTempoSyncToggle_,
-                        (juce::Component*)&resetOrbitPhasesBtn_,
-                        (juce::Component*)&orbitXYLFO_, (juce::Component*)&orbitXZLFO_,
-                        (juce::Component*)&orbitYZLFO_, (juce::Component*)&monoBtn_})
-            c->setVisible(false);
-        stereoToggle_.setVisible(true);
-        resized();
-        repaint();
-    };
-    addAndMakeVisible(monoBtn_);
-    monoBtn_.setVisible(false);
+    // ----- Width-gated enable/disable for orbit controls -----
+    stereoWidthKnob_.onValueChange = [this] { updateOrbitEnabled(); };
+    updateOrbitEnabled();
 
     // ----- Sphere Radius knob (bottom row) -----
     sphereRadiusKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -405,20 +349,23 @@ void XYZPanEditor::paint(juce::Graphics& g)
     }
 
     // ===== DIVIDERS — BOTTOM ROW =====
-    if (stereoExpanded_)
-    {
-        // Vertical divider between orbit controls and orbit LFO strips
-        g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
-        g.drawVerticalLine(bx + kOrbitCtrlW, static_cast<float>(contentTop), static_cast<float>(by + kBottomH));
+    // Vertical divider between orbit controls and orbit LFO strips
+    g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
+    g.drawVerticalLine(bx + kOrbitCtrlW, static_cast<float>(contentTop), static_cast<float>(by + kBottomH));
 
-        // Vertical dividers between orbit LFO strips (XY | XZ | YZ)
-        {
-            const int lfoX = bx + kOrbitCtrlW;
-            const int lfoTotalW = orbitTotalW - kOrbitCtrlW;
-            const int stripW = lfoTotalW / 3;
-            g.drawVerticalLine(lfoX + stripW,     static_cast<float>(contentTop), static_cast<float>(by + kBottomH));
-            g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(contentTop), static_cast<float>(by + kBottomH));
-        }
+    // Vertical dividers between orbit LFO strips (XY | XZ | YZ)
+    // and thin horizontal separator above orbit speed row
+    {
+        const int lfoX = bx + kOrbitCtrlW;
+        const int lfoTotalW = orbitTotalW - kOrbitCtrlW;
+        const int stripW = lfoTotalW / 3;
+        const int speedRowH = 32;
+        const int speedSepY = by + kBottomH - speedRowH;
+        g.drawVerticalLine(lfoX + stripW,     static_cast<float>(contentTop), static_cast<float>(speedSepY));
+        g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(contentTop), static_cast<float>(speedSepY));
+        // Thin bronze separator above orbit speed slider row
+        g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.4f));
+        g.drawHorizontalLine(speedSepY, static_cast<float>(lfoX), static_cast<float>(lfoX + lfoTotalW));
     }
 
     // Vertical divider between orbit section and reverb section
@@ -574,63 +521,57 @@ void XYZPanEditor::resized()
         // Orbit section: everything to the left of reverb
         const int orbitTotalW = reverbX - bx;
 
-        // --- STEREO TOGGLE BUTTON (centered in full orbit panel, hidden when expanded) ---
+        // --- ORBIT CONTROLS (fixed 240px left portion of orbit section) ---
         {
-            const int toggleW = 100;
-            const int toggleH = 36;
-            const int toggleX = bx + (orbitTotalW - toggleW) / 2;
-            const int toggleY = contentTop + (contentH - toggleH) / 2;
-            stereoToggle_.setBounds(toggleX, toggleY, toggleW, toggleH);
+            const int ox = bx + 6;
+            const int ow = kOrbitCtrlW - 12;
+            int oy = contentTop + 2;
+            const int sliderH  = 28;
+            const int labelW   = 48;
+            const int gap      = 2;
+
+            auto placeSlider = [&](juce::Label& lbl, juce::Slider& slider) {
+                lbl.setBounds(ox, oy, labelW, sliderH);
+                slider.setBounds(ox + labelW, oy, ow - labelW, sliderH);
+                oy += sliderH + gap;
+            };
+
+            placeSlider(stereoWidthLabel_,    stereoWidthKnob_);
+            placeSlider(orbitOffsetLabel_,     orbitOffsetKnob_);
+            placeSlider(orbitPhaseLabel_,      orbitPhaseKnob_);
+
+            const int btnH = 22;
+            const int faceBtnW = ow * 2 / 3;
+            const int syncBtnW = ow - faceBtnW - 8;
+            faceListenerToggle_.setBounds(ox, oy, faceBtnW, btnH);
+            orbitTempoSyncToggle_.setBounds(ox + faceBtnW + 8, oy, syncBtnW, btnH);
         }
 
-        // --- ORBIT CONTROLS + LFO STRIPS (only when expanded) ---
-        if (stereoExpanded_)
+        // --- ORBIT LFO STRIPS + SPEED/RESET ROW (flexible width, between orbit controls and reverb) ---
         {
-            // --- ORBIT CONTROLS (fixed 240px left portion of orbit section) ---
-            {
-                const int ox = bx + 6;
-                const int ow = kOrbitCtrlW - 12;
-                int oy = contentTop + 2;
-                const int heroH    = 28;
-                const int stdH     = 18;
-                const int labelW   = 48;
-                const int gap      = 2;
+            const int lfoX = bx + kOrbitCtrlW;
+            const int lfoTotalW = orbitTotalW - kOrbitCtrlW;
+            const int speedRowH = 32;
+            const int lfoH = contentH - speedRowH;
+            const int stripW = lfoTotalW / 3;
+            const int lastStripW = lfoTotalW - stripW * 2;
 
-                auto placeSlider = [&](juce::Label& lbl, juce::Slider& slider, int h) {
-                    lbl.setBounds(ox, oy, labelW, h);
-                    slider.setBounds(ox + labelW, oy, ow - labelW, h);
-                    oy += h + gap;
-                };
+            orbitXYLFO_.setBounds(lfoX,              contentTop, stripW,     lfoH);
+            orbitXZLFO_.setBounds(lfoX + stripW,     contentTop, stripW,     lfoH);
+            orbitYZLFO_.setBounds(lfoX + stripW * 2, contentTop, lastStripW, lfoH);
 
-                placeSlider(stereoWidthLabel_,    stereoWidthKnob_,    heroH);
-                placeSlider(orbitSpeedMulLabel_,   orbitSpeedMulKnob_,  heroH);
-                placeSlider(orbitOffsetLabel_,     orbitOffsetKnob_,    stdH);
-                placeSlider(orbitPhaseLabel_,      orbitPhaseKnob_,     stdH);
-
-                const int btnH = 22;
-                const int faceBtnW = ow * 2 / 3;
-                const int syncBtnW = ow - faceBtnW - 8;
-                faceListenerToggle_.setBounds(ox, oy, faceBtnW, btnH);
-                orbitTempoSyncToggle_.setBounds(ox + faceBtnW + 8, oy, syncBtnW, btnH);
-                oy += btnH + 4;
-
-                // Reset + Mono buttons below toggles
-                const int resetW = 44;
-                resetOrbitPhasesBtn_.setBounds(ox, oy, resetW, btnH);
-                monoBtn_.setBounds(ox + resetW + 4, oy, ow - resetW - 4, btnH);
-            }
-
-            // --- ORBIT LFO STRIPS (flexible width, between orbit controls and reverb) ---
-            {
-                const int lfoX = bx + kOrbitCtrlW;
-                const int lfoTotalW = orbitTotalW - kOrbitCtrlW;
-                const int stripW = lfoTotalW / 3;
-                const int lastStripW = lfoTotalW - stripW * 2;
-
-                orbitXYLFO_.setBounds(lfoX,              contentTop, stripW,     contentH);
-                orbitXZLFO_.setBounds(lfoX + stripW,     contentTop, stripW,     contentH);
-                orbitYZLFO_.setBounds(lfoX + stripW * 2, contentTop, lastStripW, contentH);
-            }
+            // Speed slider + Reset button row below orbit LFO strips
+            const int speedY = contentTop + lfoH;
+            const int speedLabelW = 70;
+            const int resetBtnW = 44;
+            const int resetBtnGap = 4;
+            const int pad = 6;
+            orbitSpeedMulLabel_.setBounds(lfoX + pad, speedY + 4, speedLabelW, speedRowH - 8);
+            orbitSpeedMulKnob_.setBounds(lfoX + pad + speedLabelW, speedY + 4,
+                                          lfoTotalW - pad * 2 - speedLabelW - resetBtnW - resetBtnGap,
+                                          speedRowH - 8);
+            resetOrbitPhasesBtn_.setBounds(lfoX + lfoTotalW - pad - resetBtnW, speedY + 4,
+                                           resetBtnW, speedRowH - 8);
         }
 
         // --- REVERB KNOBS (fixed 320px = 4×80px columns) ---
@@ -652,4 +593,21 @@ void XYZPanEditor::resized()
         // --- DEV toggle (far-right corner) ---
         devToggle_.setBounds(bx + bw - devW + 4, by + (kBottomH - 24) / 2, devW - 8, 24);
     }
+}
+
+// ---------------------------------------------------------------------------
+// updateOrbitEnabled — grey out orbit controls when Width is 0
+// ---------------------------------------------------------------------------
+void XYZPanEditor::updateOrbitEnabled()
+{
+    const bool active = stereoWidthKnob_.getValue() > 0.0;
+
+    for (auto* c : {(juce::Component*)&orbitSpeedMulKnob_,  (juce::Component*)&orbitSpeedMulLabel_,
+                    (juce::Component*)&orbitOffsetKnob_,     (juce::Component*)&orbitOffsetLabel_,
+                    (juce::Component*)&orbitPhaseKnob_,      (juce::Component*)&orbitPhaseLabel_,
+                    (juce::Component*)&faceListenerToggle_,  (juce::Component*)&orbitTempoSyncToggle_,
+                    (juce::Component*)&resetOrbitPhasesBtn_,
+                    (juce::Component*)&orbitXYLFO_,          (juce::Component*)&orbitXZLFO_,
+                    (juce::Component*)&orbitYZLFO_})
+        c->setEnabled(active);
 }

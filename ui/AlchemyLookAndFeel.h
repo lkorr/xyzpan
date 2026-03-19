@@ -7,12 +7,13 @@ namespace xyzpan {
 // AlchemyLookAndFeel — hermetic alchemy-inspired theme for XYZPan.
 //
 // Palette:
-//   Background:   #1a1108  (very dark brown-black)
-//   Dark iron:    #2A1A08  (knob/button background)
-//   Bronze:       #8B5E2E  (room wireframe, borders)
-//   Warm gold:    #C8A86B  (listener node, knob arc)
-//   Parchment:    #D4B483  (text / labels)
-//   Bright gold:  #E8C46A  (source node, highlights)
+//   Background:   #110B1A  (deep purple-black)
+//   Dark iron:    #1C1228  (dark plum — knob/button background)
+//   Bronze:       #7B5EA7  (muted purple — wireframe, borders)
+//   Warm gold:    #D4A843  (warm gold — knob arc, slider fills)
+//   Parchment:    #C8BCD8  (lavender-grey — text/labels)
+//   Bright gold:  #FFD700  (bright gold — source node, highlights)
+//   Hover gold:   #FFE566  (light gold-yellow — hover state)
 // ---------------------------------------------------------------------------
 class AlchemyLookAndFeel : public juce::LookAndFeel_V4 {
 public:
@@ -50,13 +51,13 @@ public:
     void drawLabel(juce::Graphics& g, juce::Label& label) override;
 
     // Alchemy color constants — accessible for OpenGL renderer to match
-    static constexpr uint32_t kBackground  = 0xFF1a1108u;
-    static constexpr uint32_t kDarkIron    = 0xFF2A1A08u;
-    static constexpr uint32_t kBronze      = 0xFF8B5E2Eu;
-    static constexpr uint32_t kWarmGold    = 0xFFC8A86Bu;
-    static constexpr uint32_t kParchment   = 0xFFD4B483u;
-    static constexpr uint32_t kBrightGold  = 0xFFE8C46Au;
-    static constexpr uint32_t kHoverGold   = 0xFFFFD580u;
+    static constexpr uint32_t kBackground  = 0xFF110B1Au;
+    static constexpr uint32_t kDarkIron    = 0xFF1C1228u;
+    static constexpr uint32_t kBronze      = 0xFF7B5EA7u;
+    static constexpr uint32_t kWarmGold    = 0xFFD4A843u;
+    static constexpr uint32_t kParchment   = 0xFFC8BCD8u;
+    static constexpr uint32_t kBrightGold  = 0xFFFFD700u;
+    static constexpr uint32_t kHoverGold   = 0xFFFFE566u;
     static constexpr uint32_t kStereoLeft  = 0xFFFF6B9Du;  // pink
     static constexpr uint32_t kStereoRight = 0xFF6B9DFFu;  // blue
 

@@ -422,6 +422,70 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(0.0f, 24.0f, 0.1f), xyzpan::kAuxSendGainMaxDb));
 
     // -------------------------------------------------------------------------
+    // Dev Panel: Pinna P1 fixed peak
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_P1_FREQ_HZ, 1}, "Pinna P1 Hz",
+        NR(1000.0f, 16000.0f, 1.0f, 0.3f), xyzpan::kPinnaP1FreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_P1_GAIN_DB, 1}, "Pinna P1 Gain dB",
+        NR(-12.0f, 12.0f, 0.1f), xyzpan::kPinnaP1GainDb));
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_P1_Q, 1}, "Pinna P1 Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kPinnaP1Q));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Pinna N2 secondary notch
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_N2_OFFSET_HZ, 1}, "Pinna N2 Offset Hz",
+        NR(0.0f, 10000.0f, 1.0f), xyzpan::kPinnaN2OffsetHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_N2_GAIN_DB, 1}, "Pinna N2 Gain dB",
+        NR(-24.0f, 0.0f, 0.1f), xyzpan::kPinnaN2GainDb));
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_N2_Q, 1}, "Pinna N2 Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kPinnaN2Q));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Pinna N1 range limits
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_N1_MIN_HZ, 1}, "Pinna N1 Min Hz",
+        NR(1000.0f, 16000.0f, 1.0f, 0.3f), xyzpan::kPinnaN1MinHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::PINNA_N1_MAX_HZ, 1}, "Pinna N1 Max Hz",
+        NR(1000.0f, 16000.0f, 1.0f, 0.3f), xyzpan::kPinnaN1MaxHz));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Floor bounce HF absorption
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::FLOOR_ABS_HZ, 1}, "Floor Abs Hz",
+        NR(500.0f, 20000.0f, 1.0f, 0.3f), xyzpan::kFloorAbsHz));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Near-field LF boost
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::NEAR_FIELD_LF_HZ, 1}, "Near-Field LF Hz",
+        NR(20.0f, 1000.0f, 1.0f, 0.3f), xyzpan::kNearFieldLFHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::NEAR_FIELD_LF_MAX_DB, 1}, "Near-Field LF Max dB",
+        NR(0.0f, 24.0f, 0.1f), xyzpan::kNearFieldLFMaxDb));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Air absorption stage 2
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::AIR_ABS_2_MAX_HZ, 1}, "Air Abs 2 Max Hz",
+        NR(1000.0f, 22000.0f, 100.0f, 0.3f), xyzpan::kAirAbs2MaxHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::AIR_ABS_2_MIN_HZ, 1}, "Air Abs 2 Min Hz",
+        NR(500.0f, 22000.0f, 100.0f, 0.3f), xyzpan::kAirAbs2MinHz));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Distance gain law
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::DIST_GAIN_FLOOR_DB, 1}, "Dist Gain Floor dB",
+        NR(-120.0f, -6.0f, 0.1f), xyzpan::kDistGainFloorDb));
+    layout.add(std::make_unique<APF>(PID{ParamID::DIST_GAIN_MAX, 1}, "Dist Gain Max",
+        NR(1.0f, 10.0f, 0.01f), xyzpan::kDistGainMax));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Head shadow fully-open cap
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::HEAD_SHADOW_FULL_OPEN_HZ, 1}, "Head Shadow Open Hz",
+        NR(5000.0f, 20000.0f, 1.0f, 0.3f), xyzpan::kHeadShadowFullOpenHz));
+
+    // -------------------------------------------------------------------------
     // Dev Panel: Geometry
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<APF>(PID{ParamID::SPHERE_RADIUS, 1}, "Sphere Radius",
