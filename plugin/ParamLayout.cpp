@@ -505,7 +505,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_PULSE_HZ, 1}, "Test Tone Pulse Hz",
         NR(xyzpan::kTestTonePulseMinHz, xyzpan::kTestTonePulseMaxHz, 0.01f), xyzpan::kTestTonePulseDefault));
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_WAVEFORM, 1}, "Test Tone Waveform",
-        NR(0.0f, 6.0f, 1.0f), 0.0f));
+        NR(0.0f, 7.0f, 1.0f), 0.0f));
 
     return layout;
 }

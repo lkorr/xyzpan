@@ -12,6 +12,7 @@ enum class TestToneWaveform : int {
     PulsingSquare     = 4,
     PulsingWhiteNoise = 5,
     StereoNoiseSaw    = 6,
+    Sine              = 7,
 };
 
 // Parameters passed to the engine each processBlock.

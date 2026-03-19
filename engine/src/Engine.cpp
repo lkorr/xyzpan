@@ -984,6 +984,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     if (sawPhase_ >= 1.0f) sawPhase_ -= 1.0f;
                     break;
                 }
+                case xyzpan::TestToneWaveform::Sine:
+                    testSig = std::sin(6.283185307f * sawPhase_);
+                    sawPhase_ += sawIncrement;
+                    if (sawPhase_ >= 1.0f) sawPhase_ -= 1.0f;
+                    break;
                 case xyzpan::TestToneWaveform::Saw: default:
                     testSig = 2.0f * sawPhase_ - 1.0f;
                     sawPhase_ += sawIncrement;
