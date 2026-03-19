@@ -59,9 +59,11 @@ struct DistancePipeline {
     dsp::FractionalDelayLine distDelayL, distDelayR;
     dsp::OnePoleLP airLPF_L, airLPF_R;    // stage 1
     dsp::OnePoleLP airLPF2_L, airLPF2_R;  // stage 2
-    dsp::OnePoleLP dopplerAA_L, dopplerAA_R;  // pre-delay anti-alias LP
+    dsp::OnePoleLP dopplerAA_L, dopplerAA_R;  // post-delay anti-alias LP
+    dsp::OnePoleLP dopplerPreAA_L, dopplerPreAA_R;  // pre-delay anti-alias LP
     dsp::OnePoleSmooth distGainSmooth;
     dsp::OnePoleSmooth distDelaySmooth;
+    float prevDelaySamp = 2.0f;  // rate limiter state for doppler
     void prepare(float sr);
     void reset();
 };
@@ -208,8 +210,10 @@ private:
     // =========================================================================
     dsp::FractionalDelayLine distDelayL_;     // propagation delay + doppler, left
     dsp::FractionalDelayLine distDelayR_;     // propagation delay + doppler, right
-    dsp::OnePoleLP           dopplerAA_L_;    // pre-delay anti-alias LP, left
-    dsp::OnePoleLP           dopplerAA_R_;    // pre-delay anti-alias LP, right
+    dsp::OnePoleLP           dopplerAA_L_;    // post-delay anti-alias LP, left
+    dsp::OnePoleLP           dopplerAA_R_;    // post-delay anti-alias LP, right
+    dsp::OnePoleLP           dopplerPreAA_L_; // pre-delay anti-alias LP, left
+    dsp::OnePoleLP           dopplerPreAA_R_; // pre-delay anti-alias LP, right
     dsp::OnePoleLP           airLPF_L_;       // air absorption LPF stage 1, left
     dsp::OnePoleLP           airLPF_R_;       // air absorption LPF stage 1, right
     dsp::OnePoleLP           airLPF2_L_;      // air absorption LPF stage 2 (cascade → 12dB/oct), left
@@ -218,6 +222,7 @@ private:
     dsp::BiquadFilter        nearFieldLF_R_;  // near-field ILD: ipsilateral LF boost, right
     dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
     dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
+    float prevDistDelay_ = 2.0f;              // rate limiter state for mono-path doppler
     float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
 
     // =========================================================================
@@ -277,11 +282,13 @@ private:
         float nodeX, float nodeY, float nodeZ,
         float sr, bool dopplerOn,
         dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
+        dsp::OnePoleLP& preAAL, dsp::OnePoleLP& preAAR,
         dsp::OnePoleLP& aaL, dsp::OnePoleLP& aaR,
         dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
         dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
         dsp::OnePoleSmooth& dgSmooth,
-        dsp::OnePoleSmooth& ddSmooth
+        dsp::OnePoleSmooth& ddSmooth,
+        float& prevDelay
     );
 
     // Helper: run comb bank + mono EQ + binaural split for one source node

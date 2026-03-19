@@ -541,3 +541,55 @@ TEST_CASE("Distance-dependent hardpan: close sources pan harder than distant", "
     float farLRRatio = farLRDiff / (farLRDiff + closeLRDiff + 1e-10f);
     CHECK(farLRRatio < 0.3f);  // far contributes less than 30% of total L/R diff
 }
+
+// ---------------------------------------------------------------------------
+// Doppler rate limiter: fast pass-by produces finite, clamped output
+// ---------------------------------------------------------------------------
+TEST_CASE("Doppler rate limiter: fast pass-by produces clean output", "[distance][doppler]") {
+    // Rapidly alternate position between near and far every block.
+    // The rate limiter should prevent extreme pitch shifts that cause clicks.
+    // All output must be finite and within clamp range.
+
+    XYZPanEngine engine;
+    engine.prepare(static_cast<double>(kTestSampleRate), kTestBlockSize);
+
+    constexpr int N = 16384;
+    auto noise = makeNoise(N, 33333u);
+
+    std::vector<float> outL(N), outR(N);
+    bool hasNaN = false;
+    bool hasInf = false;
+    float maxAbs = 0.0f;
+
+    int offset = 0;
+    int blockIndex = 0;
+    while (offset < N) {
+        int batch = std::min(kTestBlockSize, N - offset);
+
+        EngineParams p;
+        // Alternate between very near and very far every block (extreme pass-by)
+        if (blockIndex % 2 == 0) {
+            p.x = 0.0f; p.y = kMinDistance; p.z = 0.0f;
+        } else {
+            p.x = 1.0f; p.y = 1.0f; p.z = 1.0f;
+        }
+        p.dopplerEnabled = true;
+        engine.setParams(p);
+
+        const float* ins[1] = { noise.data() + offset };
+        engine.process(ins, 1, outL.data() + offset, outR.data() + offset, nullptr, nullptr, batch);
+        offset += batch;
+        ++blockIndex;
+    }
+
+    for (int i = 0; i < N; ++i) {
+        if (std::isnan(outL[i]) || std::isnan(outR[i])) hasNaN = true;
+        if (std::isinf(outL[i]) || std::isinf(outR[i])) hasInf = true;
+        maxAbs = std::max(maxAbs, std::max(std::abs(outL[i]), std::abs(outR[i])));
+    }
+
+    CHECK_FALSE(hasNaN);
+    CHECK_FALSE(hasInf);
+    // Output should stay within clamp range
+    CHECK(maxAbs <= 2.0f);
+}

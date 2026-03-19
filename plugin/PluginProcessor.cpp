@@ -295,6 +295,9 @@ XYZPanProcessor::XYZPanProcessor()
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
+    jassert(sampleRate > 0.0 && sampleRate <= 192000.0);
+    jassert(samplesPerBlock > 0 && samplesPerBlock <= 8192);
+    DBG("XYZPan prepareToPlay: sr=" << sampleRate << " block=" << samplesPerBlock);
     engine.prepare(sampleRate, samplesPerBlock);
 
     // Phase 6: prepare R smoother — 20ms matches engine's internal position smoothing window

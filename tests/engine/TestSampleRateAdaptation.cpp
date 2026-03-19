@@ -202,3 +202,51 @@ TEST_CASE("Engine: no stale coefficients at 192 kHz after mid-session rate chang
     REQUIRE(avgRms > 0.0f);
     REQUIRE(avgRms < 2.5f);  // clamp range is [-2, 2], so RMS should be well below 2.0
 }
+
+// ---------------------------------------------------------------------------
+// Test 4: Doppler at 96kHz produces clean output
+// ---------------------------------------------------------------------------
+TEST_CASE("Engine: doppler at 96kHz produces clean output", "[samplerate][doppler]") {
+    constexpr int kBlockSize = 512;
+    constexpr double kSR = 96000.0;
+
+    XYZPanEngine engine;
+    engine.prepare(kSR, kBlockSize);
+
+    // Ramp position from far to near with doppler enabled
+    EngineParams params;
+    params.dopplerEnabled = true;
+
+    const std::vector<float> input = makeNoise(kBlockSize, 88888u);
+    const float* inputPtrs[1] = { input.data() };
+    std::vector<float> outL(static_cast<size_t>(kBlockSize));
+    std::vector<float> outR(static_cast<size_t>(kBlockSize));
+
+    bool anyNonFinite = false;
+    bool anySilent = true;
+    float maxAbs = 0.0f;
+
+    constexpr int numBlocks = 32;
+    for (int b = 0; b < numBlocks; ++b) {
+        float t = static_cast<float>(b) / static_cast<float>(numBlocks);
+        // Ramp from far (1,1,1) to near (0,0.1,0)
+        params.x = 1.0f * (1.0f - t);
+        params.y = 1.0f * (1.0f - t) + 0.1f * t;
+        params.z = 1.0f * (1.0f - t);
+        engine.setParams(params);
+
+        engine.process(inputPtrs, 1, outL.data(), outR.data(), nullptr, nullptr, kBlockSize);
+
+        for (int i = 0; i < kBlockSize; ++i) {
+            if (!std::isfinite(outL[i]) || !std::isfinite(outR[i]))
+                anyNonFinite = true;
+            float absMax = std::max(std::abs(outL[i]), std::abs(outR[i]));
+            if (absMax > 1e-10f) anySilent = false;
+            maxAbs = std::max(maxAbs, absMax);
+        }
+    }
+
+    REQUIRE_FALSE(anyNonFinite);
+    REQUIRE_FALSE(anySilent);
+    REQUIRE(maxAbs <= 2.0f);  // within clamp range
+}
