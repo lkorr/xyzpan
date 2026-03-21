@@ -50,7 +50,7 @@ private:
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
     static constexpr int kDefaultW      = 1100;
-    static constexpr int kDefaultH      = 1100;
+    static constexpr int kDefaultH      = 750;
     static constexpr int kSectionHdrH   = 24;      // section header height
     static constexpr int kDividerW      = 1;       // vertical divider width
     static constexpr int kPadding       = 6;       // general inner padding
@@ -118,6 +118,21 @@ private:
     juce::ComboBox presetCombo_;
     juce::TextButton presetSaveBtn_{"Save"};
     juce::TextButton presetLoadBtn_{"Load"};
+
+    // Shared geometry: computed once per paint/resized call to avoid drift
+    struct Layout {
+        int contentY;       // = kPresetBarH
+        int leftColH;       // = totalH - kBottomH - kPresetBarH
+        int posSectionH;    // = leftColH - (kSectionHdrH + kMiscSectionH)
+        int miscTop;        // = contentY + posSectionH
+        int bottomY;        // = totalH - kBottomH
+        int devW;           // = 48
+        int reverbX;        // = totalW - devW - kReverbSectionW
+        int orbitTotalW;    // = reverbX
+        int contentTop;     // = bottomY + kSectionHdrH
+
+        static Layout compute(int totalW, int totalH);
+    };
 
     void updateOrbitEnabled();
 

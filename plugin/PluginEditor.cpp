@@ -16,9 +16,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
       orbitYZLFO_("stereo_orbit_yz", ParamID::STEREO_ORBIT_TEMPO_SYNC, p.apvts),
       devPanel_(p.apvts, &p.dspStateBridge)
 {
-    // Apply alchemy look and feel globally for this editor
+    // Apply alchemy look and feel to this editor; child components inherit via addAndMakeVisible
     setLookAndFeel(&lookAndFeel_);
-    juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel_);
 
     // ----- GL view — added FIRST so devPanel_ (added later) paints on top of it -----
     addAndMakeVisible(glView_);
@@ -258,8 +257,25 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 // ---------------------------------------------------------------------------
 XYZPanEditor::~XYZPanEditor()
 {
-    juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
     setLookAndFeel(nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Layout::compute — single source of structural geometry used by paint + resized
+// ---------------------------------------------------------------------------
+XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
+{
+    Layout l;
+    l.contentY    = kPresetBarH;
+    l.leftColH    = totalH - kBottomH - kPresetBarH;
+    l.posSectionH = l.leftColH - (kSectionHdrH + kMiscSectionH);
+    l.miscTop     = l.contentY + l.posSectionH;
+    l.bottomY     = totalH - kBottomH;
+    l.devW        = 48;
+    l.reverbX     = totalW - l.devW - kReverbSectionW;
+    l.orbitTotalW = l.reverbX;
+    l.contentTop  = l.bottomY + kSectionHdrH;
+    return l;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,34 +284,20 @@ XYZPanEditor::~XYZPanEditor()
 void XYZPanEditor::paint(juce::Graphics& g)
 {
     using ALF = xyzpan::AlchemyLookAndFeel;
-    // Content area starts below the preset bar
-    const int contentY = kPresetBarH;
-    const int leftColH = getHeight() - kBottomH - kPresetBarH;
-
-    // Compute miscTop identically to resized()
-    const int miscTotalH = kSectionHdrH + kMiscSectionH;
-    const int posSectionH = leftColH - miscTotalH;
-    const int miscTop = contentY + posSectionH;
-
-    // Bottom row geometry (matches resized())
+    const auto lo = Layout::compute(getWidth(), getHeight());
     const int bx = 0;
-    const int by = getHeight() - kBottomH;
     const int bw = getWidth();
-    const int devW = 48;
-    const int reverbX = bx + bw - devW - kReverbSectionW;
-    const int orbitTotalW = reverbX - bx;
-    const int contentTop = by + kSectionHdrH;
 
     // ===== BACKGROUNDS =====
     g.fillAll(juce::Colour(ALF::kBackground));
 
     // Left column background (below preset bar)
     g.setColour(juce::Colour(ALF::kDarkIron));
-    g.fillRect(0, contentY, kLeftColW, leftColH);
+    g.fillRect(0, lo.contentY, kLeftColW, lo.leftColH);
 
     // Bottom row background
     g.setColour(juce::Colour(ALF::kDarkIron));
-    g.fillRect(0, by, bw, kBottomH);
+    g.fillRect(0, lo.bottomY, bw, kBottomH);
 
     // ===== SECTION HEADERS =====
 
@@ -314,35 +316,35 @@ void XYZPanEditor::paint(juce::Graphics& g)
     };
 
     // "POSITION" header — top of left column (below preset bar)
-    drawHeader(0, contentY, kLeftColW, "POSITION");
+    drawHeader(0, lo.contentY, kLeftColW, "POSITION");
 
     // "UTILITIES" header — at position/utilities boundary
-    drawHeader(0, miscTop, kLeftColW, "UTILITIES");
+    drawHeader(0, lo.miscTop, kLeftColW, "UTILITIES");
 
     // "STEREO ORBIT" header — bottom row, orbit portion
-    drawHeader(bx, by, orbitTotalW, "STEREO ORBIT");
+    drawHeader(bx, lo.bottomY, lo.orbitTotalW, "STEREO ORBIT");
 
     // "REVERB" header — bottom row, reverb portion
-    drawHeader(reverbX, by, kReverbSectionW + devW, "REVERB");
+    drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW + lo.devW, "REVERB");
 
     // ===== DIVIDERS — POSITION SECTION =====
     // Thin bronze separator above LFO Speed slider row
     {
         const int lfoSpeedRowH = 32;
-        const int lfoSpeedSepY = miscTop - lfoSpeedRowH;
+        const int lfoSpeedSepY = lo.miscTop - lfoSpeedRowH;
         g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.4f));
         g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
     }
 
     // Thick horizontal divider between Position and Utilities
     g.setColour(juce::Colour(ALF::kBronze));
-    g.fillRect(0, miscTop - 1, kLeftColW, 2);
+    g.fillRect(0, lo.miscTop - 1, kLeftColW, 2);
 
     // Vertical dividers between X | Y | Z sub-columns
     {
         const int subColW = kLeftColW / 3;
-        const float divTop = static_cast<float>(contentY + kSectionHdrH);
-        const float divBot = static_cast<float>(miscTop - 1);
+        const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
+        const float divBot = static_cast<float>(lo.miscTop - 1);
         g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
         g.drawVerticalLine(subColW * 2, divTop, divBot);
@@ -351,18 +353,18 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // ===== DIVIDERS — BOTTOM ROW =====
     // Vertical divider between orbit controls and orbit LFO strips
     g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
-    g.drawVerticalLine(bx + kOrbitCtrlW, static_cast<float>(contentTop), static_cast<float>(by + kBottomH));
+    g.drawVerticalLine(bx + kOrbitCtrlW, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
 
     // Vertical dividers between orbit LFO strips (XY | XZ | YZ)
     // and thin horizontal separator above orbit speed row
     {
         const int lfoX = bx + kOrbitCtrlW;
-        const int lfoTotalW = orbitTotalW - kOrbitCtrlW;
+        const int lfoTotalW = lo.orbitTotalW - kOrbitCtrlW;
         const int stripW = lfoTotalW / 3;
         const int speedRowH = 32;
-        const int speedSepY = by + kBottomH - speedRowH;
-        g.drawVerticalLine(lfoX + stripW,     static_cast<float>(contentTop), static_cast<float>(speedSepY));
-        g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(contentTop), static_cast<float>(speedSepY));
+        const int speedSepY = lo.bottomY + kBottomH - speedRowH;
+        g.drawVerticalLine(lfoX + stripW,     static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
+        g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
         // Thin bronze separator above orbit speed slider row
         g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.4f));
         g.drawHorizontalLine(speedSepY, static_cast<float>(lfoX), static_cast<float>(lfoX + lfoTotalW));
@@ -370,15 +372,15 @@ void XYZPanEditor::paint(juce::Graphics& g)
 
     // Vertical divider between orbit section and reverb section
     g.setColour(juce::Colour(ALF::kBronze));
-    g.fillRect(reverbX - 1, by, 2, kBottomH);
+    g.fillRect(lo.reverbX - 1, lo.bottomY, 2, kBottomH);
 
     // ===== MAIN STRUCTURAL DIVIDERS =====
     // Vertical separator (left column | GL view), from below preset bar
     g.setColour(juce::Colour(ALF::kBronze));
-    g.fillRect(kLeftColW - 1, contentY, 2, leftColH);
+    g.fillRect(kLeftColW - 1, lo.contentY, 2, lo.leftColH);
 
     // Horizontal separator (above bottom row)
-    g.fillRect(0, by, bw, 2);
+    g.fillRect(0, lo.bottomY, bw, 2);
 
     // Thin separator below preset bar
     g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
@@ -409,6 +411,9 @@ void XYZPanEditor::resized()
     // Remainder = GL view area
     auto glArea = b;
 
+    // Shared structural geometry — used by both left column and bottom row blocks
+    const auto lo = Layout::compute(getWidth(), getHeight());
+
     // ===== GL VIEW =====
     glView_.setBounds(glArea);
 
@@ -431,7 +436,6 @@ void XYZPanEditor::resized()
 
     // ===== LEFT COLUMN — POSITION + UTILITIES =====
     const int leftColTop = leftCol.getY();  // = kPresetBarH after preset bar removed
-    const int leftColH = leftCol.getHeight();
     const int posColW = kLeftColW / 3;
     const int knobH   = 108;
     const int labelH  = 16;
@@ -439,17 +443,14 @@ void XYZPanEditor::resized()
     const int posKnobRowH = posPad + knobH + labelH + 2;
 
     // Utilities section (sphere + doppler) is fixed at bottom of left column
-    const int miscTotalH = kSectionHdrH + kMiscSectionH;  // 24 + 80 = 104
-
-    // Position section gets everything above utilities
-    const int posSectionH = leftColH - miscTotalH;
-    const int miscTop = leftColTop + posSectionH;
+    // Position section gets everything above utilities — use shared Layout for miscTop
+    const int miscTop = lo.miscTop;
 
     // --- POSITION SECTION ---
     {
         // Reserve 32px at the bottom of the position section for the LFO Speed slider
         const int lfoSpeedRowH = 32;
-        const int posSectionBottom = leftColTop + kSectionHdrH + (posSectionH - kSectionHdrH) - lfoSpeedRowH;
+        const int posSectionBottom = miscTop - lfoSpeedRowH;
         auto posSection = juce::Rectangle<int>(0, leftColTop + kSectionHdrH, kLeftColW,
                                                posSectionBottom - (leftColTop + kSectionHdrH));
 
@@ -509,17 +510,14 @@ void XYZPanEditor::resized()
     // ===== BOTTOM ROW =====
     {
         const int bx = bottomRow.getX();
-        const int by = bottomRow.getY();
         const int bw = bottomRow.getWidth();
         const int contentH = kBottomH - kSectionHdrH;  // 216
-        const int contentTop = by + kSectionHdrH;
-        const int devW = 48;
 
-        // Reverb section: fixed width from right edge (before DEV toggle)
-        const int reverbX = bx + bw - devW - kReverbSectionW;
-
-        // Orbit section: everything to the left of reverb
-        const int orbitTotalW = reverbX - bx;
+        // Use shared Layout for structural geometry (reverb/orbit split, dev button position)
+        const int contentTop = lo.contentTop;
+        const int devW       = lo.devW;
+        const int reverbX    = lo.reverbX;
+        const int orbitTotalW = lo.orbitTotalW;
 
         // --- ORBIT CONTROLS (fixed 240px left portion of orbit section) ---
         {
@@ -591,7 +589,7 @@ void XYZPanEditor::resized()
         }
 
         // --- DEV toggle (far-right corner) ---
-        devToggle_.setBounds(bx + bw - devW + 4, by + (kBottomH - 24) / 2, devW - 8, 24);
+        devToggle_.setBounds(bx + bw - devW + 4, lo.bottomY + (kBottomH - 24) / 2, devW - 8, 24);
     }
 }
 
