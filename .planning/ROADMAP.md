@@ -166,7 +166,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 **Goal:** Resize default window to landscape (1100x750), fix multi-instance LookAndFeel safety bug, fully theme ToggleButton/ComboBox/PopupMenu with Alchemy palette overrides, extract shared layout struct, add snap button active state feedback, and convert orbit sliders to rotary knobs for visual consistency
 **Requirements**: UI-OVH-01, UI-OVH-02, UI-OVH-03, UI-OVH-04, UI-OVH-05, UI-OVH-06, UI-OVH-07, UI-OVH-08, UI-OVH-09
 **Depends on:** Phase 07.4
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] 07.5-01-PLAN.md — Window resize (1100x750), setDefaultLookAndFeel removal, Layout struct extraction, LFO strip height verification
