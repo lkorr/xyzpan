@@ -55,6 +55,22 @@ public:
                           bool shouldDrawButtonAsHighlighted,
                           bool shouldDrawButtonAsDown) override;
 
+    // ComboBox: dark iron background, bronze border, gold dropdown arrow
+    void drawComboBox(juce::Graphics& g, int width, int height,
+                      bool isButtonDown,
+                      int buttonX, int buttonY, int buttonW, int buttonH,
+                      juce::ComboBox& box) override;
+
+    // PopupMenu item: dark iron background, parchment text, bronze highlight, gold tick dot
+    void drawPopupMenuItem(juce::Graphics& g,
+                           const juce::Rectangle<int>& area,
+                           bool isSeparator, bool isActive,
+                           bool isHighlighted, bool isTicked, bool hasSubMenu,
+                           const juce::String& text,
+                           const juce::String& shortcutKeyText,
+                           const juce::Drawable* icon,
+                           const juce::Colour* textColour) override;
+
     // Alchemy color constants — accessible for OpenGL renderer to match
     static constexpr uint32_t kBackground  = 0xFF110B1Au;
     static constexpr uint32_t kDarkIron    = 0xFF1C1228u;

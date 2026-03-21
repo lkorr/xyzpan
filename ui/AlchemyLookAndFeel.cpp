@@ -207,6 +207,82 @@ void AlchemyLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
 }
 
 // ---------------------------------------------------------------------------
+void AlchemyLookAndFeel::drawComboBox(
+    juce::Graphics& g, int width, int height,
+    bool isButtonDown,
+    int /*buttonX*/, int /*buttonY*/, int /*buttonW*/, int /*buttonH*/,
+    juce::ComboBox& box)
+{
+    const auto bounds = juce::Rectangle<float>(0.0f, 0.0f,
+        static_cast<float>(width), static_cast<float>(height));
+
+    g.setColour(juce::Colour(kDarkIron));
+    g.fillRoundedRectangle(bounds, 3.0f);
+
+    g.setColour(isButtonDown ? juce::Colour(kWarmGold) : juce::Colour(kBronze));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+
+    {
+        const float arrowH = static_cast<float>(height) * 0.3f;
+        const float arrowW = arrowH * 1.2f;
+        const float arrowX = static_cast<float>(width) - arrowW - 8.0f;
+        const float arrowY = (static_cast<float>(height) - arrowH) * 0.5f;
+
+        juce::Path arrow;
+        arrow.addTriangle(arrowX, arrowY,
+                          arrowX + arrowW, arrowY,
+                          arrowX + arrowW * 0.5f, arrowY + arrowH);
+        g.setColour(juce::Colour(kWarmGold).withAlpha(box.isEnabled() ? 1.0f : 0.4f));
+        g.fillPath(arrow);
+    }
+}
+
+// ---------------------------------------------------------------------------
+void AlchemyLookAndFeel::drawPopupMenuItem(
+    juce::Graphics& g,
+    const juce::Rectangle<int>& area,
+    bool isSeparator, bool isActive,
+    bool isHighlighted, bool isTicked, bool /*hasSubMenu*/,
+    const juce::String& text,
+    const juce::String& /*shortcutKeyText*/,
+    const juce::Drawable* /*icon*/,
+    const juce::Colour* /*textColour*/)
+{
+    if (isSeparator)
+    {
+        g.setColour(juce::Colour(kBronze).withAlpha(0.4f));
+        g.fillRect(area.reduced(5, 0).removeFromTop(1));
+        return;
+    }
+
+    if (isHighlighted && isActive)
+    {
+        g.setColour(juce::Colour(kBronze).withAlpha(0.25f));
+        g.fillRect(area);
+    }
+
+    g.setFont(juce::Font(juce::FontOptions(
+        juce::jmin(14.0f, static_cast<float>(area.getHeight()) * 0.7f))));
+
+    juce::Colour textCol = isActive
+        ? juce::Colour(kParchment) : juce::Colour(kParchment).withAlpha(0.4f);
+    if (isHighlighted && isActive) textCol = juce::Colour(kBrightGold);
+    if (isTicked) textCol = juce::Colour(kWarmGold);
+
+    g.setColour(textCol);
+    g.drawText(text, area.reduced(12, 0), juce::Justification::centredLeft, true);
+
+    if (isTicked)
+    {
+        const float dotR = 3.0f;
+        const float dotX = static_cast<float>(area.getX()) + 5.0f;
+        const float dotY = static_cast<float>(area.getCentreY());
+        g.setColour(juce::Colour(kWarmGold));
+        g.fillEllipse(dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
+    }
+}
+
+// ---------------------------------------------------------------------------
 void AlchemyLookAndFeel::drawToggleButton(
     juce::Graphics& g, juce::ToggleButton& button,
     bool shouldDrawButtonAsHighlighted,
