@@ -161,6 +161,18 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 | 6. UI and Parameter System | 3/4 | In Progress|  |
 | 7. Integration and Validation | 2/2 | Complete   | 2026-03-18 |
 
+### Phase 07.5: VST UI Design Overhaul (INSERTED)
+
+**Goal:** Resize default window to landscape (1100x750), fix multi-instance LookAndFeel safety bug, fully theme ToggleButton/ComboBox/PopupMenu with Alchemy palette overrides, extract shared layout struct, add snap button active state feedback, and convert orbit sliders to rotary knobs for visual consistency
+**Requirements**: UI-OVH-01, UI-OVH-02, UI-OVH-03, UI-OVH-04, UI-OVH-05, UI-OVH-06, UI-OVH-07, UI-OVH-08, UI-OVH-09
+**Depends on:** Phase 07.4
+**Plans:** 3 plans
+
+Plans:
+- [ ] 07.5-01-PLAN.md — Window resize (1100x750), setDefaultLookAndFeel removal, Layout struct extraction, LFO strip height verification
+- [ ] 07.5-02-PLAN.md — AlchemyLookAndFeel overrides: drawToggleButton, drawComboBox, drawPopupMenuItem
+- [ ] 07.5-03-PLAN.md — Snap button active state (ToggleButton conversion), orbit rotary knob conversion, visual verification checkpoint
+
 ### Phase 07.4: Presets (INSERTED)
 
 **Goal:** Implement a safe VST preset system with 7 factory presets (embedded XML strings in Presets.h), PluginProcessor program methods (getNumPrograms/setCurrentProgram), in-editor preset dropdown with user save/load, and comprehensive round-trip tests -- all with zero audio-thread memory allocation
