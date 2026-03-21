@@ -172,4 +172,38 @@ namespace ParamID {
     constexpr const char* TEST_TONE_PITCH_HZ = "test_tone_pitch_hz";
     constexpr const char* TEST_TONE_PULSE_HZ = "test_tone_pulse_hz";
     constexpr const char* TEST_TONE_WAVEFORM = "test_tone_waveform";
+
+    // Dev panel: Delay line interpolation mode
+    constexpr const char* DELAY_INTERP_MODE = "delay_interp_mode";
+
+    // Dev panel: Expanded pinna EQ (P5)
+    constexpr const char* CONCHA_NOTCH_FREQ_HZ  = "concha_notch_freq_hz";
+    constexpr const char* CONCHA_NOTCH_Q        = "concha_notch_q";
+    constexpr const char* CONCHA_NOTCH_MAX_DB   = "concha_notch_max_db";
+    constexpr const char* UPPER_PINNA_FREQ_HZ   = "upper_pinna_freq_hz";
+    constexpr const char* UPPER_PINNA_Q         = "upper_pinna_q";
+    constexpr const char* UPPER_PINNA_MIN_DB    = "upper_pinna_min_db";
+    constexpr const char* UPPER_PINNA_MAX_DB    = "upper_pinna_max_db";
+    constexpr const char* SHOULDER_PEAK_FREQ_HZ = "shoulder_peak_freq_hz";
+    constexpr const char* SHOULDER_PEAK_Q       = "shoulder_peak_q";
+    constexpr const char* SHOULDER_PEAK_MAX_DB  = "shoulder_peak_max_db";
+    constexpr const char* TRAGUS_NOTCH_FREQ_HZ  = "tragus_notch_freq_hz";
+    constexpr const char* TRAGUS_NOTCH_Q        = "tragus_notch_q";
+    constexpr const char* TRAGUS_NOTCH_MAX_DB   = "tragus_notch_max_db";
+    constexpr const char* BYPASS_EXPANDED_PINNA = "bypass_expanded_pinna";
+
+    // Dev panel: Per-feature bypass toggles
+    constexpr const char* BYPASS_ITD         = "bypass_itd";
+    constexpr const char* BYPASS_HEAD_SHADOW = "bypass_head_shadow";
+    constexpr const char* BYPASS_ILD         = "bypass_ild";
+    constexpr const char* BYPASS_NEAR_FIELD  = "bypass_near_field";
+    constexpr const char* BYPASS_REAR_SHADOW = "bypass_rear_shadow";
+    constexpr const char* BYPASS_PINNA_EQ    = "bypass_pinna_eq";
+    constexpr const char* BYPASS_COMB        = "bypass_comb";
+    constexpr const char* BYPASS_CHEST       = "bypass_chest";
+    constexpr const char* BYPASS_FLOOR       = "bypass_floor";
+    constexpr const char* BYPASS_DIST_GAIN   = "bypass_dist_gain";
+    constexpr const char* BYPASS_DOPPLER     = "bypass_doppler";
+    constexpr const char* BYPASS_AIR_ABS     = "bypass_air_abs";
+    constexpr const char* BYPASS_REVERB      = "bypass_reverb";
 } // namespace ParamID

@@ -8,14 +8,15 @@
 //   - Power-of-2 buffer size with bitmask wraparound (never modulo).
 //   - prepare() allocates and zeros the buffer.
 //   - push() writes one sample at writePos_ and advances.
-//   - read(delayInSamples) returns interpolated sample at a fractional position
-//     in the past. 0.0 = most recent sample, positive = older.
+//   - read(delayInSamples) returns Hermite-interpolated sample (backward compat).
+//   - read(delayInSamples, interpMode) dispatches to Hermite (0) or Sinc 2/4/8/16 (1-4).
 //   - reset() zeros all state.
 //   - Zero allocation in push/read/reset after prepare().
 //
 // Source: demofox.org/2015/08/08/cubic-hermite-interpolation/
 //         (bitmask ring buffer pattern, standard audio DSP)
 
+#include "xyzpan/dsp/SincTable.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -25,10 +26,11 @@ namespace xyzpan::dsp {
 class FractionalDelayLine {
 public:
     // Allocate the ring buffer with at least capacitySamples usable delay.
-    // Internal size is next power-of-2 >= capacitySamples + 4 (Hermite lookahead).
+    // Internal size is next power-of-2 >= capacitySamples + padding.
+    // Padding = 2 * SincTable::kLobes (16) to accommodate both Hermite (4) and Sinc (16).
     void prepare(int capacitySamples) {
         int n = 1;
-        while (n < capacitySamples + 4) n <<= 1;
+        while (n < capacitySamples + 2 * SincTable::kLobes) n <<= 1;
         mask_     = n - 1;
         buf_.assign(static_cast<size_t>(n), 0.0f);
         writePos_ = 0;
@@ -46,65 +48,74 @@ public:
         ++writePos_;
     }
 
-    // Read the buffer at a fractional delay past the most recent sample.
+    // Read the buffer at a fractional delay — backward-compatible Hermite path.
     //   delayInSamples == 0.0 returns the most recent pushed sample.
-    //   delayInSamples == 1.0 returns the sample pushed before that, etc.
-    //   Must satisfy: 0 <= delayInSamples < (buffer_size - 4).
-    //
-    // Cubic Hermite interpolation (Catmull-Rom).
-    // Sample ordering (oldest to newest):
-    //   A = sample at integer delay d+1  (one older than d)
-    //   B = sample at integer delay d    (floor of requested delay)
-    //   C = sample at integer delay d-1  (one newer than d)
-    //   D = sample at integer delay d-2  (two newer than d, i.e., the very recent one)
-    //
-    // Wait — for a delay line, "older" samples are at larger index offsets from writePos_.
-    // writePos_ - 1 is the most recently written sample.
-    // writePos_ - 1 - d is the sample written d steps ago.
-    //
-    // We need 4 successive samples in time order (oldest to newest) straddling d:
-    //   B = sample at position (writePos_ - 1 - d)         [integer delay d]
-    //   C = sample at position (writePos_ - 1 - d + 1)     [newer by 1, delay d-1]
-    //   A = sample at position (writePos_ - 1 - d - 1)     [older by 1, delay d+1]
-    //   D = sample at position (writePos_ - 1 - d + 2)     [newer by 2, delay d-2]
-    //
-    // In Catmull-Rom convention: A=p[i-1], B=p[i], C=p[i+1], D=p[i+2]
-    // where we interpolate between B and C at fraction t in [0,1).
-    // B is the sample at integer delay d (floor of delayInSamples).
-    // C is one sample newer (delay d-1), so t=0 gives B, t=1 gives C.
-    //
-    // Formula: ((a*t + b)*t + c)*t + B   (Horner's method)
-    //   a = -0.5*A + 1.5*B - 1.5*C + 0.5*D
-    //   b =       A - 2.5*B + 2.0*C - 0.5*D
-    //   c = -0.5*A          + 0.5*C
-    //
+    //   Must satisfy: 0 <= delayInSamples < (buffer_size - 2*kLobes).
     float read(float delayInSamples) const {
+        return readHermite(delayInSamples);
+    }
+
+    // Read with selectable interpolation mode.
+    //   interpMode == 0 → Hermite (4-point cubic, fast)
+    //   interpMode == 1 → Sinc 2-tap
+    //   interpMode == 2 → Sinc 4-tap
+    //   interpMode == 3 → Sinc 8-tap
+    //   interpMode == 4 → Sinc 16-tap
+    //   interpMode == 5 → ZOH (nearest neighbor — intentionally terrible)
+    float read(float delayInSamples, int interpMode) const {
+        if (interpMode == 5) return readZOH(delayInSamples);
+        if (interpMode >= 1) {
+            static constexpr int tapCounts[] = { 2, 4, 8, 16 };
+            const int idx = std::clamp(interpMode - 1, 0, 3);
+            return readSinc(delayInSamples, tapCounts[idx]);
+        }
+        return readHermite(delayInSamples);
+    }
+
+private:
+    // Cubic Hermite interpolation (Catmull-Rom) — 4 taps.
+    float readHermite(float delayInSamples) const {
         int d   = static_cast<int>(delayInSamples);
         float t = delayInSamples - static_cast<float>(d);
 
-        // Base position: most recently written sample is at writePos_ - 1.
+        // Invert fractional part so interpolation moves toward OLDER samples.
+        // delay 5.7 → d=6, t=0.3: "at integer delay 6, 30% toward delay 5 (newer)"
+        if (t > 0.0f) { t = 1.0f - t; d += 1; }
+
         int base = writePos_ - 1 - d;
 
-        // A, B, C, D ordered oldest to newest in time
-        // A = delay d+1 (one sample older than d)
-        // B = delay d   (the integer-delay sample — interpolation anchor)
-        // C = delay d-1 (one sample newer)
-        // D = delay d-2 (two samples newer)
         float A = buf_[static_cast<size_t>((base - 1) & mask_)];
         float B = buf_[static_cast<size_t>((base    ) & mask_)];
         float C = buf_[static_cast<size_t>((base + 1) & mask_)];
         float D = buf_[static_cast<size_t>((base + 2) & mask_)];
 
-        // Catmull-Rom / cubic Hermite coefficients
         float a = -0.5f*A + 1.5f*B - 1.5f*C + 0.5f*D;
         float b =        A - 2.5f*B + 2.0f*C - 0.5f*D;
         float c = -0.5f*A           + 0.5f*C;
-        // d coefficient is B (constant term)
 
-        return ((a * t + b) * t + c) * t + B;  // Horner's method
+        return ((a * t + b) * t + c) * t + B;
     }
 
-private:
+    // Polyphase windowed-sinc interpolation — up to 16 taps.
+    float readSinc(float delayInSamples, int activeTaps = 16) const {
+        int d   = static_cast<int>(delayInSamples);
+        float t = delayInSamples - static_cast<float>(d);
+
+        // Invert fractional part so interpolation moves toward OLDER samples.
+        if (t > 0.0f) { t = 1.0f - t; d += 1; }
+
+        int base = writePos_ - 1 - d;
+
+        return SincTable::interpolate(buf_.data(), mask_, base, t, activeTaps);
+    }
+
+    // Zero-order hold (nearest neighbor) — no interpolation at all.
+    // Intentionally terrible: produces zipper noise and quantization artifacts.
+    float readZOH(float delayInSamples) const {
+        const int pos = (writePos_ - static_cast<int>(std::round(delayInSamples))) & mask_;
+        return buf_[static_cast<size_t>(pos)];
+    }
+
     std::vector<float> buf_;
     int mask_     = 0;
     int writePos_ = 0;

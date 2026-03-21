@@ -81,6 +81,40 @@ namespace {
     constexpr const char* kTEST_TONE_PITCH_HZ = "test_tone_pitch_hz";
     constexpr const char* kTEST_TONE_PULSE_HZ = "test_tone_pulse_hz";
     constexpr const char* kTEST_TONE_WAVEFORM = "test_tone_waveform";
+
+    // Interpolation
+    constexpr const char* kDELAY_INTERP_MODE  = "delay_interp_mode";
+
+    // Expanded pinna EQ (P5)
+    constexpr const char* kSHOULDER_PEAK_FREQ = "shoulder_peak_freq_hz";
+    constexpr const char* kSHOULDER_PEAK_Q    = "shoulder_peak_q";
+    constexpr const char* kSHOULDER_PEAK_MAX_DB = "shoulder_peak_max_db";
+    constexpr const char* kCONCHA_NOTCH_FREQ  = "concha_notch_freq_hz";
+    constexpr const char* kCONCHA_NOTCH_Q     = "concha_notch_q";
+    constexpr const char* kCONCHA_NOTCH_MAX_DB = "concha_notch_max_db";
+    constexpr const char* kUPPER_PINNA_FREQ   = "upper_pinna_freq_hz";
+    constexpr const char* kUPPER_PINNA_Q      = "upper_pinna_q";
+    constexpr const char* kUPPER_PINNA_MIN_DB = "upper_pinna_min_db";
+    constexpr const char* kUPPER_PINNA_MAX_DB = "upper_pinna_max_db";
+    constexpr const char* kTRAGUS_NOTCH_FREQ  = "tragus_notch_freq_hz";
+    constexpr const char* kTRAGUS_NOTCH_Q     = "tragus_notch_q";
+    constexpr const char* kTRAGUS_NOTCH_MAX_DB = "tragus_notch_max_db";
+    constexpr const char* kBYPASS_EXPANDED_PINNA = "bypass_expanded_pinna";
+
+    // Per-feature bypass toggles
+    constexpr const char* kBYPASS_ITD         = "bypass_itd";
+    constexpr const char* kBYPASS_HEAD_SHADOW = "bypass_head_shadow";
+    constexpr const char* kBYPASS_ILD         = "bypass_ild";
+    constexpr const char* kBYPASS_NEAR_FIELD  = "bypass_near_field";
+    constexpr const char* kBYPASS_REAR_SHADOW = "bypass_rear_shadow";
+    constexpr const char* kBYPASS_PINNA_EQ    = "bypass_pinna_eq";
+    constexpr const char* kBYPASS_COMB        = "bypass_comb";
+    constexpr const char* kBYPASS_CHEST       = "bypass_chest";
+    constexpr const char* kBYPASS_FLOOR       = "bypass_floor";
+    constexpr const char* kBYPASS_DIST_GAIN   = "bypass_dist_gain";
+    constexpr const char* kBYPASS_DOPPLER     = "bypass_doppler";
+    constexpr const char* kBYPASS_AIR_ABS     = "bypass_air_abs";
+    constexpr const char* kBYPASS_REVERB      = "bypass_reverb";
 }
 
 const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDescriptions()
@@ -150,6 +184,41 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         // Geometry
         { "sphere_radius",       "Radius of the spatial sphere in world units. All source positions are normalised to this radius. Larger values spread the spatial field wider." },
 
+        // Interpolation
+        { "delay_interp_mode",   "Delay line interpolation. 0 = Hermite (4-tap cubic). 1 = Sinc 2-tap. 2 = Sinc 4-tap. 3 = Sinc 8-tap. 4 = Sinc 16-tap. 5 = ZOH (nearest-neighbor, intentionally terrible). Applies to ALL delay lines." },
+
+        // Per-feature bypass toggles
+        { "bypass_itd",         "Bypass interaural time difference. Removes the delay offset between ears — the primary low-frequency azimuth cue." },
+        { "bypass_head_shadow", "Bypass head shadow low-pass filter. Removes the far-ear HF attenuation that models the head blocking high frequencies." },
+        { "bypass_ild",         "Bypass interaural level difference. Removes the far-ear gain reduction — the primary high-frequency azimuth cue." },
+        { "bypass_near_field",  "Bypass near-field LF boost. Removes the proximity-effect bass lift on the near ear at close range." },
+        { "bypass_rear_shadow", "Bypass rear shadow low-pass filter. Removes the HF rolloff applied to sources behind the listener." },
+        { "bypass_pinna_eq",    "Bypass all pinna EQ (presence shelf, ear canal, P1 peak, N1/N2 notches, pinna shelf). Removes all elevation spectral cues." },
+        { "bypass_comb",        "Bypass comb filter bank. Removes the pinna interference pattern that provides elevation detail." },
+        { "bypass_chest",       "Bypass chest bounce reflection. Removes the early reflection cue for below-horizon sources." },
+        { "bypass_floor",       "Bypass floor bounce reflection. Removes the ground-plane early reflection cue." },
+        { "bypass_dist_gain",   "Bypass distance gain attenuation. Removes the inverse-square-law volume reduction with distance." },
+        { "bypass_doppler",     "Bypass doppler / propagation delay. Removes the distance-dependent time delay and pitch shift." },
+        { "bypass_air_abs",     "Bypass air absorption low-pass filters (both stages). Removes the HF rolloff that models atmospheric absorption at distance." },
+        { "bypass_reverb",      "Bypass FDN reverb wet signal. Removes the reverb tail while keeping the FDN state fed for click-free re-enable." },
+
+        // Expanded Pinna EQ (P5)
+        { "shoulder_peak_freq_hz", "Centre frequency of the shoulder reflection peak. A low-frequency boost around 1.5 kHz from torso reflections, strongest when the source is below the horizontal plane." },
+        { "shoulder_peak_q",       "Q (bandwidth) of the shoulder reflection peak. Lower Q = broader effect." },
+        { "shoulder_peak_max_db",  "Maximum boost of the shoulder peak in dB at Z=-1 (source fully below). Fades to 0 dB at Z=+1 (above)." },
+        { "concha_notch_freq_hz",  "Centre frequency of the concha notch. The concha (ear bowl) creates a resonant notch around 4 kHz, deepest when the source is below." },
+        { "concha_notch_q",        "Q of the concha notch. Higher Q = narrower, more selective notch." },
+        { "concha_notch_max_db",   "Maximum depth of the concha notch in dB at Z=-1 (below). 0 dB when source is above." },
+        { "upper_pinna_freq_hz",   "Centre frequency of the upper pinna peak. The upper pinna ridge creates a peak around 12 kHz whose gain changes with elevation." },
+        { "upper_pinna_q",         "Q of the upper pinna peak. Higher Q = narrower resonance." },
+        { "upper_pinna_min_db",    "Gain of the upper pinna peak at Z=-1 (below). Typically negative (attenuation from below)." },
+        { "upper_pinna_max_db",    "Gain of the upper pinna peak at Z=+1 (above). Typically positive (boost from above)." },
+        { "tragus_notch_freq_hz",  "Centre frequency of the tragus notch. The tragus flap creates an 8.5 kHz notch active only when the source is behind AND below the listener." },
+        { "tragus_notch_q",        "Q of the tragus notch. Higher Q = more selective. The tragus notch is typically narrow (Q ~ 3-4)." },
+        { "tragus_notch_max_db",   "Maximum depth of the tragus notch in dB. Joint Y+Z mapping: only active when source is behind (Y<0) and below (Z<0)." },
+        { "bypass_expanded_pinna", "Bypass all 4 expanded pinna bands (shoulder, concha, upper pinna, tragus). Core 6 pinna bands are unaffected by this toggle." },
+        { "section:Expanded Pinna", "4 additional pinna EQ bands modelling concha, upper pinna, shoulder reflection, and tragus notch. Independent bypass from the core 6 pinna bands." },
+
         // Section descriptions
         { "section:Test Tone",        "Built-in signal generator for auditioning spatial DSP cues without needing external audio input." },
         { "section:X-Axis: Left/Right", "Azimuth (left/right) cues: interaural time difference (ITD), interaural level difference (ILD), and head shadow filtering." },
@@ -159,6 +228,7 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "section:Comb Filters",        "10-line pinna comb filter bank. Models complex interference patterns of the outer ear at different elevations." },
         { "section:Distance",          "Distance rendering: propagation delay, air absorption low-pass, gain attenuation, and aux reverb send." },
         { "section:Smoothing",         "Parameter smoothing time constants. Control how quickly DSP coefficients update during source motion to balance responsiveness vs. artefacts." },
+        { "section:Interpolation",     "Delay line interpolation algorithm. Sweep from Hermite (4-tap) through Sinc 2/4/8/16 to compare CPU cost and audible artefacts. Mode 5 (ZOH) is intentionally terrible for diagnostics." },
         // Readout descriptions
         { "readout:ITD Samples",   "Current interaural time difference in samples. Positive = right ear delayed. Derived from azimuth angle and itd_max_ms." },
         { "readout:Shadow Cutoff", "Current head-shadow low-pass cutoff in Hz. Varies with azimuth — lower when source is far to one side." },
@@ -201,6 +271,10 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     // Section 2: X-Axis — Left/Right (binaural azimuth cues)
     // -------------------------------------------------------------------
     beginSection("X-Axis: Left/Right");
+    addDevToggle(kBYPASS_ITD,         apvts);
+    addDevToggle(kBYPASS_HEAD_SHADOW, apvts);
+    addDevToggle(kBYPASS_ILD,         apvts);
+    addDevToggle(kBYPASS_NEAR_FIELD,  apvts);
     addDevSlider(kITD_MAX_MS,               apvts);
     addDevSlider(kHEAD_SHADOW_HZ,           apvts);
     addDevSlider(kHEAD_SHADOW_FULL_OPEN_HZ, apvts);
@@ -219,6 +293,7 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     // Section 3: Y-Axis — Front/Back (front-rear spectral cues)
     // -------------------------------------------------------------------
     beginSection("Y-Axis: Front/Back");
+    addDevToggle(kBYPASS_REAR_SHADOW, apvts);
     addDevSlider(kREAR_SHADOW_HZ,    apvts);
     addDevSlider(kPRES_SHELF_FREQ,   apvts);
     addDevSlider(kPRES_SHELF_MAX_DB, apvts);
@@ -233,6 +308,7 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     // Section 4: Z-Axis — Above (pinna spectral shaping)
     // -------------------------------------------------------------------
     beginSection("Z-Axis: Above");
+    addDevToggle(kBYPASS_PINNA_EQ,   apvts);
     addDevSlider(kPINNA_NOTCH_HZ,    apvts);
     addDevSlider(kPINNA_NOTCH_Q,     apvts);
     addDevSlider(kPINNA_N1_MIN_HZ,   apvts);
@@ -246,9 +322,30 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kPINNA_SHELF_HZ,    apvts);
 
     // -------------------------------------------------------------------
+    // Section 4b: Expanded Pinna (P5 — 4 additional bands)
+    // -------------------------------------------------------------------
+    beginSection("Expanded Pinna");
+    addDevToggle(kBYPASS_EXPANDED_PINNA, apvts);
+    addDevSlider(kSHOULDER_PEAK_FREQ,  apvts);
+    addDevSlider(kSHOULDER_PEAK_Q,     apvts);
+    addDevSlider(kSHOULDER_PEAK_MAX_DB, apvts);
+    addDevSlider(kCONCHA_NOTCH_FREQ,   apvts);
+    addDevSlider(kCONCHA_NOTCH_Q,      apvts);
+    addDevSlider(kCONCHA_NOTCH_MAX_DB, apvts);
+    addDevSlider(kUPPER_PINNA_FREQ,    apvts);
+    addDevSlider(kUPPER_PINNA_Q,       apvts);
+    addDevSlider(kUPPER_PINNA_MIN_DB,  apvts);
+    addDevSlider(kUPPER_PINNA_MAX_DB,  apvts);
+    addDevSlider(kTRAGUS_NOTCH_FREQ,   apvts);
+    addDevSlider(kTRAGUS_NOTCH_Q,      apvts);
+    addDevSlider(kTRAGUS_NOTCH_MAX_DB, apvts);
+
+    // -------------------------------------------------------------------
     // Section 5: Z-Axis — Below (chest/floor reflections)
     // -------------------------------------------------------------------
     beginSection("Z-Axis: Below");
+    addDevToggle(kBYPASS_CHEST,      apvts);
+    addDevToggle(kBYPASS_FLOOR,      apvts);
     addDevSlider(kCHEST_DELAY_MS,    apvts);
     addDevSlider(kCHEST_GAIN_DB,     apvts);
     addDevSlider(kFLOOR_DELAY_MS,    apvts);
@@ -259,6 +356,7 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     // Section 6: Comb Filters (pinna comb bank)
     // -------------------------------------------------------------------
     beginSection("Comb Filters");
+    addDevToggle(kBYPASS_COMB,       apvts);
     for (int i = 0; i < 10; ++i)
         addDevSlider(kCOMB_DELAY[i], apvts);
     for (int i = 0; i < 10; ++i)
@@ -272,6 +370,10 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     // Section 7: Distance (propagation cues)
     // -------------------------------------------------------------------
     beginSection("Distance");
+    addDevToggle(kBYPASS_DIST_GAIN,   apvts);
+    addDevToggle(kBYPASS_DOPPLER,     apvts);
+    addDevToggle(kBYPASS_AIR_ABS,     apvts);
+    addDevToggle(kBYPASS_REVERB,      apvts);
     addDevSlider(kDIST_DELAY_MAX_MS,  apvts);
     addDevSlider(kDIST_SMOOTH_MS,     apvts);
     addDevSlider(kDIST_GAIN_FLOOR_DB, apvts);
@@ -288,7 +390,13 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     }
 
     // -------------------------------------------------------------------
-    // Section 8: Smoothing (cross-axis utility)
+    // Section 8: Interpolation (delay line algorithm switch)
+    // -------------------------------------------------------------------
+    beginSection("Interpolation");
+    addDevSlider(kDELAY_INTERP_MODE, apvts);
+
+    // -------------------------------------------------------------------
+    // Section 9: Smoothing (cross-axis utility)
     // -------------------------------------------------------------------
     beginSection("Smoothing");
     addDevSlider(kSMOOTH_ITD_MS,    apvts);

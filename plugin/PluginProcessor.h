@@ -226,5 +226,39 @@ private:
     std::atomic<float>* testTonePulseHzParam  = nullptr;
     std::atomic<float>* testToneWaveformParam = nullptr;
 
+    // Dev panel: Delay line interpolation mode
+    std::atomic<float>* delayInterpModeParam = nullptr;
+
+    // Dev panel: Expanded pinna EQ (P5)
+    std::atomic<float>* conchaNotchFreqParam  = nullptr;
+    std::atomic<float>* conchaNotchQParam     = nullptr;
+    std::atomic<float>* conchaNotchMaxDbParam = nullptr;
+    std::atomic<float>* upperPinnaFreqParam   = nullptr;
+    std::atomic<float>* upperPinnaQParam      = nullptr;
+    std::atomic<float>* upperPinnaMinDbParam  = nullptr;
+    std::atomic<float>* upperPinnaMaxDbParam  = nullptr;
+    std::atomic<float>* shoulderPeakFreqParam = nullptr;
+    std::atomic<float>* shoulderPeakQParam    = nullptr;
+    std::atomic<float>* shoulderPeakMaxDbParam= nullptr;
+    std::atomic<float>* tragusNotchFreqParam  = nullptr;
+    std::atomic<float>* tragusNotchQParam     = nullptr;
+    std::atomic<float>* tragusNotchMaxDbParam = nullptr;
+    std::atomic<float>* bypassExpandedPinnaParam = nullptr;
+
+    // Dev panel: Per-feature bypass toggles
+    std::atomic<float>* bypassITDParam        = nullptr;
+    std::atomic<float>* bypassHeadShadowParam = nullptr;
+    std::atomic<float>* bypassILDParam        = nullptr;
+    std::atomic<float>* bypassNearFieldParam  = nullptr;
+    std::atomic<float>* bypassRearShadowParam = nullptr;
+    std::atomic<float>* bypassPinnaEQParam    = nullptr;
+    std::atomic<float>* bypassCombParam       = nullptr;
+    std::atomic<float>* bypassChestParam      = nullptr;
+    std::atomic<float>* bypassFloorParam      = nullptr;
+    std::atomic<float>* bypassDistGainParam   = nullptr;
+    std::atomic<float>* bypassDopplerParam    = nullptr;
+    std::atomic<float>* bypassAirAbsParam     = nullptr;
+    std::atomic<float>* bypassReverbParam     = nullptr;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

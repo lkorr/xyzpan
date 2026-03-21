@@ -138,10 +138,10 @@ std::vector<float> buildRoomWireframe(float halfSize)
         {-h, -h,  h}, { h, -h,  h}, { h,  h,  h}, {-h,  h,  h},   // front face
     };
 
-    // Colors per axis — parallel edges share color
-    const float xColor[3] = { 0xC4 / 255.0f, 0x7A / 255.0f, 0x5A / 255.0f };  // rose-gold
-    const float yColor[3] = { 0x8B / 255.0f, 0x6B / 255.0f, 0xBF / 255.0f };  // lavender
-    const float zColor[3] = { 0x7A / 255.0f, 0xA8 / 255.0f, 0x8C / 255.0f };  // sage-green
+    // Colors per axis — palette-derived shades for subtle axis differentiation
+    const float xColor[3] = { 0xA6 / 255.0f, 0x8B / 255.0f, 0x3A / 255.0f };  // Gold Leaf dark
+    const float yColor[3] = { 0x43 / 255.0f, 0x39 / 255.0f, 0x2A / 255.0f };  // Burnt Stone dark
+    const float zColor[3] = { 0xA8 / 255.0f, 0x9A / 255.0f, 0x70 / 255.0f };  // Aged Papyrus dark
 
     // Edge definitions grouped by axis direction:
     //   X-axis (left/right): edges along ±X

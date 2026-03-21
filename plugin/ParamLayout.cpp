@@ -507,5 +507,77 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_WAVEFORM, 1}, "Test Tone Waveform",
         NR(0.0f, 7.0f, 1.0f), 0.0f));
 
+    // -------------------------------------------------------------------------
+    // Dev Panel: Delay line interpolation mode
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::DELAY_INTERP_MODE, 1}, "Delay Interp Mode",
+        NR(0.0f, 5.0f, 1.0f), 0.0f));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Expanded pinna EQ (P5)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::SHOULDER_PEAK_FREQ_HZ, 1}, "Shoulder Peak Hz",
+        NR(200.0f, 5000.0f, 1.0f, 0.3f), xyzpan::kShoulderPeakFreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::SHOULDER_PEAK_Q, 1}, "Shoulder Peak Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kShoulderPeakQ));
+    layout.add(std::make_unique<APF>(PID{ParamID::SHOULDER_PEAK_MAX_DB, 1}, "Shoulder Peak Max dB",
+        NR(0.0f, 12.0f, 0.1f), xyzpan::kShoulderPeakMaxDb));
+
+    layout.add(std::make_unique<APF>(PID{ParamID::CONCHA_NOTCH_FREQ_HZ, 1}, "Concha Notch Hz",
+        NR(1000.0f, 10000.0f, 1.0f, 0.3f), xyzpan::kConchaNotchFreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::CONCHA_NOTCH_Q, 1}, "Concha Notch Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kConchaNotchQ));
+    layout.add(std::make_unique<APF>(PID{ParamID::CONCHA_NOTCH_MAX_DB, 1}, "Concha Notch Max dB",
+        NR(-24.0f, 0.0f, 0.1f), xyzpan::kConchaNotchMaxDb));
+
+    layout.add(std::make_unique<APF>(PID{ParamID::UPPER_PINNA_FREQ_HZ, 1}, "Upper Pinna Hz",
+        NR(5000.0f, 20000.0f, 1.0f, 0.3f), xyzpan::kUpperPinnaFreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::UPPER_PINNA_Q, 1}, "Upper Pinna Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kUpperPinnaQ));
+    layout.add(std::make_unique<APF>(PID{ParamID::UPPER_PINNA_MIN_DB, 1}, "Upper Pinna Min dB",
+        NR(-12.0f, 0.0f, 0.1f), xyzpan::kUpperPinnaMinDb));
+    layout.add(std::make_unique<APF>(PID{ParamID::UPPER_PINNA_MAX_DB, 1}, "Upper Pinna Max dB",
+        NR(0.0f, 12.0f, 0.1f), xyzpan::kUpperPinnaMaxDb));
+
+    layout.add(std::make_unique<APF>(PID{ParamID::TRAGUS_NOTCH_FREQ_HZ, 1}, "Tragus Notch Hz",
+        NR(3000.0f, 16000.0f, 1.0f, 0.3f), xyzpan::kTragusNotchFreqHz));
+    layout.add(std::make_unique<APF>(PID{ParamID::TRAGUS_NOTCH_Q, 1}, "Tragus Notch Q",
+        NR(0.1f, 10.0f, 0.01f), xyzpan::kTragusNotchQ));
+    layout.add(std::make_unique<APF>(PID{ParamID::TRAGUS_NOTCH_MAX_DB, 1}, "Tragus Notch Max dB",
+        NR(-24.0f, 0.0f, 0.1f), xyzpan::kTragusNotchMaxDb));
+
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_EXPANDED_PINNA, 1}, "Bypass Expanded Pinna", false));
+
+    // -------------------------------------------------------------------------
+    // Dev Panel: Per-feature bypass toggles
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_ITD, 1}, "Bypass ITD", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_HEAD_SHADOW, 1}, "Bypass Head Shadow", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_ILD, 1}, "Bypass ILD", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_NEAR_FIELD, 1}, "Bypass Near-Field", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_REAR_SHADOW, 1}, "Bypass Rear Shadow", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_PINNA_EQ, 1}, "Bypass Pinna EQ", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_COMB, 1}, "Bypass Comb", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_CHEST, 1}, "Bypass Chest", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_FLOOR, 1}, "Bypass Floor", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_DIST_GAIN, 1}, "Bypass Dist Gain", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_DOPPLER, 1}, "Bypass Doppler", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_AIR_ABS, 1}, "Bypass Air Abs", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_REVERB, 1}, "Bypass Reverb", false));
+
     return layout;
 }

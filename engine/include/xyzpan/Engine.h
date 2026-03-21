@@ -48,6 +48,9 @@ struct BinauralPipeline {
     dsp::BiquadFilter presenceShelf, earCanalPeak, pinnaP1;
     dsp::BiquadFilter pinnaNotch, pinnaNotch2, pinnaShelf;
 
+    // Expanded pinna EQ (P5) — 4 additional bands
+    dsp::BiquadFilter shoulderPeak, conchaNotch, upperPinna, tragusNotch;
+
     void prepare(float sr, int delayCap, float combMaxMs);
     void reset();
 };
@@ -189,6 +192,12 @@ private:
     dsp::BiquadFilter earCanalPeak_;  // ear canal resonance peak at 2.7 kHz (Y-mapped)
     dsp::BiquadFilter pinnaShelf_;
 
+    // Expanded pinna EQ (P5) — 4 additional mono-path biquads
+    dsp::BiquadFilter shoulderPeak_;  // 1.5 kHz shoulder reflection
+    dsp::BiquadFilter conchaNotch_;   // 4 kHz concha notch
+    dsp::BiquadFilter upperPinna_;    // 12 kHz upper pinna peak
+    dsp::BiquadFilter tragusNotch_;   // 8.5 kHz tragus notch
+
     // =========================================================================
     // Phase 3: Elevation — chest bounce (post-binaural, parallel path)
     // =========================================================================
@@ -196,6 +205,7 @@ private:
     dsp::OnePoleLP                chestLP_;    // 1x 6dB/oct LP at 1kHz
     dsp::FractionalDelayLine      chestDelay_; // 0–2ms delay
     dsp::OnePoleSmooth            chestGainSmooth_;  // smooth chest gain transitions
+    dsp::OnePoleSmooth            chestDelaySmooth_; // smooth chest delay transitions
 
     // =========================================================================
     // Phase 3: Elevation — floor bounce (post-binaural, parallel path)
@@ -204,6 +214,7 @@ private:
     dsp::FractionalDelayLine floorDelayR_;
     dsp::OnePoleLP           floorLPF_;      // HF absorption on reflected floor signal
     dsp::OnePoleSmooth       floorGainSmooth_;  // smooth floor gain transitions
+    dsp::OnePoleSmooth       floorDelaySmooth_; // smooth floor delay transitions
 
     // =========================================================================
     // Phase 4: Distance Processing (DIST-01 through DIST-06)
@@ -237,6 +248,7 @@ private:
     dsp::FractionalDelayLine auxPreDelayL_;
     dsp::FractionalDelayLine auxPreDelayR_;
     dsp::OnePoleSmooth       auxGainSmooth_;
+    dsp::OnePoleSmooth       auxDelaySmooth_;   // smooth aux pre-delay transitions
 
     // =========================================================================
     // Phase 5: LFO (LFO-01 through LFO-05)
@@ -280,7 +292,7 @@ private:
     DistanceResult processDistanceForNode(
         float dL, float dR,
         float nodeX, float nodeY, float nodeZ,
-        float sr, bool dopplerOn,
+        float sr, bool dopplerOn, int interpMode,
         dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
         dsp::OnePoleLP& preAAL, dsp::OnePoleLP& preAAR,
         dsp::OnePoleLP& aaL, dsp::OnePoleLP& aaR,
@@ -296,7 +308,7 @@ private:
     BinauralResult processBinauralForSource(
         float inputSample,
         float nodeX, float nodeY, float nodeZ,
-        float sr,
+        float sr, int interpMode,
         // Pipeline state — references to either existing flat members (L) or srcR_ (R)
         dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
         dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
@@ -308,7 +320,9 @@ private:
         dsp::OnePoleSmooth& combWetSm,
         dsp::BiquadFilter& presShelf, dsp::BiquadFilter& earCanal,
         dsp::BiquadFilter& pP1, dsp::BiquadFilter& pN1,
-        dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf
+        dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf,
+        dsp::BiquadFilter& shoulder, dsp::BiquadFilter& concha,
+        dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
     );
 
     // Last L/R node positions for position bridge

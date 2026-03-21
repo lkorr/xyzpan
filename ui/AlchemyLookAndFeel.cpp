@@ -32,50 +32,159 @@ void AlchemyLookAndFeel::drawRotarySlider(
     const float centreX   = static_cast<float>(x) + static_cast<float>(width)  * 0.5f;
     const float centreY   = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
 
-    const float disabledAlpha = slider.isEnabled() ? 1.0f : 0.3f;
+    const bool  enabled       = slider.isEnabled();
+    const float disabledAlpha = enabled ? 1.0f : 0.3f;
+    const bool  hovering      = slider.isMouseOverOrDragging() && enabled;
+    const bool  dragging      = slider.isMouseButtonDown() && enabled;
+    const auto  arcColour     = slider.findColour(juce::Slider::rotarySliderFillColourId);
+    const float valueAngle    = rotaryStartAngle + sliderPosProportional
+                                * (rotaryEndAngle - rotaryStartAngle);
 
-    // Background circle — dark iron
-    g.setColour(juce::Colour(kDarkIron).withAlpha(disabledAlpha));
-    g.fillEllipse(centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f);
-
-    // Outer ring — bronze
-    g.setColour(juce::Colour(kBronze).withAlpha(disabledAlpha));
-    g.drawEllipse(centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f, 1.5f);
-
-    // Arc track — very dark background arc from start to end
+    // --- Layer 1: Hover glow (behind everything) ---
+    if (hovering)
     {
-        const float arcRadius = radius * 0.78f;
+        const float glowR = radius * 1.3f;
+        const float glowAlpha = dragging ? 0.12f : 0.08f;
+        juce::ColourGradient glow(arcColour.withAlpha(glowAlpha * disabledAlpha),
+                                  centreX, centreY,
+                                  arcColour.withAlpha(0.0f),
+                                  centreX + glowR, centreY, true);
+        g.setGradientFill(glow);
+        g.fillEllipse(centreX - glowR, centreY - glowR, glowR * 2.0f, glowR * 2.0f);
+    }
+
+    // --- Layer 2: Drop shadow ---
+    {
+        const float shadowAlpha = hovering ? 0.8f : 0.6f;
+        const float shadowBlur  = radius * (hovering ? 0.2f : 0.15f);
+        const float shadowOfsY  = radius * 0.06f;
+        juce::DropShadow shadow(juce::Colour(kObsidian).withAlpha(shadowAlpha * disabledAlpha),
+                                static_cast<int>(shadowBlur),
+                                juce::Point<int>(0, static_cast<int>(shadowOfsY)));
+        juce::Path shadowEllipse;
+        shadowEllipse.addEllipse(centreX - radius, centreY - radius,
+                                 radius * 2.0f, radius * 2.0f);
+        shadow.drawForPath(g, shadowEllipse);
+    }
+
+    // --- Layer 3: Outer bevel ring ---
+    {
+        const float ringWidth = juce::jmax(1.5f, radius * 0.08f);
+        g.setColour(juce::Colour(kBronze).withAlpha(disabledAlpha));
+        g.drawEllipse(centreX - radius, centreY - radius,
+                      radius * 2.0f, radius * 2.0f, ringWidth);
+    }
+
+    // --- Layer 4: Knob body (radial gradient) ---
+    const float bodyRadius = radius * 0.88f;
+    {
+        const float lightOfsX = -bodyRadius * 0.3f;
+        const float lightOfsY = -bodyRadius * 0.3f;
+        juce::ColourGradient bodyGrad(
+            juce::Colour(kDarkParchmentMid).withAlpha(disabledAlpha),
+            centreX + lightOfsX, centreY + lightOfsY,
+            juce::Colour(kObsidianLight).withAlpha(disabledAlpha),
+            centreX + bodyRadius, centreY + bodyRadius, true);
+        bodyGrad.addColour(0.55, juce::Colour(kDarkParchment).withAlpha(disabledAlpha));
+        g.setGradientFill(bodyGrad);
+        g.fillEllipse(centreX - bodyRadius, centreY - bodyRadius,
+                      bodyRadius * 2.0f, bodyRadius * 2.0f);
+    }
+
+    // --- Layer 5: Inner edge shadow ---
+    {
+        const float edgeWidth = juce::jmax(1.0f, radius * 0.04f);
+        g.setColour(juce::Colour(kObsidian).withAlpha(0.4f * disabledAlpha));
+        g.drawEllipse(centreX - bodyRadius, centreY - bodyRadius,
+                      bodyRadius * 2.0f, bodyRadius * 2.0f, edgeWidth);
+    }
+
+    // --- Layer 6: Specular highlight ---
+    {
+        const float specR   = bodyRadius * 0.35f;
+        const float specOfsX = -bodyRadius * 0.25f;
+        const float specOfsY = -bodyRadius * 0.3f;
+        juce::ColourGradient specGrad(
+            juce::Colour(kAgedPapyrus).withAlpha(0.12f * disabledAlpha),
+            centreX + specOfsX, centreY + specOfsY,
+            juce::Colour(kAgedPapyrus).withAlpha(0.0f),
+            centreX + specOfsX + specR, centreY + specOfsY + specR, true);
+        g.setGradientFill(specGrad);
+        g.fillEllipse(centreX + specOfsX - specR, centreY + specOfsY - specR,
+                      specR * 2.0f, specR * 2.0f);
+    }
+
+    // --- Layer 7: Metallic sheen ---
+    {
+        juce::Graphics::ScopedSaveState saveState(g);
+        juce::Path bodyClip;
+        bodyClip.addEllipse(centreX - bodyRadius, centreY - bodyRadius,
+                            bodyRadius * 2.0f, bodyRadius * 2.0f);
+        g.reduceClipRegion(bodyClip);
+
+        juce::ColourGradient sheenGrad(
+            juce::Colour(kAgedPapyrusDark).withAlpha(0.0f),
+            centreX - bodyRadius, centreY - bodyRadius * 0.5f,
+            juce::Colour(kAgedPapyrusDark).withAlpha(0.0f),
+            centreX + bodyRadius, centreY + bodyRadius * 0.5f, false);
+        sheenGrad.addColour(0.45, juce::Colour(kAgedPapyrusDark).withAlpha(0.07f * disabledAlpha));
+        sheenGrad.addColour(0.55, juce::Colour(kAgedPapyrusDark).withAlpha(0.07f * disabledAlpha));
+        g.setGradientFill(sheenGrad);
+        g.fillRect(centreX - bodyRadius, centreY - bodyRadius,
+                   bodyRadius * 2.0f, bodyRadius * 2.0f);
+    }
+
+    // --- Layer 8: Arc track (recessed groove) ---
+    const float arcRadius = radius * 0.68f;
+    const float arcStroke = juce::jlimit(2.5f, 6.0f, radius * 0.1f);
+    {
         juce::Path trackArc;
         trackArc.addCentredArc(centreX, centreY, arcRadius, arcRadius,
                                0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(kBronze).withAlpha(0.3f * disabledAlpha));
-        g.strokePath(trackArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved,
-                                                    juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(kObsidian).withAlpha(0.6f * disabledAlpha));
+        g.strokePath(trackArc, juce::PathStrokeType(arcStroke,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // Value arc — use slider's fill colour (allows per-knob colouring)
+    // --- Layer 9: Value arc + glow ---
     {
-        const float arcRadius  = radius * 0.78f;
-        const float angle      = rotaryStartAngle + sliderPosProportional
-                                 * (rotaryEndAngle - rotaryStartAngle);
         juce::Path valueArc;
         valueArc.addCentredArc(centreX, centreY, arcRadius, arcRadius,
-                               0.0f, rotaryStartAngle, angle, true);
-        g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId).withAlpha(disabledAlpha));
-        g.strokePath(valueArc, juce::PathStrokeType(3.0f, juce::PathStrokeType::curved,
-                                                    juce::PathStrokeType::rounded));
+                               0.0f, rotaryStartAngle, valueAngle, true);
+
+        // Glow behind arc
+        g.setColour(arcColour.withAlpha(0.15f * disabledAlpha));
+        g.strokePath(valueArc, juce::PathStrokeType(arcStroke * 3.0f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Solid arc
+        g.setColour(arcColour.withAlpha(disabledAlpha));
+        g.strokePath(valueArc, juce::PathStrokeType(arcStroke,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // Thumb dot — parchment coloured circle at current value position
+    // --- Layer 10: Indicator line (replaces thumb dot) ---
     {
-        const float dotRadius  = 4.0f;
-        const float angle      = rotaryStartAngle + sliderPosProportional
-                                 * (rotaryEndAngle - rotaryStartAngle) - juce::MathConstants<float>::halfPi;
-        const float dotR       = radius * 0.78f;
-        const float dotX       = centreX + dotR * std::cos(angle);
-        const float dotY       = centreY + dotR * std::sin(angle);
-        g.setColour(juce::Colour(kParchment).withAlpha(disabledAlpha));
-        g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        const float lineAngle = valueAngle - juce::MathConstants<float>::halfPi;
+        const float innerR    = radius * 0.25f;
+        const float outerR    = radius * 0.62f;
+        const float lineWidth = juce::jlimit(1.5f, 3.0f, radius * 0.04f);
+        const float cosA = std::cos(lineAngle);
+        const float sinA = std::sin(lineAngle);
+
+        juce::Path indicator;
+        indicator.startNewSubPath(centreX + innerR * cosA, centreY + innerR * sinA);
+        indicator.lineTo(centreX + outerR * cosA, centreY + outerR * sinA);
+
+        // Glow behind line
+        g.setColour(juce::Colour(kAgedPapyrus).withAlpha(0.15f * disabledAlpha));
+        g.strokePath(indicator, juce::PathStrokeType(lineWidth * 3.0f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        // Solid indicator
+        g.setColour(juce::Colour(kAgedPapyrus).withAlpha(0.9f * disabledAlpha));
+        g.strokePath(indicator, juce::PathStrokeType(lineWidth,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 }
 
@@ -190,15 +299,25 @@ void AlchemyLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
 
     if (!label.isBeingEdited()) {
         const float alpha = label.isEnabled() ? 1.0f : 0.5f;
+        const auto textColour = label.findColour(juce::Label::textColourId);
         const juce::Font font(juce::FontOptions(static_cast<float>(label.getHeight()) * 0.75f));
-        g.setColour(juce::Colour(kParchment).withAlpha(alpha));
         g.setFont(font);
 
         auto textArea = getLabelBorderSize(label).subtractedFrom(label.getLocalBounds());
+        const int maxLines = juce::jmax(1, static_cast<int>(
+            static_cast<float>(textArea.getHeight()) / font.getHeight()));
+
+        // Glow pass for XYZ hero labels (identified by kGoldLeafPale text colour)
+        if (textColour == juce::Colour(kGoldLeafPale)) {
+            g.setColour(textColour.withAlpha(0.20f * alpha));
+            g.drawFittedText(label.getText(), textArea.translated(0, 1),
+                             label.getJustificationType(), maxLines,
+                             label.getMinimumHorizontalScale());
+        }
+
+        g.setColour(textColour.withAlpha(alpha));
         g.drawFittedText(label.getText(), textArea, label.getJustificationType(),
-                         juce::jmax(1, static_cast<int>(static_cast<float>(textArea.getHeight())
-                                                         / font.getHeight())),
-                         label.getMinimumHorizontalScale());
+                         maxLines, label.getMinimumHorizontalScale());
     }
     else if (label.isEnabled()) {
         g.setColour(juce::Colour(kParchment));

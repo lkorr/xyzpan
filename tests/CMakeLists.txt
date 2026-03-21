@@ -7,6 +7,7 @@ add_executable(XYZPanTests
     engine/TestSampleRateAdaptation.cpp
     engine/TestPerformance.cpp
     engine/TestSineLUT.cpp
+    engine/TestDelayInterpolation.cpp
 )
 
 target_link_libraries(XYZPanTests

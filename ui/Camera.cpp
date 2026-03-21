@@ -82,10 +82,11 @@ void Camera::setOrbit()
 
 void Camera::applyMouseDrag(float dx, float dy)
 {
-    // Only orbit in free orbit mode; dragging in snap mode has no effect
-    // (source drag is handled separately by XYZPanGLView)
-    if (activeSnap != SnapView::Orbit)
-        return;
+    // If in a snap view, transition to free orbit starting from the current snap angles
+    if (activeSnap != SnapView::Orbit) {
+        orthoSnap  = false;
+        activeSnap = SnapView::Orbit;
+    }
 
     constexpr float kSensitivity = 0.4f;
     yaw   += dx * kSensitivity;

@@ -292,6 +292,70 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(testTonePitchHzParam  != nullptr);
     jassert(testTonePulseHzParam  != nullptr);
     jassert(testToneWaveformParam != nullptr);
+
+    // Dev panel: Delay line interpolation mode
+    delayInterpModeParam = apvts.getRawParameterValue(ParamID::DELAY_INTERP_MODE);
+    jassert(delayInterpModeParam != nullptr);
+
+    // Dev panel: Expanded pinna EQ (P5)
+    conchaNotchFreqParam  = apvts.getRawParameterValue(ParamID::CONCHA_NOTCH_FREQ_HZ);
+    conchaNotchQParam     = apvts.getRawParameterValue(ParamID::CONCHA_NOTCH_Q);
+    conchaNotchMaxDbParam = apvts.getRawParameterValue(ParamID::CONCHA_NOTCH_MAX_DB);
+    upperPinnaFreqParam   = apvts.getRawParameterValue(ParamID::UPPER_PINNA_FREQ_HZ);
+    upperPinnaQParam      = apvts.getRawParameterValue(ParamID::UPPER_PINNA_Q);
+    upperPinnaMinDbParam  = apvts.getRawParameterValue(ParamID::UPPER_PINNA_MIN_DB);
+    upperPinnaMaxDbParam  = apvts.getRawParameterValue(ParamID::UPPER_PINNA_MAX_DB);
+    shoulderPeakFreqParam = apvts.getRawParameterValue(ParamID::SHOULDER_PEAK_FREQ_HZ);
+    shoulderPeakQParam    = apvts.getRawParameterValue(ParamID::SHOULDER_PEAK_Q);
+    shoulderPeakMaxDbParam= apvts.getRawParameterValue(ParamID::SHOULDER_PEAK_MAX_DB);
+    tragusNotchFreqParam  = apvts.getRawParameterValue(ParamID::TRAGUS_NOTCH_FREQ_HZ);
+    tragusNotchQParam     = apvts.getRawParameterValue(ParamID::TRAGUS_NOTCH_Q);
+    tragusNotchMaxDbParam = apvts.getRawParameterValue(ParamID::TRAGUS_NOTCH_MAX_DB);
+    bypassExpandedPinnaParam = apvts.getRawParameterValue(ParamID::BYPASS_EXPANDED_PINNA);
+
+    jassert(conchaNotchFreqParam  != nullptr);
+    jassert(conchaNotchQParam     != nullptr);
+    jassert(conchaNotchMaxDbParam != nullptr);
+    jassert(upperPinnaFreqParam   != nullptr);
+    jassert(upperPinnaQParam      != nullptr);
+    jassert(upperPinnaMinDbParam  != nullptr);
+    jassert(upperPinnaMaxDbParam  != nullptr);
+    jassert(shoulderPeakFreqParam != nullptr);
+    jassert(shoulderPeakQParam    != nullptr);
+    jassert(shoulderPeakMaxDbParam!= nullptr);
+    jassert(tragusNotchFreqParam  != nullptr);
+    jassert(tragusNotchQParam     != nullptr);
+    jassert(tragusNotchMaxDbParam != nullptr);
+    jassert(bypassExpandedPinnaParam != nullptr);
+
+    // Dev panel: Per-feature bypass toggles
+    bypassITDParam        = apvts.getRawParameterValue(ParamID::BYPASS_ITD);
+    bypassHeadShadowParam = apvts.getRawParameterValue(ParamID::BYPASS_HEAD_SHADOW);
+    bypassILDParam        = apvts.getRawParameterValue(ParamID::BYPASS_ILD);
+    bypassNearFieldParam  = apvts.getRawParameterValue(ParamID::BYPASS_NEAR_FIELD);
+    bypassRearShadowParam = apvts.getRawParameterValue(ParamID::BYPASS_REAR_SHADOW);
+    bypassPinnaEQParam    = apvts.getRawParameterValue(ParamID::BYPASS_PINNA_EQ);
+    bypassCombParam       = apvts.getRawParameterValue(ParamID::BYPASS_COMB);
+    bypassChestParam      = apvts.getRawParameterValue(ParamID::BYPASS_CHEST);
+    bypassFloorParam      = apvts.getRawParameterValue(ParamID::BYPASS_FLOOR);
+    bypassDistGainParam   = apvts.getRawParameterValue(ParamID::BYPASS_DIST_GAIN);
+    bypassDopplerParam    = apvts.getRawParameterValue(ParamID::BYPASS_DOPPLER);
+    bypassAirAbsParam     = apvts.getRawParameterValue(ParamID::BYPASS_AIR_ABS);
+    bypassReverbParam     = apvts.getRawParameterValue(ParamID::BYPASS_REVERB);
+
+    jassert(bypassITDParam        != nullptr);
+    jassert(bypassHeadShadowParam != nullptr);
+    jassert(bypassILDParam        != nullptr);
+    jassert(bypassNearFieldParam  != nullptr);
+    jassert(bypassRearShadowParam != nullptr);
+    jassert(bypassPinnaEQParam    != nullptr);
+    jassert(bypassCombParam       != nullptr);
+    jassert(bypassChestParam      != nullptr);
+    jassert(bypassFloorParam      != nullptr);
+    jassert(bypassDistGainParam   != nullptr);
+    jassert(bypassDopplerParam    != nullptr);
+    jassert(bypassAirAbsParam     != nullptr);
+    jassert(bypassReverbParam     != nullptr);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -506,6 +570,41 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.testTonePulseHz  = testTonePulseHzParam->load();
     params.testToneWaveform = static_cast<xyzpan::TestToneWaveform>(
         static_cast<int>(std::round(testToneWaveformParam->load())));
+
+    // Dev panel: Delay line interpolation mode
+    params.delayInterpMode = static_cast<xyzpan::DelayInterpMode>(
+        static_cast<int>(std::round(delayInterpModeParam->load())));
+
+    // Dev panel: Expanded pinna EQ (P5)
+    params.conchaNotchFreqHz  = conchaNotchFreqParam->load();
+    params.conchaNotchQ       = conchaNotchQParam->load();
+    params.conchaNotchMaxDb   = conchaNotchMaxDbParam->load();
+    params.upperPinnaFreqHz   = upperPinnaFreqParam->load();
+    params.upperPinnaQ        = upperPinnaQParam->load();
+    params.upperPinnaMinDb    = upperPinnaMinDbParam->load();
+    params.upperPinnaMaxDb    = upperPinnaMaxDbParam->load();
+    params.shoulderPeakFreqHz = shoulderPeakFreqParam->load();
+    params.shoulderPeakQ      = shoulderPeakQParam->load();
+    params.shoulderPeakMaxDb  = shoulderPeakMaxDbParam->load();
+    params.tragusNotchFreqHz  = tragusNotchFreqParam->load();
+    params.tragusNotchQ       = tragusNotchQParam->load();
+    params.tragusNotchMaxDb   = tragusNotchMaxDbParam->load();
+
+    // Dev panel: Per-feature bypass toggles
+    params.bypassExpandedPinna = bypassExpandedPinnaParam->load() >= 0.5f;
+    params.bypassITD        = bypassITDParam->load()        >= 0.5f;
+    params.bypassHeadShadow = bypassHeadShadowParam->load() >= 0.5f;
+    params.bypassILD        = bypassILDParam->load()        >= 0.5f;
+    params.bypassNearField  = bypassNearFieldParam->load()  >= 0.5f;
+    params.bypassRearShadow = bypassRearShadowParam->load() >= 0.5f;
+    params.bypassPinnaEQ    = bypassPinnaEQParam->load()    >= 0.5f;
+    params.bypassComb       = bypassCombParam->load()       >= 0.5f;
+    params.bypassChest      = bypassChestParam->load()      >= 0.5f;
+    params.bypassFloor      = bypassFloorParam->load()      >= 0.5f;
+    params.bypassDistGain   = bypassDistGainParam->load()   >= 0.5f;
+    params.bypassDoppler    = bypassDopplerParam->load()    >= 0.5f;
+    params.bypassAirAbs     = bypassAirAbsParam->load()     >= 0.5f;
+    params.bypassReverb     = bypassReverbParam->load()     >= 0.5f;
 
     // Phase 5: Read host BPM for LFO tempo sync (LFO-05)
     if (auto* ph = getPlayHead()) {

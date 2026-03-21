@@ -15,15 +15,14 @@ class XYZPanProcessor;
 // XYZPanEditor — custom plugin editor.
 //
 // Layout:
-//   Left column (400px):
+//   Left column (672px):
 //     "POSITION" header + 3 sub-columns (X | Y | Z) with large knobs + tall LFO strips
-//     "UTILITIES" header + Sphere Radius knob + Doppler knob (compact, 80px)
 //   Main area: XYZPanGLView (OpenGL 3D spatial view)
 //     Top-right corner: three snap buttons (XY, XZ, YZ)
 //     GL overlay (right 30%): DevPanelComponent — hidden by default
 //   Bottom row (240px), left-to-right:
-//     "STEREO ORBIT" — orbit sliders (240px) + 3 orbit LFO strips (flexible)
-//     "REVERB" — Size/Decay/Damp/Wet knobs (320px) + DEV toggle (48px)
+//     "STEREO ORBIT" — Sphere/Doppler knobs + orbit sliders (240px) + 3 orbit LFO strips
+//     "REVERB" — Size/Decay/Damp/Wet knobs vertical stack (80px) + DEV toggle at bottom
 // ---------------------------------------------------------------------------
 class XYZPanEditor : public juce::AudioProcessorEditor {
 public:
@@ -48,21 +47,18 @@ private:
     void updateSnapButtonStates();
 
     // Layout constants
-    static constexpr int kLeftColW      = 400;     // wider for larger knobs
+    static constexpr int kLeftColW      = 470;     // position column width
     static constexpr int kBottomH       = 240;     // was 400 — orbit moved here
     static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
-    static constexpr int kDefaultW      = 1100;
-    static constexpr int kDefaultH      = 750;
+    static constexpr int kDefaultW      = 1000;
+    static constexpr int kDefaultH      = 650;
     static constexpr int kSectionHdrH   = 24;      // section header height
     static constexpr int kDividerW      = 1;       // vertical divider width
     static constexpr int kPadding       = 6;       // general inner padding
     static constexpr int kOrbitCtrlW    = 240;     // orbit sliders+buttons width in bottom row
-    static constexpr int kReverbColW    = 56;      // reverb knob column width
-    static constexpr int kReverbKnobSz  = 48;      // reverb knob diameter (smaller to fit)
-    static constexpr int kReverbSectionW = kReverbColW * 4;  // 320px
-    static constexpr int kMiscSectionH  = 80;      // sphere+doppler area height (excl header)
+    static constexpr int kReverbSectionW = 120;     // vertical reverb column
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -71,7 +67,7 @@ private:
     using SA = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::unique_ptr<SA> xAtt_, yAtt_, zAtt_;
 
-    // Sphere Radius knob (bottom row)
+    // Sphere Radius knob (orbit controls column)
     juce::Slider sphereRadiusKnob_;
     juce::Label  sphereRadiusLabel_;
     std::unique_ptr<SA> sphereRadiusAtt_;
@@ -79,7 +75,7 @@ private:
     // LFO strips — one per spatial axis (X, Y, Z only; R has no LFO)
     LFOStrip xLFO_, yLFO_, zLFO_;
 
-    // XYZ LFO speed multiplier slider (below LFO strips, above Utilities)
+    // XYZ LFO speed multiplier slider (below LFO strips)
     juce::Slider lfoSpeedMulKnob_;
     juce::Label  lfoSpeedMulLabel_;
     std::unique_ptr<SA> lfoSpeedMulAtt_;
@@ -108,7 +104,7 @@ private:
     juce::Label  verbSizeL_, verbDecayL_, verbDampingL_, verbWetL_;
     std::unique_ptr<SA> verbSizeAtt_, verbDecayAtt_, verbDampingAtt_, verbWetAtt_;
 
-    // Doppler knob (distance delay) — utilities section
+    // Doppler knob (distance delay) — orbit controls column
     juce::Slider dopplerKnob_;
     juce::Label  dopplerLabel_;
     juce::Label  dopplerSubLabel_;  // "(adds delay)" small text
@@ -127,18 +123,21 @@ private:
     struct Layout {
         int contentY;       // = kPresetBarH
         int leftColH;       // = totalH - kBottomH - kPresetBarH
-        int posSectionH;    // = leftColH - (kSectionHdrH + kMiscSectionH)
-        int miscTop;        // = contentY + posSectionH
         int bottomY;        // = totalH - kBottomH
-        int devW;           // = 48
-        int reverbX;        // = totalW - devW - kReverbSectionW
+        int reverbX;        // = totalW - kReverbSectionW
         int orbitTotalW;    // = reverbX
+        int lfoX;           // = left edge of orbit LFO strips (after cap)
+        int lfoTotalW;      // = capped width of orbit LFO strips
         int contentTop;     // = bottomY + kSectionHdrH
 
         static Layout compute(int totalW, int totalH);
     };
 
     void updateOrbitEnabled();
+
+    // Procedural noise texture (256x256 greyscale) tiled over JUCE panels at low opacity
+    juce::Image noiseTexture_;
+    static juce::Image generateNoiseTexture(int size);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanEditor)
 };

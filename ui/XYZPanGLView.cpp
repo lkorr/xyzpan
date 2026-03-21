@@ -34,6 +34,7 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
     glContext_.setOpenGLVersionRequired(juce::OpenGLContext::openGL3_2);
     glContext_.setRenderer(this);
     glContext_.setContinuousRepainting(true);
+    glContext_.setComponentPaintingEnabled(true);  // composite JUCE children on top of GL
     glContext_.attachTo(*this);   // LAST
 }
 
@@ -107,6 +108,7 @@ void XYZPanGLView::newOpenGLContextCreated()
     createTrailVAO(vaoTrailSource_, vboTrailSource_, TrailBuffer::kCapacity);
     createTrailVAO(vaoTrailL_,      vboTrailL_,      TrailBuffer::kCapacity);
     createTrailVAO(vaoTrailR_,      vboTrailR_,      TrailBuffer::kCapacity);
+
 }
 
 // ---------------------------------------------------------------------------
@@ -185,9 +187,10 @@ void XYZPanGLView::renderOpenGL()
     drawColorLines(vaoRoom_, roomVertexCount_, 0.7f, roomModelMatrix);
 
     // Draw floor grid — scaled by R (model = roomModelMatrix)
+    // Aged Papyrus dark at 0.3 opacity
     {
-        const glm::vec3 gridColor(0.75f, 0.75f, 0.75f);
-        drawLines(vaoGrid_, gridVertexCount_, gridColor, 0.4f, roomModelMatrix);
+        const glm::vec3 gridColor(0xA8 / 255.0f, 0x9A / 255.0f, 0x70 / 255.0f);
+        drawLines(vaoGrid_, gridVertexCount_, gridColor, 0.3f, roomModelMatrix);
     }
 
     // Begin sphere/cone shader batch -- bind once, upload shared uniforms once
@@ -200,66 +203,75 @@ void XYZPanGLView::renderOpenGL()
         glBindVertexArray(vaoSphere_);
     }
 
-    // Draw listener node at origin — warm gold, always full opacity
-    {
-        const glm::vec3 listenerColor(0xD4 / 255.0f, 0xA8 / 255.0f, 0x43 / 255.0f);
-        drawSphere(glm::vec3(0.0f), 0.045f, listenerColor, 1.0f);
-    }
+    // Fade listener head to transparent as camera zooms in close.
+    // Fully opaque at dist >= 0.5, fully transparent at dist <= 0.15.
+    const float headAlpha = std::clamp((camera_.dist - 0.05f) / (0.5f - 0.05f), 0.0f, 1.0f);
 
-    // Forward arrow — cone pointing in -Z (XYZPan +Y = forward)
-    // Cone is built along +Y, so rotate -90° around X to point along -Z
-    {
-        constexpr float kArrowBaseRadius = 0.012f;
-        constexpr float kArrowLength     = 0.05f;
-        constexpr float kArrowOffset     = 0.048f;  // start just outside listener sphere
+    // Draw listener node at origin — Gold Leaf
+    if (headAlpha > 0.0f) {
+        // Write depth only when fully opaque to avoid visual artifacts
+        if (headAlpha < 1.0f)
+            glDepthMask(GL_FALSE);
 
-        // Build model: translate forward, rotate to point -Z, scale
-        // Rotation: -90° around X takes +Y → -Z (forward in GL/XYZPan)
-        glm::mat4 arrowModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -kArrowOffset));
-        arrowModel = glm::rotate(arrowModel, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        arrowModel = glm::scale(arrowModel, glm::vec3(kArrowBaseRadius, kArrowLength, kArrowBaseRadius));
+        const glm::vec3 listenerColor(0xC9 / 255.0f, 0xA8 / 255.0f, 0x4C / 255.0f);
+        drawSphere(glm::vec3(0.0f), 0.045f, listenerColor, headAlpha);
 
-        const glm::vec3 arrowColor(0xFF / 255.0f, 0xD7 / 255.0f, 0x00 / 255.0f);
-        drawCone(arrowModel, arrowColor, 0.9f);
-    }
-
-    // Ears — small flattened ellipsoids at ±X on the listener sphere equator
-    {
-        constexpr float kEarRadius    = 0.015f;
-        constexpr float kEarFlatten   = 0.5f;    // squish along X (radial axis)
-        constexpr float kEarOffset    = 0.045f;   // sit on listener sphere surface
-
-        const glm::vec3 earColor(0xB0 / 255.0f, 0x8A / 255.0f, 0x38 / 255.0f);
-
-        // Left ear (-X)
+        // Forward arrow — cone pointing in -Z (XYZPan +Y = forward)
+        // Cone is built along +Y, so rotate -90° around X to point along -Z
         {
-            glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(-kEarOffset, 0.0f, 0.0f));
-            m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
-            drawSphereWithModel(m, earColor, 0.9f);
+            constexpr float kArrowBaseRadius = 0.012f;
+            constexpr float kArrowLength     = 0.05f;
+            constexpr float kArrowOffset     = 0.048f;  // start just outside listener sphere
+
+            glm::mat4 arrowModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -kArrowOffset));
+            arrowModel = glm::rotate(arrowModel, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+            arrowModel = glm::scale(arrowModel, glm::vec3(kArrowBaseRadius, kArrowLength, kArrowBaseRadius));
+
+            const glm::vec3 arrowColor(0xD9 / 255.0f, 0xBE / 255.0f, 0x6E / 255.0f);
+            drawCone(arrowModel, arrowColor, 0.9f * headAlpha);
         }
 
-        // Right ear (+X)
+        // Ears — small flattened ellipsoids at ±X on the listener sphere equator
         {
-            glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(kEarOffset, 0.0f, 0.0f));
-            m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
-            drawSphereWithModel(m, earColor, 0.9f);
+            constexpr float kEarRadius    = 0.015f;
+            constexpr float kEarFlatten   = 0.5f;
+            constexpr float kEarOffset    = 0.045f;
+
+            const glm::vec3 earColor(0xA6 / 255.0f, 0x8B / 255.0f, 0x3A / 255.0f);
+
+            // Left ear (-X)
+            {
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(-kEarOffset, 0.0f, 0.0f));
+                m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
+                drawSphereWithModel(m, earColor, 0.9f * headAlpha);
+            }
+
+            // Right ear (+X)
+            {
+                glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(kEarOffset, 0.0f, 0.0f));
+                m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
+                drawSphereWithModel(m, earColor, 0.9f * headAlpha);
+            }
         }
+
+        if (headAlpha < 1.0f)
+            glDepthMask(GL_TRUE);
     }
 
-    // Draw audible radius sphere — semi-transparent gold boundary at origin
+    // Draw audible radius sphere — semi-transparent Gold Leaf boundary at origin
     {
         glDepthMask(GL_FALSE);
-        const glm::vec3 sphereColor(0xD4 / 255.0f, 0xA8 / 255.0f, 0x43 / 255.0f);
+        const glm::vec3 sphereColor(0xC9 / 255.0f, 0xA8 / 255.0f, 0x4C / 255.0f);
         drawSphere(glm::vec3(0.0f), sr, sphereColor, 0.08f);
         glDepthMask(GL_TRUE);
     }
 
-    // Draw source node at current position — bright gold
+    // Draw source node at current position — Gold Leaf light / pale
     // 0.8x base size; 10% opacity when stereo split is active
     {
         const glm::vec3 sourceColor = isSourceHovered_
-            ? glm::vec3(0xFF / 255.0f, 0xE5 / 255.0f, 0x66 / 255.0f)  // hover: light gold-yellow
-            : glm::vec3(0xFF / 255.0f, 0xD7 / 255.0f, 0x00 / 255.0f); // normal: bright gold
+            ? glm::vec3(0xE8 / 255.0f, 0xD4 / 255.0f, 0x9A / 255.0f)  // hover: Gold Leaf pale
+            : glm::vec3(0xD9 / 255.0f, 0xBE / 255.0f, 0x6E / 255.0f); // normal: Gold Leaf light
         const float mainOpacity = stereoActive ? 0.1f : sourceOpacity;
         const float mainRadius = stereoActive ? 0.0375f : 0.048f;
         drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
@@ -273,8 +285,8 @@ void XYZPanGLView::renderOpenGL()
         const float lOpacity = 0.1f + 0.9f * (1.0f - lDistFrac);
         const float rOpacity = 0.1f + 0.9f * (1.0f - rDistFrac);
 
-        const glm::vec3 leftColor(0xFF / 255.0f, 0x6B / 255.0f, 0x9D / 255.0f);
-        const glm::vec3 rightColor(0x6B / 255.0f, 0x9D / 255.0f, 0xFF / 255.0f);
+        const glm::vec3 leftColor(0xD9 / 255.0f, 0xBE / 255.0f, 0x6E / 255.0f);   // Gold Leaf light
+        const glm::vec3 rightColor(0x55 / 255.0f, 0x4A / 255.0f, 0x37 / 255.0f); // Burnt Stone
         drawSphere(lNodePos, 0.045f, leftColor, lOpacity);
         drawSphere(rNodePos, 0.045f, rightColor, rOpacity);
     }
@@ -287,7 +299,7 @@ void XYZPanGLView::renderOpenGL()
     {
         // Center trail only in mono mode; stereo mode uses L/R trails instead
         if (!stereoActive) {
-            const glm::vec3 goldTrail(0xFF / 255.0f, 0xD7 / 255.0f, 0x00 / 255.0f);
+            const glm::vec3 goldTrail(0xD9 / 255.0f, 0xBE / 255.0f, 0x6E / 255.0f);  // Gold Leaf light
             drawTrail(trailSource_, vaoTrailSource_, vboTrailSource_,
                       goldTrail, sourceOpacity * 0.6f, now);
         }
@@ -298,8 +310,8 @@ void XYZPanGLView::renderOpenGL()
             const float lTrailOpacity = (0.1f + 0.9f * (1.0f - lDistFracT)) * 0.5f;
             const float rTrailOpacity = (0.1f + 0.9f * (1.0f - rDistFracT)) * 0.5f;
 
-            const glm::vec3 pinkTrail(0xFF / 255.0f, 0x6B / 255.0f, 0x9D / 255.0f);
-            const glm::vec3 blueTrail(0x6B / 255.0f, 0x9D / 255.0f, 0xFF / 255.0f);
+            const glm::vec3 pinkTrail(0xD9 / 255.0f, 0xBE / 255.0f, 0x6E / 255.0f);  // Gold Leaf light (L)
+            const glm::vec3 blueTrail(0x55 / 255.0f, 0x4A / 255.0f, 0x37 / 255.0f); // Burnt Stone (R)
             drawTrail(trailL_, vaoTrailL_, vboTrailL_,
                       pinkTrail, lTrailOpacity, now);
             drawTrail(trailR_, vaoTrailR_, vboTrailR_,
@@ -321,7 +333,6 @@ void XYZPanGLView::openGLContextClosing()
     colorLineShader_.reset();
     sphereShader_.reset();
     trailShader_.reset();
-
     if (vaoRoom_)   { glDeleteVertexArrays(1, &vaoRoom_);   vaoRoom_   = 0; }
     if (vboRoom_)   { glDeleteBuffers(1, &vboRoom_);        vboRoom_   = 0; }
     if (vaoGrid_)   { glDeleteVertexArrays(1, &vaoGrid_);   vaoGrid_   = 0; }
@@ -339,6 +350,7 @@ void XYZPanGLView::openGLContextClosing()
     if (vboTrailL_)      { glDeleteBuffers(1, &vboTrailL_);           vboTrailL_      = 0; }
     if (vaoTrailR_)      { glDeleteVertexArrays(1, &vaoTrailR_);      vaoTrailR_      = 0; }
     if (vboTrailR_)      { glDeleteBuffers(1, &vboTrailR_);           vboTrailR_      = 0; }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -393,9 +405,12 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
                     p->setValueNotifyingHost(apvtsPtr->getParameterRange(kParamZ).convertTo0to1(newZ));
             });
     } else {
-        // Camera orbit
+        // Camera orbit — detect if drag exits a snap view
+        const bool wasSnapped = camera_.activeSnap != Camera::SnapView::Orbit;
         camera_.applyMouseDrag(static_cast<float>(delta.x),
                                static_cast<float>(delta.y));
+        if (wasSnapped && onSnapExited)
+            onSnapExited();
     }
 }
 
@@ -416,7 +431,7 @@ void XYZPanGLView::mouseWheelMove(const juce::MouseEvent& /*e*/,
                                     const juce::MouseWheelDetails& wheel)
 {
     constexpr float kZoomSpeed = 0.5f;
-    constexpr float kMinDist   = 1.0f;
+    constexpr float kMinDist   = 0.01f;
     constexpr float kMaxDist   = 10.0f;
 
     camera_.dist = std::clamp(camera_.dist - wheel.deltaY * kZoomSpeed,
@@ -498,6 +513,7 @@ void XYZPanGLView::compileShaders()
         jassertfalse;
         return;
     }
+
 }
 
 // ---------------------------------------------------------------------------

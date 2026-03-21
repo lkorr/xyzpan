@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <vector>
 #include <array>
+#include <functional>
 
 // GLM — orbit camera math
 #include <glm/glm.hpp>
@@ -125,6 +126,9 @@ public:
     // Called by snap buttons in XYZPanEditor
     using SnapView = Camera::SnapView;
     void setSnapView(SnapView v);
+
+    // Fired when a camera drag exits snap mode back to orbit
+    std::function<void()> onSnapExited;
 
 private:
     // ------------------------------------------------------------------

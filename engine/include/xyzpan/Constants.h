@@ -156,10 +156,6 @@ constexpr float kVertMonoCylinderRadiusMax = 1.0f;
 // Phase 4: Distance Processing (DIST-01 through DIST-06)
 // ============================================================================
 
-// Maximum per-sample delay change for doppler (rate limiter).
-// 0.5 = max ~1.5x playback speed, prevents clicks on fast pass-by.
-constexpr float kMaxDopplerSlewPerSample = 0.5f;
-
 // Doppler anti-alias LP cutoff: band-limits signal before distance delay line
 // to prevent Catmull-Rom interpolation aliasing during delay modulation.
 // 18kHz is above audible range; combined with Hermite ~20dB stopband rejection,

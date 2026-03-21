@@ -99,11 +99,44 @@ public:
         a2_ = a2 / a0;
     }
 
+    // Compute new target coefficients and linearly interpolate from old to new
+    // across blockSize samples. Eliminates clicks from coefficient jumps at
+    // block boundaries. Call once per block instead of setCoefficients().
+    void setCoefficientsSmoothed(BiquadType type, float freqHz, float sampleRate,
+                                 float Q, float gainDb, int blockSize) {
+        // Snapshot current coefficients as "old"
+        old_b0_ = b0_; old_b1_ = b1_; old_b2_ = b2_;
+        old_a1_ = a1_; old_a2_ = a2_;
+
+        // Compute new target coefficients
+        setCoefficients(type, freqHz, sampleRate, Q, gainDb);
+
+        // Store new targets, restore old as active starting point
+        new_b0_ = b0_; new_b1_ = b1_; new_b2_ = b2_;
+        new_a1_ = a1_; new_a2_ = a2_;
+        b0_ = old_b0_; b1_ = old_b1_; b2_ = old_b2_;
+        a1_ = old_a1_; a2_ = old_a2_;
+
+        smoothSamplesRemaining_ = blockSize;
+        smoothInc_ = 1.0f / static_cast<float>(blockSize);
+        smoothT_ = 0.0f;
+    }
+
     // Process one sample through the biquad (Direct Form II).
+    // When smoothing is active, linearly interpolates coefficients per-sample.
     //   y   = b0*x + z1
     //   z1' = b1*x - a1*y + z2
     //   z2' = b2*x - a2*y
     float process(float x) {
+        if (smoothSamplesRemaining_ > 0) {
+            smoothT_ += smoothInc_;
+            b0_ = old_b0_ + (new_b0_ - old_b0_) * smoothT_;
+            b1_ = old_b1_ + (new_b1_ - old_b1_) * smoothT_;
+            b2_ = old_b2_ + (new_b2_ - old_b2_) * smoothT_;
+            a1_ = old_a1_ + (new_a1_ - old_a1_) * smoothT_;
+            a2_ = old_a2_ + (new_a2_ - old_a2_) * smoothT_;
+            --smoothSamplesRemaining_;
+        }
         float y = b0_ * x + z1_;
         z1_     = b1_ * x - a1_ * y + z2_;
         z2_     = b2_ * x - a2_ * y;
@@ -121,6 +154,15 @@ private:
     // Delay state (Direct Form II)
     float z1_ = 0.0f;
     float z2_ = 0.0f;
+
+    // Per-sample coefficient smoothing state
+    float old_b0_ = 1.0f, old_b1_ = 0.0f, old_b2_ = 0.0f;
+    float old_a1_ = 0.0f, old_a2_ = 0.0f;
+    float new_b0_ = 1.0f, new_b1_ = 0.0f, new_b2_ = 0.0f;
+    float new_a1_ = 0.0f, new_a2_ = 0.0f;
+    int   smoothSamplesRemaining_ = 0;
+    float smoothInc_ = 0.0f;
+    float smoothT_   = 0.0f;
 };
 
 } // namespace xyzpan::dsp
