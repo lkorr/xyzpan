@@ -206,4 +206,37 @@ void AlchemyLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
     }
 }
 
+// ---------------------------------------------------------------------------
+void AlchemyLookAndFeel::drawToggleButton(
+    juce::Graphics& g, juce::ToggleButton& button,
+    bool shouldDrawButtonAsHighlighted,
+    bool shouldDrawButtonAsDown)
+{
+    auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+
+    juce::Colour fill = juce::Colour(kDarkIron);
+    if (shouldDrawButtonAsDown)
+        fill = fill.brighter(0.2f);
+    else if (shouldDrawButtonAsHighlighted)
+        fill = fill.brighter(0.1f);
+    g.setColour(fill);
+    g.fillRoundedRectangle(bounds, 3.0f);
+
+    const juce::Colour border = button.getToggleState()
+        ? juce::Colour(kWarmGold)
+        : juce::Colour(kBronze);
+    g.setColour(border);
+    g.drawRoundedRectangle(bounds, 3.0f, 1.5f);
+
+    const auto fontSize = juce::jmin(12.0f,
+        static_cast<float>(button.getHeight()) * 0.5f);
+    g.setFont(juce::Font(juce::FontOptions(fontSize)));
+    g.setColour(button.getToggleState()
+        ? juce::Colour(kBrightGold)
+        : juce::Colour(kParchment).withMultipliedAlpha(
+            button.isEnabled() ? 1.0f : 0.5f));
+    g.drawText(button.getButtonText(), button.getLocalBounds(),
+               juce::Justification::centred, true);
+}
+
 } // namespace xyzpan

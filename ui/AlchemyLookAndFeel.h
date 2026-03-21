@@ -50,6 +50,11 @@ public:
     // Label text: parchment colour on transparent background
     void drawLabel(juce::Graphics& g, juce::Label& label) override;
 
+    // Toggle button: text-only button, gold border when ON, bronze when OFF
+    void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                          bool shouldDrawButtonAsHighlighted,
+                          bool shouldDrawButtonAsDown) override;
+
     // Alchemy color constants — accessible for OpenGL renderer to match
     static constexpr uint32_t kBackground  = 0xFF110B1Au;
     static constexpr uint32_t kDarkIron    = 0xFF1C1228u;
