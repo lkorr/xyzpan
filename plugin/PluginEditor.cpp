@@ -76,19 +76,28 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(resetXYZPhasesBtn_);
 
     // ----- Stereo orbit controls -----
-    auto configOrbitSlider = [this](juce::Slider& s, juce::Label& l, const juce::String& name) {
-        s.setSliderStyle(juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 16);
+    // Width / Phase / Offset — rotary knobs (consistent with position and reverb sections)
+    auto configOrbitKnob = [this](juce::Slider& s, juce::Label& l, const juce::String& name) {
+        s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 55, 14);
         l.setText(name, juce::dontSendNotification);
-        l.setJustificationType(juce::Justification::centredLeft);
+        l.setJustificationType(juce::Justification::centred);
         l.setFont(juce::Font(juce::FontOptions(11.0f)));
         addAndMakeVisible(&s);
         addAndMakeVisible(&l);
     };
-    configOrbitSlider(stereoWidthKnob_, stereoWidthLabel_, "Width");
-    configOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_,  "Phase");
-    configOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_, "Offset");
-    configOrbitSlider(orbitSpeedMulKnob_, orbitSpeedMulLabel_, "Speed");
+    configOrbitKnob(stereoWidthKnob_, stereoWidthLabel_, "Width");
+    configOrbitKnob(orbitPhaseKnob_,  orbitPhaseLabel_,  "Phase");
+    configOrbitKnob(orbitOffsetKnob_, orbitOffsetLabel_, "Offset");
+
+    // Speed — stays as LinearHorizontal (horizontal slot at bottom of orbit LFO section)
+    orbitSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
+    orbitSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 16);
+    orbitSpeedMulLabel_.setText("Speed", juce::dontSendNotification);
+    orbitSpeedMulLabel_.setJustificationType(juce::Justification::centredLeft);
+    orbitSpeedMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    addAndMakeVisible(&orbitSpeedMulKnob_);
+    addAndMakeVisible(&orbitSpeedMulLabel_);
 
     stereoWidthAtt_  = std::make_unique<SA>(p.apvts, ParamID::STEREO_WIDTH,          stereoWidthKnob_);
     orbitPhaseAtt_   = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_PHASE,    orbitPhaseKnob_);
@@ -172,19 +181,32 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(dopplerSubLabel_);
 
     // ----- Snap buttons -----
+    snapXY_.setButtonText("XY");
+    snapXZ_.setButtonText("XZ");
+    snapYZ_.setButtonText("YZ");
+
+    snapXY_.setClickingTogglesState(false);
+    snapXZ_.setClickingTogglesState(false);
+    snapYZ_.setClickingTogglesState(false);
+
     snapXY_.onClick = [this] {
         glView_.setSnapView(xyzpan::XYZPanGLView::SnapView::TopDown);
+        currentSnap_ = SnapState::TopDown;
+        updateSnapButtonStates();
     };
     snapXZ_.onClick = [this] {
         glView_.setSnapView(xyzpan::XYZPanGLView::SnapView::Side);
+        currentSnap_ = SnapState::Side;
+        updateSnapButtonStates();
     };
     snapYZ_.onClick = [this] {
         glView_.setSnapView(xyzpan::XYZPanGLView::SnapView::Front);
+        currentSnap_ = SnapState::Front;
+        updateSnapButtonStates();
     };
-    for (auto* btn : {&snapXY_, &snapXZ_, &snapYZ_}) {
-        btn->setClickingTogglesState(false);
+
+    for (auto* btn : {&snapXY_, &snapXZ_, &snapYZ_})
         addAndMakeVisible(btn);
-    }
 
     // ----- Dev panel toggle (bottom row) -----
     devToggle_.onClick = [this] {
@@ -521,28 +543,31 @@ void XYZPanEditor::resized()
 
         // --- ORBIT CONTROLS (fixed 240px left portion of orbit section) ---
         {
-            const int ox = bx + 6;
-            const int ow = kOrbitCtrlW - 12;
-            int oy = contentTop + 2;
-            const int sliderH  = 28;
-            const int labelW   = 48;
-            const int gap      = 2;
+            const int ox = bx;
+            const int ow = kOrbitCtrlW;
+            const int knobSz  = 48;
+            const int labelH_o = 13;
+            const int btnH    = 22;
 
-            auto placeSlider = [&](juce::Label& lbl, juce::Slider& slider) {
-                lbl.setBounds(ox, oy, labelW, sliderH);
-                slider.setBounds(ox + labelW, oy, ow - labelW, sliderH);
-                oy += sliderH + gap;
+            const int knobRowY = lo.contentTop + 2;
+            const int colW_o   = ow / 3;
+
+            auto placeOrbitKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
+                int cx    = ox + col * colW_o;
+                int knobX = cx + (colW_o - knobSz) / 2;
+                knob.setBounds(knobX, knobRowY, knobSz, knobSz);
+                label.setBounds(cx, knobRowY + knobSz, colW_o, labelH_o);
             };
 
-            placeSlider(stereoWidthLabel_,    stereoWidthKnob_);
-            placeSlider(orbitOffsetLabel_,     orbitOffsetKnob_);
-            placeSlider(orbitPhaseLabel_,      orbitPhaseKnob_);
+            placeOrbitKnob(stereoWidthKnob_, stereoWidthLabel_, 0);
+            placeOrbitKnob(orbitOffsetKnob_, orbitOffsetLabel_, 1);
+            placeOrbitKnob(orbitPhaseKnob_,  orbitPhaseLabel_,  2);
 
-            const int btnH = 22;
-            const int faceBtnW = ow * 2 / 3;
-            const int syncBtnW = ow - faceBtnW - 8;
-            faceListenerToggle_.setBounds(ox, oy, faceBtnW, btnH);
-            orbitTempoSyncToggle_.setBounds(ox + faceBtnW + 8, oy, syncBtnW, btnH);
+            const int btnY      = knobRowY + knobSz + labelH_o + 4;
+            const int faceBtnW  = ow * 2 / 3 - 4;
+            const int syncBtnW  = ow / 3 - 4;
+            faceListenerToggle_.setBounds(ox + 4, btnY, faceBtnW, btnH);
+            orbitTempoSyncToggle_.setBounds(ox + 4 + faceBtnW + 4, btnY, syncBtnW, btnH);
         }
 
         // --- ORBIT LFO STRIPS + SPEED/RESET ROW (flexible width, between orbit controls and reverb) ---
@@ -591,6 +616,17 @@ void XYZPanEditor::resized()
         // --- DEV toggle (far-right corner) ---
         devToggle_.setBounds(bx + bw - devW + 4, lo.bottomY + (kBottomH - 24) / 2, devW - 8, 24);
     }
+}
+
+// ---------------------------------------------------------------------------
+// updateSnapButtonStates — set toggle state so AlchemyLookAndFeel renders
+// the active snap button with gold border and inactive ones with bronze.
+// ---------------------------------------------------------------------------
+void XYZPanEditor::updateSnapButtonStates()
+{
+    snapXY_.setToggleState(currentSnap_ == SnapState::TopDown, juce::dontSendNotification);
+    snapXZ_.setToggleState(currentSnap_ == SnapState::Side,    juce::dontSendNotification);
+    snapYZ_.setToggleState(currentSnap_ == SnapState::Front,   juce::dontSendNotification);
 }
 
 // ---------------------------------------------------------------------------

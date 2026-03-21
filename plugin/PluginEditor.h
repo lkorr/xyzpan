@@ -41,7 +41,11 @@ private:
     xyzpan::XYZPanGLView glView_;
 
     // View snap buttons (XY / XZ / YZ orthographic)
-    juce::TextButton snapXY_{"XY"}, snapXZ_{"XZ"}, snapYZ_{"YZ"};
+    juce::ToggleButton snapXY_, snapXZ_, snapYZ_;
+
+    enum class SnapState { None, TopDown, Side, Front };
+    SnapState currentSnap_ = SnapState::None;
+    void updateSnapButtonStates();
 
     // Layout constants
     static constexpr int kLeftColW      = 400;     // wider for larger knobs
