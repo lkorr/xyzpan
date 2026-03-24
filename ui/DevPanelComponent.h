@@ -20,6 +20,9 @@ public:
                                xyzpan::DSPStateBridge* dspBridge = nullptr);
     ~DevPanelComponent() override = default;
 
+    void savePreset();
+    void loadPreset();
+
     void resized() override;
     void paint(juce::Graphics& g) override;
     void timerCallback() override;
@@ -40,10 +43,16 @@ public:
     };
 
 private:
+    juce::AudioProcessorValueTreeState& apvts_;
+
     juce::Viewport viewport_;
     juce::Component content_;
 
     xyzpan::DSPStateBridge* dspBridge_ = nullptr;
+
+    juce::TextButton saveButton_ { "Save" };
+    juce::TextButton loadButton_ { "Load" };
+    std::unique_ptr<juce::FileChooser> fileChooser_;
 
     // Owned controls — created once in constructor, kept alive permanently
     std::vector<std::unique_ptr<juce::Slider>>   sliders_;

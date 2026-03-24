@@ -153,9 +153,9 @@ void XYZPanGLView::renderOpenGL()
     //   XYZPan Z = up/down     → GL Y
     const glm::vec3 sourcePos(snap.x, snap.z, -snap.y);
 
-    // Sphere radius from bridge — halved for visual scaling so the rendered
+    // Sphere radius from bridge — quartered for visual scaling so the rendered
     // boundary better matches perceived distance cues (DSP uses full value).
-    const float sr = snap.sphereRadius * 0.5f;
+    const float sr = snap.sphereRadius * 0.25f;
 
     // Compute source opacity: full at close range, ~10% at sphere boundary
     const float distFrac = std::clamp(snap.distance / sr, 0.0f, 1.0f);
@@ -216,6 +216,12 @@ void XYZPanGLView::renderOpenGL()
         const glm::vec3 listenerColor(0xC9 / 255.0f, 0xA8 / 255.0f, 0x4C / 255.0f);
         drawSphere(glm::vec3(0.0f), 0.045f, listenerColor, headAlpha);
 
+        // Listener head rotation matrix (yaw around GL Y-up, pitch around GL X-right)
+        // Applied to arrow and ears so the head visually rotates while the sphere stays fixed.
+        glm::mat4 headRot(1.0f);
+        headRot = glm::rotate(headRot, snap.listenerYaw,  glm::vec3(0.0f, 1.0f, 0.0f));
+        headRot = glm::rotate(headRot, snap.listenerPitch, glm::vec3(1.0f, 0.0f, 0.0f));
+
         // Forward arrow — cone pointing in -Z (XYZPan +Y = forward)
         // Cone is built along +Y, so rotate -90° around X to point along -Z
         {
@@ -223,7 +229,8 @@ void XYZPanGLView::renderOpenGL()
             constexpr float kArrowLength     = 0.05f;
             constexpr float kArrowOffset     = 0.048f;  // start just outside listener sphere
 
-            glm::mat4 arrowModel = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -kArrowOffset));
+            glm::mat4 arrowModel = headRot;
+            arrowModel = glm::translate(arrowModel, glm::vec3(0.0f, 0.0f, -kArrowOffset));
             arrowModel = glm::rotate(arrowModel, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
             arrowModel = glm::scale(arrowModel, glm::vec3(kArrowBaseRadius, kArrowLength, kArrowBaseRadius));
 
@@ -241,14 +248,16 @@ void XYZPanGLView::renderOpenGL()
 
             // Left ear (-X)
             {
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(-kEarOffset, 0.0f, 0.0f));
+                glm::mat4 m = headRot;
+                m = glm::translate(m, glm::vec3(-kEarOffset, 0.0f, 0.0f));
                 m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
                 drawSphereWithModel(m, earColor, 0.9f * headAlpha);
             }
 
             // Right ear (+X)
             {
-                glm::mat4 m = glm::translate(glm::mat4(1.0f), glm::vec3(kEarOffset, 0.0f, 0.0f));
+                glm::mat4 m = headRot;
+                m = glm::translate(m, glm::vec3(kEarOffset, 0.0f, 0.0f));
                 m = glm::scale(m, glm::vec3(kEarRadius * kEarFlatten, kEarRadius, kEarRadius));
                 drawSphereWithModel(m, earColor, 0.9f * headAlpha);
             }

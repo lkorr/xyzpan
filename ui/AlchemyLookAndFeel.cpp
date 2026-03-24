@@ -423,15 +423,37 @@ void AlchemyLookAndFeel::drawToggleButton(
     g.setColour(border);
     g.drawRoundedRectangle(bounds, 3.0f, 1.5f);
 
-    const auto fontSize = juce::jmin(12.0f,
-        static_cast<float>(button.getHeight()) * 0.5f);
-    g.setFont(juce::Font(juce::FontOptions(fontSize)));
-    g.setColour(button.getToggleState()
-        ? juce::Colour(kBrightGold)
-        : juce::Colour(kParchment).withMultipliedAlpha(
-            button.isEnabled() ? 1.0f : 0.5f));
-    g.drawText(button.getButtonText(), button.getLocalBounds(),
-               juce::Justification::centred, true);
+    if (button.getButtonText().isEmpty()) {
+        // Checkbox style — subtle inner glow when toggled on
+        if (button.getToggleState()) {
+            auto inner = bounds.reduced(4.0f);
+
+            // 1. Soft radial glow — warm gold emanating from center
+            auto cx = inner.getCentreX();
+            auto cy = inner.getCentreY();
+            auto radius = juce::jmax(inner.getWidth(), inner.getHeight()) * 0.55f;
+            juce::ColourGradient glow(
+                juce::Colour(kWarmGold).withAlpha(0.25f), cx, cy,
+                juce::Colour(kWarmGold).withAlpha(0.0f), cx + radius, cy + radius,
+                true); // radial
+            g.setGradientFill(glow);
+            g.fillRoundedRectangle(inner, 2.0f);
+
+            // 2. Faint warm tint over entire inner area
+            g.setColour(juce::Colour(kWarmGold).withAlpha(0.06f));
+            g.fillRoundedRectangle(inner, 2.0f);
+        }
+    } else {
+        const auto fontSize = juce::jmin(12.0f,
+            static_cast<float>(button.getHeight()) * 0.5f);
+        g.setFont(juce::Font(juce::FontOptions(fontSize)));
+        g.setColour(button.getToggleState()
+            ? juce::Colour(kBrightGold)
+            : juce::Colour(kParchment).withMultipliedAlpha(
+                button.isEnabled() ? 1.0f : 0.5f));
+        g.drawText(button.getButtonText(), button.getLocalBounds(),
+                   juce::Justification::centred, true);
+    }
 }
 
 } // namespace xyzpan

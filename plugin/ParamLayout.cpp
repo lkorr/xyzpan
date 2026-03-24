@@ -171,6 +171,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         xyzpan::kChestGainDb  // -8.0f
     ));
 
+    // Chest bounce HPF cutoff (Hz) — 4x HP cascade
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::CHEST_HPF_HZ, 1 },
+        "Chest HPF Hz",
+        NR(100.0f, 5000.0f, 1.0f, 0.3f),  // log skew
+        xyzpan::kChestHPFHz  // 700.0f
+    ));
+
+    // Chest bounce LP cutoff (Hz) — 1x 6dB/oct LP
+    layout.add(std::make_unique<APF>(
+        PID{ ParamID::CHEST_LP_HZ, 1 },
+        "Chest LP Hz",
+        NR(200.0f, 10000.0f, 1.0f, 0.3f),  // log skew
+        xyzpan::kChestLPHz  // 1000.0f
+    ));
+
     // Floor bounce max delay (ms)
     layout.add(std::make_unique<APF>(
         PID{ ParamID::FLOOR_DELAY_MS, 1 },
@@ -297,13 +313,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
             divLabels, xyzpan::kBeatDivDefaultIndex));
     }
 
-    // Tempo sync (shared across all axes) — AudioParameterBool
+    // Tempo sync (per-axis) — AudioParameterBool
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ParamID::LFO_TEMPO_SYNC, 1}, "LFO Tempo Sync", false));
+        juce::ParameterID{ParamID::LFO_X_TEMPO_SYNC, 1}, "LFO X Tempo Sync", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::LFO_Y_TEMPO_SYNC, 1}, "LFO Y Tempo Sync", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::LFO_Z_TEMPO_SYNC, 1}, "LFO Z Tempo Sync", false));
 
     // XYZ LFO speed multiplier (shared across all XYZ LFOs)
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_SPEED_MUL, 1}, "LFO Speed Mul",
-        NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f), xyzpan::kLFOSpeedMulDefault));
+        NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f, xyzpan::kLFOSpeedMulSkew), xyzpan::kLFOSpeedMulDefault));
 
     // -------------------------------------------------------------------------
     // Stereo source node splitting
@@ -390,12 +410,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(0.0f, 1.0f, 0.001f), 0.0f));
 
     // -------------------------------------------------------------------------
-    // Stereo orbit shared
+    // Stereo orbit per-plane tempo sync + shared speed
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ParamID::STEREO_ORBIT_TEMPO_SYNC, 1}, "Orbit Tempo Sync", false));
+        juce::ParameterID{ParamID::STEREO_ORBIT_XY_TEMPO_SYNC, 1}, "Orbit XY Tempo Sync", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_ORBIT_XZ_TEMPO_SYNC, 1}, "Orbit XZ Tempo Sync", false));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::STEREO_ORBIT_YZ_TEMPO_SYNC, 1}, "Orbit YZ Tempo Sync", false));
     layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_SPEED_MUL, 1}, "Orbit Speed Mul",
-        NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f), xyzpan::kLFOSpeedMulDefault));
+        NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f, xyzpan::kLFOSpeedMulSkew), xyzpan::kLFOSpeedMulDefault));
 
     // -------------------------------------------------------------------------
     // Dev Panel: Presence shelf tuning
@@ -505,7 +529,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_PULSE_HZ, 1}, "Test Tone Pulse Hz",
         NR(xyzpan::kTestTonePulseMinHz, xyzpan::kTestTonePulseMaxHz, 0.01f), xyzpan::kTestTonePulseDefault));
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_WAVEFORM, 1}, "Test Tone Waveform",
-        NR(0.0f, 7.0f, 1.0f), 0.0f));
+        NR(0.0f, 8.0f, 1.0f), 0.0f));
 
     // -------------------------------------------------------------------------
     // Dev Panel: Delay line interpolation mode
@@ -548,6 +572,38 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
 
     layout.add(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ParamID::BYPASS_EXPANDED_PINNA, 1}, "Bypass Expanded Pinna", false));
+
+    // -------------------------------------------------------------------------
+    // Early Reflections (Image Source Method)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::ER_ENABLED, 1}, "ER Enabled", false));
+    layout.add(std::make_unique<APF>(PID{ParamID::ER_ROOM_SIZE, 1}, "ER Room Size (m)",
+        NR(xyzpan::kERRoomSizeMin, xyzpan::kERRoomSizeMax, 0.1f), xyzpan::kERRoomSizeDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::ER_DAMPING, 1}, "ER Damping",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kERDampingDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::ER_LEVEL, 1}, "ER Level",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kERLevelDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::ER_REVERB_SEND, 1}, "ER Reverb Send",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kERReverbSendDefault));
+    layout.add(std::make_unique<APF>(PID{ParamID::ER_GAIN_DB, 1}, "ER Gain (dB)",
+        NR(-24.0f, 24.0f, 0.1f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BYPASS_ER, 1}, "Bypass ER", false));
+
+    // -------------------------------------------------------------------------
+    // Listener head orientation (user-facing)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_YAW, 1}, "Listener Yaw",
+        NR(-180.0f, 180.0f, 0.1f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_PITCH, 1}, "Listener Pitch",
+        NR(-90.0f, 90.0f, 0.1f), 0.0f));
+
+    // -------------------------------------------------------------------------
+    // Binaural toggle (user-facing)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::BINAURAL_ENABLED, 1}, "Binaural", true));
 
     // -------------------------------------------------------------------------
     // Dev Panel: Per-feature bypass toggles

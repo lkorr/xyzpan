@@ -44,9 +44,9 @@ constexpr float kDefaultILDMaxDb       = 8.0f;      // max ILD boost in dB (near
 // 1.0 sample ≈ 0.023ms at 44.1kHz — matches exactly at |itdSamples| >= 1.
 constexpr float kILDCrossfadeWidth     = 1.0f;
 
-// Near-field ILD scaling: boost ildMaxDb at close range for stronger panning
-constexpr float kNearFieldILDThreshold = 0.3f;       // distance fraction below which scaling kicks in
-constexpr float kNearFieldILDMaxDb     = 15.0f;      // max ILD at very close range
+// Hardpan mode: opposite-ear attenuation when binaural (ITD) is disabled.
+// At full azimuth, the opposite ear is cut by this amount (in dB).
+constexpr float kHardpanMaxDb          = -4.0f;
 
 // Rear shadow SVF — both ears, only active when Y < 0 (source behind listener)
 // Provides a subtle front/back cue before Phase 3 comb filters are added.
@@ -137,6 +137,10 @@ constexpr float kChestDelayMaxMs  = 2.0f;
 // Chest bounce attenuation at Z=-1 (maximum bounce contribution)
 constexpr float kChestGainDb      = -8.0f;
 
+// Chest bounce filter cutoffs — shape the reflected signal
+constexpr float kChestHPFHz       = 700.0f;    // chest bounce highpass cutoff (4x HP cascade)
+constexpr float kChestLPHz        = 1000.0f;   // chest bounce lowpass cutoff (1x 6dB/oct LP)
+
 // Floor bounce delay: 0 ms at Z=1 (above), 20 ms at Z=-1 (below) — max delay
 constexpr float kFloorDelayMaxMs  = 20.0f;
 
@@ -217,8 +221,9 @@ constexpr float kLFOMinRate       = 0.0f;   // Hz minimum (0 = stopped)
 constexpr float kLFOMaxRate       = 10.0f;  // Hz maximum
 constexpr float kLFOMaxDepth      = 1.0f;   // max depth = full ±1 axis swing
 constexpr float kLFOSpeedMulMin     = 0.0f;
-constexpr float kLFOSpeedMulMax     = 3.0f;
+constexpr float kLFOSpeedMulMax     = 5.0f;
 constexpr float kLFOSpeedMulDefault = 1.0f;
+constexpr float kLFOSpeedMulSkew    = 0.431f; // exponential: slider midpoint = 1.0
 
 // Beat division discrete values for tempo-synced LFOs
 // Index 6 ("1") = quarter note = default
@@ -238,29 +243,19 @@ constexpr const char* kBeatDivLabels[kBeatDivCount] = {
 // Spatial DSP Improvements (P2–P6)
 // ============================================================================
 
-// P3: 1 kHz Rear Cue — bell filter boosted when source is behind listener
-constexpr float kRearCue1kHz_FreqHz = 1000.0f;
-constexpr float kRearCue1kHz_Q      = 1.5f;
-constexpr float kRearCue1kHz_MaxDb  = 2.0f;
-
-// P2: Front-Back Notch — PeakingEQ attenuated when source is behind listener
-constexpr float kFrontBackNotchFreqHz = 6500.0f;
-constexpr float kFrontBackNotchQ      = 2.0f;
-constexpr float kFrontBackNotchMaxDb  = -6.0f;
-
 // P5: Expanded Pinna EQ — 4 additional bands
-// Concha notch: 4kHz, Q=3.0, Z-mapped: 0dB (above) → −8dB (below)
+// Concha notch: 4kHz, Q=3.0, elevation-mapped: 0dB (above) → −8dB (below)
 constexpr float kConchaNotchFreqHz = 4000.0f;
 constexpr float kConchaNotchQ      = 3.0f;
 constexpr float kConchaNotchMaxDb  = -8.0f;
 
-// Upper pinna peak: 12kHz, Q=2.0, Z-mapped: −4dB (below) → +3dB (above)
+// Upper pinna peak: 12kHz, Q=2.0, elevation-mapped: −4dB (below) → +3dB (above)
 constexpr float kUpperPinnaFreqHz  = 12000.0f;
 constexpr float kUpperPinnaQ       = 2.0f;
 constexpr float kUpperPinnaMinDb   = -4.0f;   // at Z=-1 (below)
 constexpr float kUpperPinnaMaxDb   = 3.0f;    // at Z=+1 (above)
 
-// Shoulder reflection: 1.5kHz, Q=1.0, Z-mapped: 0dB (above) → +2dB (below horizon)
+// Shoulder reflection: 1.5kHz, Q=1.0, elevation-mapped: 0dB (above) → +2dB (below horizon)
 constexpr float kShoulderPeakFreqHz = 1500.0f;
 constexpr float kShoulderPeakQ      = 1.0f;
 constexpr float kShoulderPeakMaxDb  = 2.0f;
@@ -271,10 +266,26 @@ constexpr float kTragusNotchQ       = 3.5f;
 constexpr float kTragusNotchMaxDb   = -5.0f;
 
 // ============================================================================
+// Early Reflections (Image Source Method)
+// ============================================================================
+constexpr int   kNumER                = 6;       // 6 walls: ±X, ±Y, ±Z
+constexpr float kERRoomSizeMin        = 1.0f;    // meters, half-dimension
+constexpr float kERRoomSizeMax        = 30.0f;
+constexpr float kERRoomSizeDefault    = 5.0f;
+constexpr float kERDampingDefault     = 0.5f;    // maps to 500–16000 Hz wall LPF cutoff
+constexpr float kERDampingLPMinHz     = 500.0f;  // fully damped wall cutoff
+constexpr float kERDampingLPMaxHz     = 16000.0f;// undamped wall cutoff
+constexpr float kERLevelDefault       = 0.5f;
+constexpr float kERReverbSendDefault  = 0.7f;
+constexpr float kERMaxDelayMs         = 350.0f;  // margin over worst case (~213ms at 192kHz)
+constexpr float kSpeedOfSound         = 343.0f;  // m/s
+
+// ============================================================================
 // Stereo Source Node Splitting
 // ============================================================================
 constexpr float kStereoMaxSpreadRadius = 1.0f;   // max half-separation in world units
 constexpr float kStereoOrbitDefaultRate = 0.5f;   // Hz
+constexpr float kStereoNodeGain        = 0.70710678f; // -3dB per node (1/sqrt(2))
 
 // ============================================================================
 // Dev tool: Test tone oscillator

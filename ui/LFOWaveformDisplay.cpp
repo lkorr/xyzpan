@@ -78,7 +78,8 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
     }
 
     // Waveform line
-    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold));
+    const float alpha = isEnabled() ? 1.0f : 0.4f;
+    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold).withAlpha(alpha));
     g.strokePath(path, juce::PathStrokeType(1.5f));
 
     // Bright gold dot at right edge marking current value
@@ -87,7 +88,7 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
         float dotY = lastPy;
         float dotR = 3.0f;
 
-        g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
+        g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold).withAlpha(alpha));
         g.fillEllipse(dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
     }
 }

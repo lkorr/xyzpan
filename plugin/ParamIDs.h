@@ -39,6 +39,8 @@ namespace ParamID {
     constexpr const char* PINNA_SHELF_HZ = "pinna_shelf_hz";
     constexpr const char* CHEST_DELAY_MS = "chest_delay_ms";
     constexpr const char* CHEST_GAIN_DB  = "chest_gain_db";
+    constexpr const char* CHEST_HPF_HZ   = "chest_hpf_hz";
+    constexpr const char* CHEST_LP_HZ    = "chest_lp_hz";
     constexpr const char* FLOOR_DELAY_MS = "floor_delay_ms";
     constexpr const char* FLOOR_GAIN_DB  = "floor_gain_db";
 
@@ -72,8 +74,10 @@ namespace ParamID {
     constexpr const char* LFO_X_SMOOTH   = "lfo_x_smooth";
     constexpr const char* LFO_Y_SMOOTH   = "lfo_y_smooth";
     constexpr const char* LFO_Z_SMOOTH   = "lfo_z_smooth";
-    // Tempo sync (shared)
-    constexpr const char* LFO_TEMPO_SYNC  = "lfo_tempo_sync";   // AudioParameterBool
+    // Tempo sync (per-axis)
+    constexpr const char* LFO_X_TEMPO_SYNC = "lfo_x_tempo_sync";
+    constexpr const char* LFO_Y_TEMPO_SYNC = "lfo_y_tempo_sync";
+    constexpr const char* LFO_Z_TEMPO_SYNC = "lfo_z_tempo_sync";
     // XYZ LFO speed multiplier (shared across all XYZ LFOs)
     constexpr const char* LFO_SPEED_MUL   = "lfo_speed_mul";
     // Beat division per axis (float multiplier: 0.25=1/4, 0.5=1/2, 1.0=quarter, 2.0=half, 4.0=whole)
@@ -114,9 +118,11 @@ namespace ParamID {
     constexpr const char* STEREO_ORBIT_YZ_DEPTH        = "stereo_orbit_yz_depth";
     constexpr const char* STEREO_ORBIT_YZ_SMOOTH       = "stereo_orbit_yz_smooth";
 
-    // Stereo orbit shared
-    constexpr const char* STEREO_ORBIT_TEMPO_SYNC = "stereo_orbit_tempo_sync";
-    constexpr const char* STEREO_ORBIT_SPEED_MUL  = "stereo_orbit_speed_mul";
+    // Stereo orbit per-plane tempo sync
+    constexpr const char* STEREO_ORBIT_XY_TEMPO_SYNC = "stereo_orbit_xy_tempo_sync";
+    constexpr const char* STEREO_ORBIT_XZ_TEMPO_SYNC = "stereo_orbit_xz_tempo_sync";
+    constexpr const char* STEREO_ORBIT_YZ_TEMPO_SYNC = "stereo_orbit_yz_tempo_sync";
+    constexpr const char* STEREO_ORBIT_SPEED_MUL     = "stereo_orbit_speed_mul";
 
     // Dev panel: Presence shelf
     constexpr const char* PRESENCE_SHELF_FREQ_HZ = "presence_shelf_freq_hz";
@@ -191,6 +197,22 @@ namespace ParamID {
     constexpr const char* TRAGUS_NOTCH_Q        = "tragus_notch_q";
     constexpr const char* TRAGUS_NOTCH_MAX_DB   = "tragus_notch_max_db";
     constexpr const char* BYPASS_EXPANDED_PINNA = "bypass_expanded_pinna";
+
+    // Early Reflections (Image Source Method)
+    constexpr const char* ER_ENABLED     = "er_enabled";
+    constexpr const char* ER_ROOM_SIZE   = "er_room_size";
+    constexpr const char* ER_DAMPING     = "er_damping";
+    constexpr const char* ER_LEVEL       = "er_level";
+    constexpr const char* ER_REVERB_SEND = "er_reverb_send";
+    constexpr const char* ER_GAIN_DB     = "er_gain_db";
+    constexpr const char* BYPASS_ER      = "bypass_er";
+
+    // Listener head orientation
+    constexpr const char* LISTENER_YAW   = "listener_yaw";
+    constexpr const char* LISTENER_PITCH = "listener_pitch";
+
+    // Binaural toggle (user-facing)
+    constexpr const char* BINAURAL_ENABLED   = "binaural_enabled";
 
     // Dev panel: Per-feature bypass toggles
     constexpr const char* BYPASS_ITD         = "bypass_itd";

@@ -138,10 +138,10 @@ std::vector<float> buildRoomWireframe(float halfSize)
         {-h, -h,  h}, { h, -h,  h}, { h,  h,  h}, {-h,  h,  h},   // front face
     };
 
-    // Colors per axis — palette-derived shades for subtle axis differentiation
-    const float xColor[3] = { 0xA6 / 255.0f, 0x8B / 255.0f, 0x3A / 255.0f };  // Gold Leaf dark
-    const float yColor[3] = { 0x43 / 255.0f, 0x39 / 255.0f, 0x2A / 255.0f };  // Burnt Stone dark
-    const float zColor[3] = { 0xA8 / 255.0f, 0x9A / 255.0f, 0x70 / 255.0f };  // Aged Papyrus dark
+    // Colors per axis — varying shades of gold for visual differentiation
+    const float xColor[3] = { 0xA6 / 255.0f, 0x8B / 255.0f, 0x3A / 255.0f };  // Gold Leaf Dark
+    const float yColor[3] = { 0xD9 / 255.0f, 0xBE / 255.0f, 0x6E / 255.0f };  // Gold Leaf Light
+    const float zColor[3] = { 0xC9 / 255.0f, 0xA8 / 255.0f, 0x4C / 255.0f };  // Gold Leaf (mid)
 
     // Edge definitions grouped by axis direction:
     //   X-axis (left/right): edges along ±X

@@ -569,7 +569,7 @@ TEST_CASE("LFO-03: LFO rate, depth via engine, and phase offset", "[LFO-03]") {
         params.lfoXRate = 1.0f;
         params.lfoXDepth = 0.5f;
         params.lfoXWaveform = 0; // sine
-        params.lfoTempoSync = false;
+        params.lfoXTempoSync = false;
         engine.setParams(params);
 
         constexpr int N = 44100;
@@ -681,7 +681,7 @@ TEST_CASE("LFO-05: Tempo sync at 120 BPM produces 2Hz rate (22050-sample period)
         paramsTempoSync.lfoXRate = 0.5f;  // free rate (ignored when tempoSync=true)
         paramsTempoSync.lfoXDepth = 0.5f;
         paramsTempoSync.lfoXWaveform = 0;  // sine
-        paramsTempoSync.lfoTempoSync = true;
+        paramsTempoSync.lfoXTempoSync = true;
         paramsTempoSync.hostBpm = 120.0f;
         paramsTempoSync.lfoXBeatDiv = 1.0f;
 

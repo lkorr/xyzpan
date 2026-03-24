@@ -59,14 +59,57 @@ struct BinauralPipeline {
 // each get independent distance processing (gain attenuation, delay+doppler,
 // air absorption) based on their own node positions.
 struct DistancePipeline {
-    dsp::FractionalDelayLine distDelayL, distDelayR;
-    dsp::OnePoleLP airLPF_L, airLPF_R;    // stage 1
-    dsp::OnePoleLP airLPF2_L, airLPF2_R;  // stage 2
-    dsp::OnePoleLP dopplerAA_L, dopplerAA_R;  // post-delay anti-alias LP
-    dsp::OnePoleLP dopplerPreAA_L, dopplerPreAA_R;  // pre-delay anti-alias LP
+    dsp::FractionalDelayLine dopplerDelay;        // mono doppler delay line
+    dsp::OnePoleLP airLPF_L, airLPF_R;            // air absorption stage 1 (stereo, post-binaural)
+    dsp::OnePoleLP airLPF2_L, airLPF2_R;          // air absorption stage 2 (stereo, post-binaural)
+    dsp::OnePoleLP dopplerPostAA;                  // post-delay anti-alias LP (mono)
+    dsp::OnePoleLP dopplerPreAA;                   // pre-delay anti-alias LP (mono)
     dsp::OnePoleSmooth distGainSmooth;
     dsp::OnePoleSmooth distDelaySmooth;
     float prevDelaySamp = 2.0f;  // rate limiter state for doppler
+    void prepare(float sr);
+    void reset();
+};
+
+// Per-reflection DSP state for the early reflections image source method.
+// 6 instances (one per wall face of the virtual cube: ±X, ±Y, ±Z).
+struct EarlyReflection {
+    dsp::OnePoleLP wallAbsorption;          // Wall absorption LPF
+    dsp::OnePoleSmooth delaySmooth;         // Smooth delay transitions
+    dsp::OnePoleSmooth gainSmooth;          // Smooth gain transitions
+    // Simplified binaural (ITD + ILD + head shadow per ear)
+    dsp::FractionalDelayLine itdDelayL, itdDelayR;
+    dsp::SVFLowPass shadowL, shadowR;
+    dsp::OnePoleSmooth itdSmooth;
+    dsp::OnePoleSmooth ildSmooth;
+};
+
+// Per-node chest bounce DSP state. When stereo width > 0, L and R nodes each
+// get independent chest bounce processing driven by their own Z position.
+struct ChestPipeline {
+    std::array<dsp::SVFFilter, 4> hpf;       // 4x HP cascade at 700Hz
+    dsp::OnePoleLP lp;                        // 1x 6dB/oct LP at 1kHz
+    dsp::FractionalDelayLine delay;           // 0–2ms delay
+    dsp::OnePoleSmooth gainSmooth, delaySmooth;
+    void prepare(float sr);
+    void reset();
+};
+
+// Per-node floor bounce DSP state. When stereo width > 0, L and R nodes each
+// get independent floor bounce with separate L/R absorption LPFs.
+struct FloorPipeline {
+    dsp::FractionalDelayLine delayL, delayR;
+    dsp::OnePoleLP lpfL, lpfR;               // separate L/R absorption
+    dsp::OnePoleSmooth gainSmooth, delaySmooth;
+    void prepare(float sr);
+    void reset();
+};
+
+// Per-node early reflections DSP state. When stereo width > 0, each node
+// gets its own set of 6 reflections with independent image source positions.
+struct ERPipeline {
+    std::array<EarlyReflection, kNumER> reflections;
+    dsp::FractionalDelayLine sharedDelay;
     void prepare(float sr);
     void reset();
 };
@@ -84,15 +127,17 @@ struct DistancePipeline {
 //   - Always produces 2-channel (stereo) output.
 //   - No allocation inside process(); all buffers pre-allocated in prepare().
 //
-// Phase 5 signal flow (per sample):
+// Signal flow (per sample):
 //   1. Stereo-to-mono sum (Phase 1)
-//   2. Comb bank (series) with Y-driven dry/wet blend [DEPTH]
-//   3. Mono EQ: presenceShelf (Y) → earCanalPeak (Y) → P1 → N1 → N2 → pinnaShelf (Z) [ELEV]
-//   4. ITD/ILD binaural split (Phase 2) — with proximity-scaled ITD and head shadow
-//   5. Chest bounce: parallel filtered+delayed copy added to both ears [ELEV-03]
-//   6. Floor bounce: parallel delayed copy added to both ears [ELEV-04]
-//   7. Distance processing: gain attenuation + delay+doppler + air absorption LPF [DIST-01 through DIST-06]
-//   8. FDN Reverb (VERB-01, VERB-02) — final stereo stage, with distance-scaled pre-delay
+//   2. Doppler delay (mono, before all spatial processing) [DIST-03, DIST-04]
+//   3. Comb bank (series) with Y-driven dry/wet blend [DEPTH]
+//   4. Mono EQ: presenceShelf (Y) → earCanalPeak (Y) → P1 → N1 → N2 → pinnaShelf (Z) [ELEV]
+//   5. ITD/ILD binaural split (Phase 2) — with proximity-scaled ITD and head shadow
+//   6. Chest bounce: parallel filtered+delayed copy of doppler'd input [ELEV-03]
+//   7. Floor bounce: parallel delayed copy added to both ears [ELEV-04]
+//   8. Distance processing: gain attenuation + air absorption LPF [DIST-01, DIST-02, DIST-05, DIST-06]
+//   9. Early reflections: image source method, taps doppler'd input [ER]
+//  10. FDN Reverb (VERB-01, VERB-02) — final stereo stage, with distance-scaled pre-delay
 class XYZPanEngine {
 public:
     XYZPanEngine() = default;
@@ -212,19 +257,17 @@ private:
     // =========================================================================
     dsp::FractionalDelayLine floorDelayL_;   // per-ear floor bounce delay
     dsp::FractionalDelayLine floorDelayR_;
-    dsp::OnePoleLP           floorLPF_;      // HF absorption on reflected floor signal
+    dsp::OnePoleLP           floorLPF_;      // HF absorption on reflected floor signal (left ear)
+    dsp::OnePoleLP           floorLPF_R_;    // HF absorption on reflected floor signal (right ear)
     dsp::OnePoleSmooth       floorGainSmooth_;  // smooth floor gain transitions
     dsp::OnePoleSmooth       floorDelaySmooth_; // smooth floor delay transitions
 
     // =========================================================================
     // Phase 4: Distance Processing (DIST-01 through DIST-06)
     // =========================================================================
-    dsp::FractionalDelayLine distDelayL_;     // propagation delay + doppler, left
-    dsp::FractionalDelayLine distDelayR_;     // propagation delay + doppler, right
-    dsp::OnePoleLP           dopplerAA_L_;    // post-delay anti-alias LP, left
-    dsp::OnePoleLP           dopplerAA_R_;    // post-delay anti-alias LP, right
-    dsp::OnePoleLP           dopplerPreAA_L_; // pre-delay anti-alias LP, left
-    dsp::OnePoleLP           dopplerPreAA_R_; // pre-delay anti-alias LP, right
+    dsp::FractionalDelayLine dopplerDelay_;    // mono doppler delay line
+    dsp::OnePoleLP           dopplerPostAA_;  // post-delay anti-alias LP (mono)
+    dsp::OnePoleLP           dopplerPreAA_;   // pre-delay anti-alias LP (mono)
     dsp::OnePoleLP           airLPF_L_;       // air absorption LPF stage 1, left
     dsp::OnePoleLP           airLPF_R_;       // air absorption LPF stage 1, right
     dsp::OnePoleLP           airLPF2_L_;      // air absorption LPF stage 2 (cascade → 12dB/oct), left
@@ -258,6 +301,8 @@ private:
 
     // Dev tool: test tone oscillator state — persistent across blocks
     float        sawPhase_ = 0.0f;  // [0, 1)
+    float        clickSamplesLeft_ = 0.0f;
+    bool         prevPulseGate_ = false;
     dsp::LFO     pulseLFO_;
     std::mt19937 noiseRng_;
 
@@ -269,9 +314,22 @@ private:
     // R-channel distance pipeline for stereo per-node distance processing
     DistancePipeline distR_;
 
+    // R-channel chest, floor, and ER pipelines for stereo per-node processing
+    ChestPipeline chestR_;
+    FloorPipeline floorR_;
+    ERPipeline erR_;
+
     // Stereo orbit LFOs (3 planes) + depth smoothers
     dsp::LFO orbitLfoXY_, orbitLfoXZ_, orbitLfoYZ_;
     dsp::OnePoleSmooth orbitDepthXYSmooth_, orbitDepthXZSmooth_, orbitDepthYZSmooth_;
+
+    // =========================================================================
+    // Early Reflections (Image Source Method)
+    // =========================================================================
+    std::array<EarlyReflection, kNumER> earlyReflections_;
+    dsp::FractionalDelayLine erSharedDelay_;     // Single shared propagation delay
+    dsp::OnePoleSmooth erLevelSmooth_;
+    dsp::OnePoleSmooth erReverbSendSmooth_;
 
     // Last LFO output values (tick()*depth) — captured per block for UI display
     float lastLfoOutX_ = 0.f, lastLfoOutY_ = 0.f, lastLfoOutZ_ = 0.f;
@@ -287,20 +345,23 @@ private:
     float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
     float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
 
-    // Helper: distance processing for a single source node (stereo path)
+    // Helper: mono doppler processing (applied before comb/pinna/binaural)
+    float processDopplerMono(
+        float input, float rawNodeDistFrac,
+        float sr, bool effectiveDoppler, int interpMode,
+        dsp::FractionalDelayLine& delay,
+        dsp::OnePoleLP& preAA, dsp::OnePoleLP& postAA,
+        dsp::OnePoleSmooth& delaySm, float& prevDelay);
+
+    // Helper: distance processing for a single source node (gain + air absorption only)
     struct DistanceResult { float left; float right; float distFrac; };
     DistanceResult processDistanceForNode(
         float dL, float dR,
         float nodeX, float nodeY, float nodeZ,
-        float sr, bool dopplerOn, int interpMode,
-        dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
-        dsp::OnePoleLP& preAAL, dsp::OnePoleLP& preAAR,
-        dsp::OnePoleLP& aaL, dsp::OnePoleLP& aaR,
+        float sr,
         dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
         dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
-        dsp::OnePoleSmooth& dgSmooth,
-        dsp::OnePoleSmooth& ddSmooth,
-        float& prevDelay
+        dsp::OnePoleSmooth& dgSmooth
     );
 
     // Helper: run comb bank + mono EQ + binaural split for one source node
@@ -308,7 +369,7 @@ private:
     BinauralResult processBinauralForSource(
         float inputSample,
         float nodeX, float nodeY, float nodeZ,
-        float sr, int interpMode,
+        float sr, int interpMode, float binBlend,
         // Pipeline state — references to either existing flat members (L) or srcR_ (R)
         dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
         dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
@@ -324,6 +385,32 @@ private:
         dsp::BiquadFilter& shoulder, dsp::BiquadFilter& concha,
         dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
     );
+
+    // Helper: per-node chest bounce processing
+    float processChestForNode(
+        float input, float nodeZ,
+        float sr, int interpMode, float chestGainLin,
+        std::array<dsp::SVFFilter, 4>& hpf, dsp::OnePoleLP& lp,
+        dsp::FractionalDelayLine& delay,
+        dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm);
+
+    // Helper: per-node floor bounce processing (modifies dL/dR in-place)
+    void processFloorForNode(
+        float& dL, float& dR, float nodeZ,
+        float sr, int interpMode, float floorGainLin,
+        dsp::FractionalDelayLine& fDelayL, dsp::FractionalDelayLine& fDelayR,
+        dsp::OnePoleLP& lpfL, dsp::OnePoleLP& lpfR,
+        dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm);
+
+    // Helper: per-node early reflections processing
+    struct ERResult { float directL, directR, reverbL, reverbR; };
+    ERResult processERForNode(
+        float input, float nodeX, float nodeY, float nodeZ,
+        float distGainTarget, float sr, int interpMode,
+        float dampCutoff, float roomHalf,
+        std::array<EarlyReflection, kNumER>& reflections,
+        dsp::FractionalDelayLine& sharedDelay,
+        bool rotated, float cosY, float sinY, float cosP, float sinP);
 
     // Last L/R node positions for position bridge
     StereoNodePositions lastStereoNodes_{};
@@ -343,6 +430,10 @@ private:
     // re-calling std::pow on every sample.
     float ildGainBase_ = 1.0f;
     float blkDistRefScale_ = 0.047546796f;  // 10^(kDistGainFloorDb/40), recomputed per block
+
+    // Binaural toggle — click-free blend between binaural (1) and hardpan (0)
+    dsp::OnePoleSmooth binauralBlendSmooth_;
+    float hardpanGainBase_ = 1.0f;  // pow(10, kHardpanMaxDb/20), recomputed per block
 };
 
 } // namespace xyzpan

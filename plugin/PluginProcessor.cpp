@@ -63,8 +63,13 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(pinnaNotchHzParam != nullptr);
     jassert(pinnaNotchQParam  != nullptr);
     jassert(pinnaShelfHzParam != nullptr);
+    chestHPFHzParam   = apvts.getRawParameterValue(ParamID::CHEST_HPF_HZ);
+    chestLPHzParam    = apvts.getRawParameterValue(ParamID::CHEST_LP_HZ);
+
     jassert(chestDelayMsParam != nullptr);
     jassert(chestGainDbParam  != nullptr);
+    jassert(chestHPFHzParam   != nullptr);
+    jassert(chestLPHzParam    != nullptr);
     jassert(floorDelayMsParam != nullptr);
     jassert(floorGainDbParam  != nullptr);
 
@@ -105,7 +110,9 @@ XYZPanProcessor::XYZPanProcessor()
     lfoZDepthParam    = apvts.getRawParameterValue(ParamID::LFO_Z_DEPTH);
     lfoZPhaseParam    = apvts.getRawParameterValue(ParamID::LFO_Z_PHASE);
     lfoZWaveformParam = apvts.getRawParameterValue(ParamID::LFO_Z_WAVEFORM);
-    lfoTempoSyncParam = apvts.getRawParameterValue(ParamID::LFO_TEMPO_SYNC);
+    lfoXTempoSyncParam = apvts.getRawParameterValue(ParamID::LFO_X_TEMPO_SYNC);
+    lfoYTempoSyncParam = apvts.getRawParameterValue(ParamID::LFO_Y_TEMPO_SYNC);
+    lfoZTempoSyncParam = apvts.getRawParameterValue(ParamID::LFO_Z_TEMPO_SYNC);
     lfoXBeatDivParam  = apvts.getRawParameterValue(ParamID::LFO_X_BEAT_DIV);
     lfoYBeatDivParam  = apvts.getRawParameterValue(ParamID::LFO_Y_BEAT_DIV);
     lfoZBeatDivParam  = apvts.getRawParameterValue(ParamID::LFO_Z_BEAT_DIV);
@@ -128,7 +135,9 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(lfoXSmoothParam  != nullptr);
     jassert(lfoYSmoothParam  != nullptr);
     jassert(lfoZSmoothParam  != nullptr);
-    jassert(lfoTempoSyncParam != nullptr);
+    jassert(lfoXTempoSyncParam != nullptr);
+    jassert(lfoYTempoSyncParam != nullptr);
+    jassert(lfoZTempoSyncParam != nullptr);
     jassert(lfoXBeatDivParam  != nullptr);
     jassert(lfoYBeatDivParam  != nullptr);
     jassert(lfoZBeatDivParam  != nullptr);
@@ -198,12 +207,22 @@ XYZPanProcessor::XYZPanProcessor()
     orbitYZSmoothParam     = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_SMOOTH);
     jassert(orbitYZSmoothParam     != nullptr);
 
-    // Stereo orbit shared
-    orbitTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_TEMPO_SYNC);
-    orbitSpeedMulParam  = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_SPEED_MUL);
+    // Stereo orbit per-plane sync + shared speed
+    orbitXYTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XY_TEMPO_SYNC);
+    orbitXZTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_TEMPO_SYNC);
+    orbitYZTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_TEMPO_SYNC);
+    orbitSpeedMulParam    = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_SPEED_MUL);
 
-    jassert(orbitTempoSyncParam != nullptr);
-    jassert(orbitSpeedMulParam  != nullptr);
+    jassert(orbitXYTempoSyncParam != nullptr);
+    jassert(orbitXZTempoSyncParam != nullptr);
+    jassert(orbitYZTempoSyncParam != nullptr);
+    jassert(orbitSpeedMulParam    != nullptr);
+
+    // Listener head orientation
+    listenerYawParam   = apvts.getRawParameterValue(ParamID::LISTENER_YAW);
+    listenerPitchParam = apvts.getRawParameterValue(ParamID::LISTENER_PITCH);
+    jassert(listenerYawParam   != nullptr);
+    jassert(listenerPitchParam != nullptr);
 
     // Dev panel: Presence shelf
     presenceShelfFreqParam  = apvts.getRawParameterValue(ParamID::PRESENCE_SHELF_FREQ_HZ);
@@ -328,6 +347,27 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(tragusNotchMaxDbParam != nullptr);
     jassert(bypassExpandedPinnaParam != nullptr);
 
+    // Early Reflections (Image Source Method)
+    erEnabledParam    = apvts.getRawParameterValue(ParamID::ER_ENABLED);
+    erRoomSizeParam   = apvts.getRawParameterValue(ParamID::ER_ROOM_SIZE);
+    erDampingParam    = apvts.getRawParameterValue(ParamID::ER_DAMPING);
+    erLevelParam      = apvts.getRawParameterValue(ParamID::ER_LEVEL);
+    erReverbSendParam = apvts.getRawParameterValue(ParamID::ER_REVERB_SEND);
+    erGainDbParam     = apvts.getRawParameterValue(ParamID::ER_GAIN_DB);
+    bypassERParam     = apvts.getRawParameterValue(ParamID::BYPASS_ER);
+
+    jassert(erEnabledParam    != nullptr);
+    jassert(erRoomSizeParam   != nullptr);
+    jassert(erDampingParam    != nullptr);
+    jassert(erLevelParam      != nullptr);
+    jassert(erReverbSendParam != nullptr);
+    jassert(erGainDbParam     != nullptr);
+    jassert(bypassERParam     != nullptr);
+
+    // Binaural toggle (user-facing)
+    binauralEnabledParam = apvts.getRawParameterValue(ParamID::BINAURAL_ENABLED);
+    jassert(binauralEnabledParam != nullptr);
+
     // Dev panel: Per-feature bypass toggles
     bypassITDParam        = apvts.getRawParameterValue(ParamID::BYPASS_ITD);
     bypassHeadShadowParam = apvts.getRawParameterValue(ParamID::BYPASS_HEAD_SHADOW);
@@ -417,6 +457,8 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.pinnaShelfFreqHz = pinnaShelfHzParam->load();
     params.chestDelayMaxMs  = chestDelayMsParam->load();
     params.chestGainDb      = chestGainDbParam->load();
+    params.chestHPFHz       = chestHPFHzParam->load();
+    params.chestLPHz        = chestLPHzParam->load();
     params.floorDelayMaxMs  = floorDelayMsParam->load();
     params.floorGainDb      = floorGainDbParam->load();
 
@@ -450,7 +492,9 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.lfoXSmooth    = lfoXSmoothParam->load();
     params.lfoYSmooth    = lfoYSmoothParam->load();
     params.lfoZSmooth    = lfoZSmoothParam->load();
-    params.lfoTempoSync  = lfoTempoSyncParam->load() >= 0.5f;
+    params.lfoXTempoSync = lfoXTempoSyncParam->load() >= 0.5f;
+    params.lfoYTempoSync = lfoYTempoSyncParam->load() >= 0.5f;
+    params.lfoZTempoSync = lfoZTempoSyncParam->load() >= 0.5f;
 
     // Beat div params are AudioParameterChoice — raw value is the choice index (0–10).
     // Convert to float multiplier via kBeatDivValues lookup.
@@ -504,9 +548,11 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.stereoOrbitYZDepth      = orbitYZDepthParam->load();
     params.stereoOrbitYZSmooth     = orbitYZSmoothParam->load();
 
-    // Stereo orbit shared
-    params.stereoOrbitTempoSync = orbitTempoSyncParam->load() >= 0.5f;
-    params.stereoOrbitSpeedMul  = orbitSpeedMulParam->load();
+    // Stereo orbit per-plane sync + shared speed
+    params.stereoOrbitXYTempoSync = orbitXYTempoSyncParam->load() >= 0.5f;
+    params.stereoOrbitXZTempoSync = orbitXZTempoSyncParam->load() >= 0.5f;
+    params.stereoOrbitYZTempoSync = orbitYZTempoSyncParam->load() >= 0.5f;
+    params.stereoOrbitSpeedMul    = orbitSpeedMulParam->load();
 
     // Momentary orbit phase reset from UI button
     if (resetOrbitLfoPhases.exchange(false)) {
@@ -590,6 +636,14 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.tragusNotchQ       = tragusNotchQParam->load();
     params.tragusNotchMaxDb   = tragusNotchMaxDbParam->load();
 
+    // Early Reflections (Image Source Method)
+    params.erEnabled     = erEnabledParam->load() >= 0.5f;
+    params.erRoomSize    = erRoomSizeParam->load();
+    params.erDamping     = erDampingParam->load();
+    params.erLevel       = erLevelParam->load() * std::pow(10.0f, erGainDbParam->load() / 20.0f);
+    params.erReverbSend  = erReverbSendParam->load();
+    params.bypassER      = bypassERParam->load() >= 0.5f;
+
     // Dev panel: Per-feature bypass toggles
     params.bypassExpandedPinna = bypassExpandedPinnaParam->load() >= 0.5f;
     params.bypassITD        = bypassITDParam->load()        >= 0.5f;
@@ -605,6 +659,14 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.bypassDoppler    = bypassDopplerParam->load()    >= 0.5f;
     params.bypassAirAbs     = bypassAirAbsParam->load()     >= 0.5f;
     params.bypassReverb     = bypassReverbParam->load()     >= 0.5f;
+
+    // Listener head orientation (degrees in APVTS → radians for engine)
+    constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
+    params.listenerYaw   = listenerYawParam->load()   * kDegToRad;
+    params.listenerPitch = listenerPitchParam->load() * kDegToRad;
+
+    // Binaural toggle (user-facing)
+    params.binauralEnabled = binauralEnabledParam->load() >= 0.5f;
 
     // Phase 5: Read host BPM for LFO tempo sync (LFO-05)
     if (auto* ph = getPlayHead()) {
@@ -632,6 +694,18 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     engine.setParams(params);
     engine.process(inputs, numIn, outL, outR, nullptr, nullptr, buffer.getNumSamples());
 
+    // Output RMS for UI meter
+    {
+        const int n = buffer.getNumSamples();
+        float sumL = 0.f, sumR = 0.f;
+        for (int i = 0; i < n; ++i) {
+            sumL += outL[i] * outL[i];
+            sumR += outR[i] * outR[i];
+        }
+        outputRmsL.store(std::sqrt(sumL / static_cast<float>(n)), std::memory_order_relaxed);
+        outputRmsR.store(std::sqrt(sumR / static_cast<float>(n)), std::memory_order_relaxed);
+    }
+
     // Phase 6: update PositionBridge with last modulated position (UI-07)
     // Written here on audio thread; XYZPanGLView reads it on GL thread via bridge_.read()
     auto mp = engine.getLastModulatedPosition();
@@ -646,6 +720,9 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     snap.lNodeX = sn.lx;  snap.lNodeY = sn.ly;  snap.lNodeZ = sn.lz;
     snap.rNodeX = sn.rx;  snap.rNodeY = sn.ry;  snap.rNodeZ = sn.rz;
     snap.stereoWidth = sn.width;
+
+    snap.listenerYaw   = params.listenerYaw;
+    snap.listenerPitch = params.listenerPitch;
 
     snap.sphereRadius = sphereRadiusParam->load();
 

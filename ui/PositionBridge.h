@@ -16,6 +16,10 @@ struct SourcePositionSnapshot {
     float rNodeX = 0.0f, rNodeY = 0.0f, rNodeZ = 0.0f;
     float stereoWidth = 0.0f;
 
+    // Listener head orientation (radians, for GL rendering)
+    float listenerYaw   = 0.0f;
+    float listenerPitch = 0.0f;
+
     // Audible sphere boundary radius (for GL rendering)
     float sphereRadius = 1.732f;
 };

@@ -10,6 +10,7 @@ add_library(xyzpan_ui STATIC
     LFOWaveformDisplay.cpp  # Live waveform display in LFO strips
     LFOStrip.cpp            # Phase 6-03
     DevPanelComponent.cpp   # Phase 6-03
+    OutputMeter.cpp
 )
 
 target_include_directories(xyzpan_ui

@@ -11,7 +11,7 @@
 //           + Rate knob (or BeatDiv combo when synced) + Phase knob.
 //
 // Two constructor forms:
-//   1. LFOStrip(char axis, apvts) — axis LFOs: "lfo_x_rate" etc., shared "lfo_tempo_sync"
+//   1. LFOStrip(char axis, apvts) — axis LFOs: "lfo_x_rate" etc., per-axis "lfo_x_tempo_sync"
 //   2. LFOStrip(prefix, syncParamID, apvts) — orbit LFOs: prefix + "_rate" etc.
 // ---------------------------------------------------------------------------
 class LFOStrip : public juce::Component,

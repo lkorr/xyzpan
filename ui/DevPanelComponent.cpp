@@ -38,6 +38,8 @@ namespace {
     constexpr const char* kPINNA_N1_MAX_HZ  = "pinna_n1_max_hz";
     constexpr const char* kCHEST_DELAY_MS   = "chest_delay_ms";
     constexpr const char* kCHEST_GAIN_DB    = "chest_gain_db";
+    constexpr const char* kCHEST_HPF_HZ     = "chest_hpf_hz";
+    constexpr const char* kCHEST_LP_HZ      = "chest_lp_hz";
     constexpr const char* kFLOOR_DELAY_MS   = "floor_delay_ms";
     constexpr const char* kFLOOR_GAIN_DB    = "floor_gain_db";
     constexpr const char* kFLOOR_ABS_HZ     = "floor_abs_hz";
@@ -101,6 +103,15 @@ namespace {
     constexpr const char* kTRAGUS_NOTCH_MAX_DB = "tragus_notch_max_db";
     constexpr const char* kBYPASS_EXPANDED_PINNA = "bypass_expanded_pinna";
 
+    // Early Reflections (Image Source Method)
+    constexpr const char* kER_ENABLED     = "er_enabled";
+    constexpr const char* kER_ROOM_SIZE   = "er_room_size";
+    constexpr const char* kER_DAMPING     = "er_damping";
+    constexpr const char* kER_LEVEL       = "er_level";
+    constexpr const char* kER_REVERB_SEND = "er_reverb_send";
+    constexpr const char* kER_GAIN_DB     = "er_gain_db";
+    constexpr const char* kBYPASS_ER      = "bypass_er";
+
     // Per-feature bypass toggles
     constexpr const char* kBYPASS_ITD         = "bypass_itd";
     constexpr const char* kBYPASS_HEAD_SHADOW = "bypass_head_shadow";
@@ -125,7 +136,7 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "test_tone_gain_db",   "Output level of the test tone in dB. Keep low to avoid clipping when combined with input audio." },
         { "test_tone_pitch_hz",  "Fundamental frequency of the test tone. Mid-range tones (300-1000 Hz) are best for hearing ITD/ILD cues clearly." },
         { "test_tone_pulse_hz",  "Rate at which the test tone pulses on/off. Pulsing helps distinguish direct vs. reflected sound in the spatial field." },
-        { "test_tone_waveform",  "Waveform shape of the test tone (sine, saw, etc.). Harmonically rich waveforms reveal filter and comb effects more clearly." },
+        { "test_tone_waveform",  "0=Saw 1=Square 2=Noise 3=PulseSaw 4=PulseSquare 5=PulseNoise 6=StereoNoiseSaw 7=Sine 8=Click. Click produces 1ms impulses at the pulse rate." },
 
         // X-Axis: Left/Right
         { "itd_max_ms",          "Maximum interaural time difference in ms. Models the extra path length to the far ear (~0.7 ms for humans). Primary azimuth cue below ~1.5 kHz." },
@@ -151,10 +162,12 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "pinna_n2_offset_hz",  "Frequency offset of the N2 secondary notch from N1. N2 = N1 + offset. Models a second pinna interference notch." },
         { "pinna_n2_gain_db",    "Gain of the N2 secondary notch in dB. Typically negative (attenuation). Depth of the second pinna spectral notch." },
         { "pinna_n2_q",          "Q of the N2 secondary notch. Higher Q = narrower, sharper notch." },
-        { "pinna_n1_min_hz",     "N1 frequency at Z=-1 (source below). The lowest the pinna notch sweeps. Together with N1 Max Hz defines the elevation-dependent frequency range." },
-        { "pinna_n1_max_hz",     "N1 frequency at Z=+1 (source above). The highest the pinna notch sweeps. The notch interpolates linearly between min and max with elevation." },
+        { "pinna_n1_min_hz",     "N1 frequency at -90° elevation (source directly below). The lowest the pinna notch sweeps. Together with N1 Max Hz defines the elevation-dependent frequency range." },
+        { "pinna_n1_max_hz",     "N1 frequency at +90° elevation (source directly above). The highest the pinna notch sweeps. The notch interpolates linearly between min and max with elevation angle." },
         { "chest_delay_ms",      "Delay of the chest-bounce reflection in ms. Sound from below bounces off the torso, arriving ~0.4 ms late. Cues the brain that the source is low." },
         { "chest_gain_db",       "Gain of the chest-bounce reflection in dB. Typically negative (attenuated). Stronger reflection = stronger below cue." },
+        { "chest_hpf_hz",        "Cutoff of the chest-bounce highpass cascade (4x SVF HP). Removes low frequencies from the reflected signal — higher = thinner bounce." },
+        { "chest_lp_hz",         "Cutoff of the chest-bounce lowpass (1x 6dB/oct). Rolls off highs from the reflected signal — lower = darker bounce." },
         { "floor_delay_ms",      "Delay of the floor reflection in ms. A second early reflection off the ground plane reinforces the below cue." },
         { "floor_gain_db",       "Gain of the floor reflection in dB. Typically well below 0 dB. Combined with chest bounce creates a convincing below sensation." },
         { "floor_abs_hz",        "HF absorption cutoff for the floor reflection in Hz. Models the fact that floors absorb high frequencies — lower value = more absorption." },
@@ -205,19 +218,29 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         // Expanded Pinna EQ (P5)
         { "shoulder_peak_freq_hz", "Centre frequency of the shoulder reflection peak. A low-frequency boost around 1.5 kHz from torso reflections, strongest when the source is below the horizontal plane." },
         { "shoulder_peak_q",       "Q (bandwidth) of the shoulder reflection peak. Lower Q = broader effect." },
-        { "shoulder_peak_max_db",  "Maximum boost of the shoulder peak in dB at Z=-1 (source fully below). Fades to 0 dB at Z=+1 (above)." },
+        { "shoulder_peak_max_db",  "Maximum boost of the shoulder peak in dB at -90° elevation (source fully below). Fades to 0 dB at +90° (above)." },
         { "concha_notch_freq_hz",  "Centre frequency of the concha notch. The concha (ear bowl) creates a resonant notch around 4 kHz, deepest when the source is below." },
         { "concha_notch_q",        "Q of the concha notch. Higher Q = narrower, more selective notch." },
-        { "concha_notch_max_db",   "Maximum depth of the concha notch in dB at Z=-1 (below). 0 dB when source is above." },
+        { "concha_notch_max_db",   "Maximum depth of the concha notch in dB at -90° elevation (below). 0 dB when source is above." },
         { "upper_pinna_freq_hz",   "Centre frequency of the upper pinna peak. The upper pinna ridge creates a peak around 12 kHz whose gain changes with elevation." },
         { "upper_pinna_q",         "Q of the upper pinna peak. Higher Q = narrower resonance." },
-        { "upper_pinna_min_db",    "Gain of the upper pinna peak at Z=-1 (below). Typically negative (attenuation from below)." },
-        { "upper_pinna_max_db",    "Gain of the upper pinna peak at Z=+1 (above). Typically positive (boost from above)." },
+        { "upper_pinna_min_db",    "Gain of the upper pinna peak at -90° elevation (below). Typically negative (attenuation from below)." },
+        { "upper_pinna_max_db",    "Gain of the upper pinna peak at +90° elevation (above). Typically positive (boost from above)." },
         { "tragus_notch_freq_hz",  "Centre frequency of the tragus notch. The tragus flap creates an 8.5 kHz notch active only when the source is behind AND below the listener." },
         { "tragus_notch_q",        "Q of the tragus notch. Higher Q = more selective. The tragus notch is typically narrow (Q ~ 3-4)." },
-        { "tragus_notch_max_db",   "Maximum depth of the tragus notch in dB. Joint Y+Z mapping: only active when source is behind (Y<0) and below (Z<0)." },
+        { "tragus_notch_max_db",   "Maximum depth of the tragus notch in dB. Joint Y+elevation mapping: only active when source is behind (Y<0) and below horizon (negative elevation)." },
         { "bypass_expanded_pinna", "Bypass all 4 expanded pinna bands (shoulder, concha, upper pinna, tragus). Core 6 pinna bands are unaffected by this toggle." },
         { "section:Expanded Pinna", "4 additional pinna EQ bands modelling concha, upper pinna, shoulder reflection, and tragus notch. Independent bypass from the core 6 pinna bands." },
+
+        // Early Reflections (Image Source Method)
+        { "er_enabled",     "Master enable for early reflections. Uses image-source method to render 6 first-order wall reflections in a shoebox room." },
+        { "bypass_er",      "Bypass early reflections processing. Keeps ER state alive for click-free re-enable." },
+        { "er_room_size",   "Half-dimension of the shoebox room in metres. Larger rooms push reflections later in time and reduce their density." },
+        { "er_damping",     "Wall damping factor (0-1). Higher values apply more low-pass filtering to reflections, simulating absorptive surfaces." },
+        { "er_level",       "Output level of the early reflections mix (0-1). Blends ER signal into the direct path." },
+        { "er_gain_db",     "Gain boost/cut for early reflections in dB (-24 to +24). Multiplied into ER level for tuning reflection loudness." },
+        { "er_reverb_send", "Amount of ER signal fed into the FDN reverb (0-1). Creates a natural transition from early reflections into the reverb tail." },
+        { "section:Early Reflections", "Image-source early reflections: 6 first-order wall reflections in a virtual shoebox room. Provides spatial impression and room size cues." },
 
         // Section descriptions
         { "section:Test Tone",        "Built-in signal generator for auditioning spatial DSP cues without needing external audio input." },
@@ -247,7 +270,7 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
 
 DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
                                      xyzpan::DSPStateBridge* dspBridge)
-    : dspBridge_(dspBridge)
+    : apvts_(apvts), dspBridge_(dspBridge)
 {
     // Viewport owns the content component (false = don't delete on reassign)
     viewport_.setViewedComponent(&content_, false);
@@ -256,6 +279,12 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
 
     // Drag handle sits on top of viewport (added after = higher Z-order)
     addAndMakeVisible(dragHandle_);
+
+    // Save/Load buttons
+    addAndMakeVisible(saveButton_);
+    addAndMakeVisible(loadButton_);
+    saveButton_.onClick = [this] { savePreset(); };
+    loadButton_.onClick = [this] { loadPreset(); };
 
     // -------------------------------------------------------------------
     // Section 1: Test Tone (dev utility — stays at top)
@@ -348,6 +377,8 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevToggle(kBYPASS_FLOOR,      apvts);
     addDevSlider(kCHEST_DELAY_MS,    apvts);
     addDevSlider(kCHEST_GAIN_DB,     apvts);
+    addDevSlider(kCHEST_HPF_HZ,     apvts);
+    addDevSlider(kCHEST_LP_HZ,      apvts);
     addDevSlider(kFLOOR_DELAY_MS,    apvts);
     addDevSlider(kFLOOR_GAIN_DB,     apvts);
     addDevSlider(kFLOOR_ABS_HZ,      apvts);
@@ -390,7 +421,19 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     }
 
     // -------------------------------------------------------------------
-    // Section 8: Interpolation (delay line algorithm switch)
+    // Section 8: Early Reflections (Image Source Method)
+    // -------------------------------------------------------------------
+    beginSection("Early Reflections");
+    addDevToggle(kER_ENABLED,     apvts);
+    addDevToggle(kBYPASS_ER,      apvts);
+    addDevSlider(kER_ROOM_SIZE,   apvts);
+    addDevSlider(kER_DAMPING,     apvts);
+    addDevSlider(kER_LEVEL,       apvts);
+    addDevSlider(kER_GAIN_DB,     apvts);
+    addDevSlider(kER_REVERB_SEND, apvts);
+
+    // -------------------------------------------------------------------
+    // Section 9: Interpolation (delay line algorithm switch)
     // -------------------------------------------------------------------
     beginSection("Interpolation");
     addDevSlider(kDELAY_INTERP_MODE, apvts);
@@ -431,7 +474,7 @@ void DevPanelComponent::beginSection(const juce::String& title)
     auto* header = groupHeaders_.emplace_back(
         std::make_unique<juce::Label>()).get();
 
-    header->setText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xbe ")) + title,
+    header->setText(juce::String(juce::CharPointer_UTF8("\xe2\x96\xb8 ")) + title,
                     juce::dontSendNotification);
     header->setFont(juce::Font(12.0f, juce::Font::bold));
     header->setColour(juce::Label::textColourId, juce::Colours::lightgrey);
@@ -444,7 +487,7 @@ void DevPanelComponent::beginSection(const juce::String& title)
     // Hover info: map section header to section key
     componentToDescKey_[header] = "section:" + title;
 
-    sections_.push_back({ header, {}, false });
+    sections_.push_back({ header, {}, true });
     currentSectionIdx_ = static_cast<int>(sections_.size()) - 1;
 }
 
@@ -767,9 +810,63 @@ void DevPanelComponent::resized()
 {
     auto area = getLocalBounds();
     area.removeFromBottom(kInfoBoxH);  // reserve space for info box
+
+    // Save/Load buttons at top
+    auto buttonRow = area.removeFromTop(28).reduced(kPadding, 2);
+    auto halfW = buttonRow.getWidth() / 2;
+    saveButton_.setBounds(buttonRow.removeFromLeft(halfW).reduced(2, 0));
+    loadButton_.setBounds(buttonRow.reduced(2, 0));
+
     viewport_.setBounds(area);
     dragHandle_.setBounds(0, 0, kDragHandleW, getHeight());
     dragHandle_.toFront(false);  // keep on top of viewport
+}
+
+void DevPanelComponent::savePreset()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        "Save Preset", juce::File::getSpecialLocation(juce::File::userDesktopDirectory),
+        "*.xml");
+
+    fileChooser_->launchAsync(juce::FileBrowserComponent::saveMode
+                            | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File{})
+                return;
+
+            // Ensure .xml extension
+            if (!file.hasFileExtension("xml"))
+                file = file.withFileExtension("xml");
+
+            auto state = apvts_.copyState();
+            if (auto xml = state.createXml())
+                xml->writeTo(file, {});
+        });
+}
+
+void DevPanelComponent::loadPreset()
+{
+    fileChooser_ = std::make_unique<juce::FileChooser>(
+        "Load Preset", juce::File::getSpecialLocation(juce::File::userDesktopDirectory),
+        "*.xml");
+
+    fileChooser_->launchAsync(juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File{} || !file.existsAsFile())
+                return;
+
+            if (auto xml = juce::XmlDocument::parse(file))
+            {
+                auto newState = juce::ValueTree::fromXml(*xml);
+                if (newState.isValid())
+                    apvts_.replaceState(newState);
+            }
+        });
 }
 
 void DevPanelComponent::paint(juce::Graphics& g)

@@ -57,6 +57,9 @@ public:
     std::atomic<float> lfoOutputX{0.f}, lfoOutputY{0.f}, lfoOutputZ{0.f};
     std::atomic<float> lfoOutputOrbitXY{0.f}, lfoOutputOrbitXZ{0.f}, lfoOutputOrbitYZ{0.f};
 
+    // Output RMS levels — written by audio thread, read by UI meter
+    std::atomic<float> outputRmsL{0.f}, outputRmsR{0.f};
+
 private:
     xyzpan::XYZPanEngine engine;
 
@@ -96,6 +99,8 @@ private:
     std::atomic<float>* pinnaShelfHzParam  = nullptr;
     std::atomic<float>* chestDelayMsParam  = nullptr;
     std::atomic<float>* chestGainDbParam   = nullptr;
+    std::atomic<float>* chestHPFHzParam    = nullptr;
+    std::atomic<float>* chestLPHzParam     = nullptr;
     std::atomic<float>* floorDelayMsParam  = nullptr;
     std::atomic<float>* floorGainDbParam   = nullptr;
 
@@ -128,7 +133,9 @@ private:
     std::atomic<float>* lfoXSmoothParam  = nullptr;
     std::atomic<float>* lfoYSmoothParam  = nullptr;
     std::atomic<float>* lfoZSmoothParam  = nullptr;
-    std::atomic<float>* lfoTempoSyncParam = nullptr;
+    std::atomic<float>* lfoXTempoSyncParam = nullptr;
+    std::atomic<float>* lfoYTempoSyncParam = nullptr;
+    std::atomic<float>* lfoZTempoSyncParam = nullptr;
     std::atomic<float>* lfoXBeatDivParam  = nullptr;
     std::atomic<float>* lfoYBeatDivParam  = nullptr;
     std::atomic<float>* lfoZBeatDivParam  = nullptr;
@@ -167,9 +174,15 @@ private:
     std::atomic<float>* orbitYZDepthParam      = nullptr;
     std::atomic<float>* orbitYZSmoothParam     = nullptr;
 
-    // Stereo orbit shared
-    std::atomic<float>* orbitTempoSyncParam = nullptr;
-    std::atomic<float>* orbitSpeedMulParam  = nullptr;
+    // Stereo orbit per-plane sync + shared speed
+    std::atomic<float>* orbitXYTempoSyncParam = nullptr;
+    std::atomic<float>* orbitXZTempoSyncParam = nullptr;
+    std::atomic<float>* orbitYZTempoSyncParam = nullptr;
+    std::atomic<float>* orbitSpeedMulParam    = nullptr;
+
+    // Listener head orientation
+    std::atomic<float>* listenerYawParam   = nullptr;
+    std::atomic<float>* listenerPitchParam = nullptr;
 
     // Dev panel: Presence shelf
     std::atomic<float>* presenceShelfFreqParam = nullptr;
@@ -244,6 +257,18 @@ private:
     std::atomic<float>* tragusNotchQParam     = nullptr;
     std::atomic<float>* tragusNotchMaxDbParam = nullptr;
     std::atomic<float>* bypassExpandedPinnaParam = nullptr;
+
+    // Early Reflections (Image Source Method)
+    std::atomic<float>* erEnabledParam    = nullptr;
+    std::atomic<float>* erRoomSizeParam   = nullptr;
+    std::atomic<float>* erDampingParam    = nullptr;
+    std::atomic<float>* erLevelParam      = nullptr;
+    std::atomic<float>* erReverbSendParam = nullptr;
+    std::atomic<float>* erGainDbParam     = nullptr;
+    std::atomic<float>* bypassERParam     = nullptr;
+
+    // Binaural toggle (user-facing)
+    std::atomic<float>* binauralEnabledParam  = nullptr;
 
     // Dev panel: Per-feature bypass toggles
     std::atomic<float>* bypassITDParam        = nullptr;

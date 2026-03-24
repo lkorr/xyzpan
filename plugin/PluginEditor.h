@@ -5,6 +5,7 @@
 #include "AlchemyLookAndFeel.h"
 #include "LFOStrip.h"
 #include "DevPanelComponent.h"
+#include "OutputMeter.h"
 #include "ParamIDs.h"
 #include "Presets.h"
 
@@ -59,6 +60,7 @@ private:
     static constexpr int kPadding       = 6;       // general inner padding
     static constexpr int kOrbitCtrlW    = 240;     // orbit sliders+buttons width in bottom row
     static constexpr int kReverbSectionW = 120;     // vertical reverb column
+    static constexpr int kMeterW         = 24;       // output meter strip width
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -92,9 +94,19 @@ private:
     juce::TextButton resetOrbitPhasesBtn_{"Reset"};
 
     juce::ToggleButton faceListenerToggle_;
-    juce::ToggleButton orbitTempoSyncToggle_;
+    juce::ToggleButton binauralToggle_;
+    juce::Label        binauralLabel_;
+    juce::ToggleButton earlyReflToggle_;
+    juce::Label        earlyReflLabel_;
     using BA = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    std::unique_ptr<BA> faceListenerAtt_, orbitTempoSyncAtt_;
+    std::unique_ptr<BA> faceListenerAtt_;
+    std::unique_ptr<BA> binauralAtt_;
+    std::unique_ptr<BA> earlyReflAtt_;
+
+    // Listener head orientation knobs
+    juce::Slider listenerYawKnob_, listenerPitchKnob_;
+    juce::Label  listenerYawLabel_, listenerPitchLabel_;
+    std::unique_ptr<SA> listenerYawAtt_, listenerPitchAtt_;
 
     // Stereo orbit LFO strips (XY / XZ / YZ planes)
     LFOStrip orbitXYLFO_, orbitXZLFO_, orbitYZLFO_;
@@ -134,6 +146,9 @@ private:
     };
 
     void updateOrbitEnabled();
+
+    // Output L/R RMS meter (right edge of window)
+    xyzpan::OutputMeter outputMeter_;
 
     // Procedural noise texture (256x256 greyscale) tiled over JUCE panels at low opacity
     juce::Image noiseTexture_;

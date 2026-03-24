@@ -112,10 +112,12 @@ void LFOShapeSelector::ShapeButton::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(bounds, 2.0f);
 
     // Border: warm gold if selected, bronze if not
-    const auto borderColour = selected
+    const float alpha = isEnabled() ? 1.0f : 0.4f;
+    const auto borderColour = (selected
         ? juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold)
         : (hovered_ ? juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold).withAlpha(0.6f)
-                     : juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze));
+                     : juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze)))
+        .withMultipliedAlpha(alpha);
     g.setColour(borderColour);
     g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
 
@@ -142,15 +144,17 @@ void LFOShapeSelector::ShapeButton::paint(juce::Graphics& g) {
         }
     }
 
-    const auto lineColour = selected
+    const auto lineColour = (selected
         ? juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold)
         : (hovered_ ? juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold)
-                     : juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze).brighter(0.3f));
+                     : juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze).brighter(0.3f)))
+        .withMultipliedAlpha(alpha);
     g.setColour(lineColour);
     g.strokePath(path, juce::PathStrokeType(1.2f));
 }
 
 void LFOShapeSelector::ShapeButton::mouseUp(const juce::MouseEvent&) {
+    if (!isEnabled()) return;
     owner_.selectShape(index_);
 }
 

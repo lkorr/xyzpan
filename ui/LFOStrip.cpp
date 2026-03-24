@@ -1,12 +1,6 @@
 #include "LFOStrip.h"
 #include "xyzpan/Constants.h"
 
-// ParamID string constants duplicated to avoid including plugin headers.
-// Must stay in sync with plugin/ParamIDs.h.
-namespace {
-    constexpr const char* kLFOTempoSync = "lfo_tempo_sync";
-}
-
 LFOStrip::LFOStrip(char axis, juce::AudioProcessorValueTreeState& apvts)
 {
     const juce::String axisLower = juce::String::charToString(
@@ -18,7 +12,7 @@ LFOStrip::LFOStrip(char axis, juce::AudioProcessorValueTreeState& apvts)
          "lfo_" + axisLower + "_waveform",
          "lfo_" + axisLower + "_smooth",
          "lfo_" + axisLower + "_beat_div",
-         juce::String(kLFOTempoSync),
+         "lfo_" + axisLower + "_tempo_sync",
          apvts);
 }
 

@@ -68,19 +68,13 @@ void BinauralPipeline::reset() {
 
 void DistancePipeline::prepare(float sr) {
     int distDelayCap = static_cast<int>(kDistDelayMaxMs * 0.001f * 192000.0f) + 8;
-    distDelayL.prepare(distDelayCap);
-    distDelayR.prepare(distDelayCap);
-    distDelayL.reset();
-    distDelayR.reset();
+    dopplerDelay.prepare(distDelayCap);
+    dopplerDelay.reset();
     const float aaCutoff = std::min(kDopplerAAMaxHz, sr * 0.45f);
-    dopplerAA_L.setCoefficients(aaCutoff, sr);
-    dopplerAA_R.setCoefficients(aaCutoff, sr);
-    dopplerAA_L.reset();
-    dopplerAA_R.reset();
-    dopplerPreAA_L.setCoefficients(aaCutoff, sr);
-    dopplerPreAA_R.setCoefficients(aaCutoff, sr);
-    dopplerPreAA_L.reset();
-    dopplerPreAA_R.reset();
+    dopplerPostAA.setCoefficients(aaCutoff, sr);
+    dopplerPostAA.reset();
+    dopplerPreAA.setCoefficients(aaCutoff, sr);
+    dopplerPreAA.reset();
     airLPF_L.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_R.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_L.reset();
@@ -96,12 +90,9 @@ void DistancePipeline::prepare(float sr) {
 }
 
 void DistancePipeline::reset() {
-    distDelayL.reset();
-    distDelayR.reset();
-    dopplerAA_L.reset();
-    dopplerAA_R.reset();
-    dopplerPreAA_L.reset();
-    dopplerPreAA_R.reset();
+    dopplerDelay.reset();
+    dopplerPostAA.reset();
+    dopplerPreAA.reset();
     airLPF_L.reset();
     airLPF_R.reset();
     airLPF2_L.reset();
@@ -109,6 +100,111 @@ void DistancePipeline::reset() {
     distDelaySmooth.reset(2.0f);
     distGainSmooth.reset(1.0f);
     prevDelaySamp = 2.0f;
+}
+
+// ============================================================================
+// ChestPipeline — per-node chest bounce DSP state
+// ============================================================================
+
+void ChestPipeline::prepare(float sr) {
+    for (auto& hp : hpf) {
+        hp.setType(dsp::SVFType::HP);
+        hp.setCoefficients(kChestHPFHz, sr);
+        hp.reset();
+    }
+    lp.setCoefficients(kChestLPHz, sr);
+    lp.reset();
+    int chestCap = static_cast<int>(kChestDelayMaxMs * 0.001f * sr) + 8;
+    delay.prepare(chestCap);
+    delay.reset();
+    gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
+    gainSmooth.reset(0.0f);
+    delaySmooth.prepare(kDefaultSmoothMs_Gain, sr);
+    delaySmooth.reset(2.0f);
+}
+
+void ChestPipeline::reset() {
+    for (auto& hp : hpf) hp.reset();
+    lp.reset();
+    delay.reset();
+    gainSmooth.reset(0.0f);
+    delaySmooth.reset(2.0f);
+}
+
+// ============================================================================
+// FloorPipeline — per-node floor bounce DSP state
+// ============================================================================
+
+void FloorPipeline::prepare(float sr) {
+    int floorCap = static_cast<int>(kFloorDelayMaxMs * 0.001f * sr) + 8;
+    delayL.prepare(floorCap);
+    delayR.prepare(floorCap);
+    delayL.reset();
+    delayR.reset();
+    lpfL.setCoefficients(kFloorAbsHz, sr);
+    lpfR.setCoefficients(kFloorAbsHz, sr);
+    lpfL.reset();
+    lpfR.reset();
+    gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
+    gainSmooth.reset(0.0f);
+    delaySmooth.prepare(kDefaultSmoothMs_Gain, sr);
+    delaySmooth.reset(2.0f);
+}
+
+void FloorPipeline::reset() {
+    delayL.reset();
+    delayR.reset();
+    lpfL.reset();
+    lpfR.reset();
+    gainSmooth.reset(0.0f);
+    delaySmooth.reset(2.0f);
+}
+
+// ============================================================================
+// ERPipeline — per-node early reflections DSP state
+// ============================================================================
+
+void ERPipeline::prepare(float sr) {
+    int erDelayCap = static_cast<int>(kERMaxDelayMs * 0.001f * 192000.0f) + 8;
+    sharedDelay.prepare(erDelayCap);
+    sharedDelay.reset();
+
+    int itdCap = static_cast<int>(kMaxITDUpperBound_ms * 0.001f * sr) + 8;
+    for (auto& er : reflections) {
+        er.wallAbsorption.setCoefficients(kERDampingLPMaxHz, sr);
+        er.wallAbsorption.reset();
+        er.delaySmooth.prepare(kDefaultSmoothMs_ITD, sr);
+        er.delaySmooth.reset(2.0f);
+        er.gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
+        er.gainSmooth.reset(0.0f);
+        er.itdDelayL.prepare(itdCap);
+        er.itdDelayR.prepare(itdCap);
+        er.itdDelayL.reset();
+        er.itdDelayR.reset();
+        er.shadowL.setCoefficients(kHeadShadowFullOpenHz, sr);
+        er.shadowR.setCoefficients(kHeadShadowFullOpenHz, sr);
+        er.shadowL.reset();
+        er.shadowR.reset();
+        er.itdSmooth.prepare(kDefaultSmoothMs_ITD, sr);
+        er.itdSmooth.reset(0.0f);
+        er.ildSmooth.prepare(kDefaultSmoothMs_Gain, sr);
+        er.ildSmooth.reset(1.0f);
+    }
+}
+
+void ERPipeline::reset() {
+    sharedDelay.reset();
+    for (auto& er : reflections) {
+        er.wallAbsorption.reset();
+        er.delaySmooth.reset(2.0f);
+        er.gainSmooth.reset(0.0f);
+        er.itdDelayL.reset();
+        er.itdDelayR.reset();
+        er.shadowL.reset();
+        er.shadowR.reset();
+        er.itdSmooth.reset(0.0f);
+        er.ildSmooth.reset(1.0f);
+    }
 }
 
 // ============================================================================
@@ -193,10 +289,10 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // -------------------------------------------------------------------------
     for (auto& hp : chestHPF_) {
         hp.setType(dsp::SVFType::HP);
-        hp.setCoefficients(700.0f, sr);
+        hp.setCoefficients(kChestHPFHz, sr);
         hp.reset();
     }
-    chestLP_.setCoefficients(1000.0f, sr);
+    chestLP_.setCoefficients(kChestLPHz, sr);
     chestLP_.reset();
     {
         int chestCap = static_cast<int>(kChestDelayMaxMs * 0.001f * sr) + 8;
@@ -220,6 +316,8 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     }
     floorLPF_.setCoefficients(kFloorAbsHz, sr);
     floorLPF_.reset();
+    floorLPF_R_.setCoefficients(kFloorAbsHz, sr);
+    floorLPF_R_.reset();
     floorGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     floorGainSmooth_.reset(0.0f);
     floorDelaySmooth_.prepare(kDefaultSmoothMs_Gain, sr);
@@ -229,23 +327,17 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // Phase 4: Distance Processing
     // -------------------------------------------------------------------------
     {
-        // Size delay lines for kDistDelayMaxMs at 192kHz (worst case sample rate).
+        // Size delay line for kDistDelayMaxMs at 192kHz (worst case sample rate).
         int distDelayCap = static_cast<int>(kDistDelayMaxMs * 0.001f * 192000.0f) + 8;
-        distDelayL_.prepare(distDelayCap);
-        distDelayR_.prepare(distDelayCap);
-        distDelayL_.reset();
-        distDelayR_.reset();
+        dopplerDelay_.prepare(distDelayCap);
+        dopplerDelay_.reset();
     }
     {
         const float aaCutoff = std::min(kDopplerAAMaxHz, sr * 0.45f);
-        dopplerAA_L_.setCoefficients(aaCutoff, sr);
-        dopplerAA_R_.setCoefficients(aaCutoff, sr);
-        dopplerAA_L_.reset();
-        dopplerAA_R_.reset();
-        dopplerPreAA_L_.setCoefficients(aaCutoff, sr);
-        dopplerPreAA_R_.setCoefficients(aaCutoff, sr);
-        dopplerPreAA_L_.reset();
-        dopplerPreAA_R_.reset();
+        dopplerPostAA_.setCoefficients(aaCutoff, sr);
+        dopplerPostAA_.reset();
+        dopplerPreAA_.setCoefficients(aaCutoff, sr);
+        dopplerPreAA_.reset();
     }
     prevDistDelay_ = 2.0f;
     airLPF_L_.setCoefficients(kAirAbsMaxHz, sr);
@@ -305,6 +397,9 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // -------------------------------------------------------------------------
     srcR_.prepare(sr, delayCap, kCombMaxDelay_ms);
     distR_.prepare(sr);
+    chestR_.prepare(sr);
+    floorR_.prepare(sr);
+    erR_.prepare(sr);
 
     orbitLfoXY_.prepare(inSampleRate);
     orbitLfoXZ_.prepare(inSampleRate);
@@ -322,6 +417,45 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     angularSmA_ = std::exp(-6.28318530f / (kDefaultSmoothMs_Gain * 0.001f * sr));
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;   // angle = 0
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;  // angle = 0
+
+    // -------------------------------------------------------------------------
+    // Early Reflections (Image Source Method)
+    // -------------------------------------------------------------------------
+    {
+        int erDelayCap = static_cast<int>(kERMaxDelayMs * 0.001f * 192000.0f) + 8;
+        erSharedDelay_.prepare(erDelayCap);
+        erSharedDelay_.reset();
+
+        int itdCap = static_cast<int>(kMaxITDUpperBound_ms * 0.001f * sr) + 8;
+        for (auto& er : earlyReflections_) {
+            er.wallAbsorption.setCoefficients(kERDampingLPMaxHz, sr);
+            er.wallAbsorption.reset();
+            er.delaySmooth.prepare(kDefaultSmoothMs_ITD, sr);
+            er.delaySmooth.reset(2.0f);
+            er.gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
+            er.gainSmooth.reset(0.0f);
+            er.itdDelayL.prepare(itdCap);
+            er.itdDelayR.prepare(itdCap);
+            er.itdDelayL.reset();
+            er.itdDelayR.reset();
+            er.shadowL.setCoefficients(kHeadShadowFullOpenHz, sr);
+            er.shadowR.setCoefficients(kHeadShadowFullOpenHz, sr);
+            er.shadowL.reset();
+            er.shadowR.reset();
+            er.itdSmooth.prepare(kDefaultSmoothMs_ITD, sr);
+            er.itdSmooth.reset(0.0f);
+            er.ildSmooth.prepare(kDefaultSmoothMs_Gain, sr);
+            er.ildSmooth.reset(1.0f);
+        }
+        erLevelSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+        erLevelSmooth_.reset(0.0f);
+        erReverbSendSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+        erReverbSendSmooth_.reset(kERReverbSendDefault);
+    }
+
+    // Binaural toggle smoother — 5ms for click-free transition
+    binauralBlendSmooth_.prepare(5.0f, sr);
+    binauralBlendSmooth_.reset(1.0f);
 
     // Dev tool: test tone pulse LFO + noise RNG
     pulseLFO_.prepare(inSampleRate);
@@ -347,7 +481,7 @@ void XYZPanEngine::setParams(const EngineParams& params) {
 XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     float inputSample,
     float nodeX, float nodeY, float nodeZ,
-    float sr, int interpMode,
+    float sr, int interpMode, float binBlend,
     dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
     dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
     dsp::SVFLowPass& rSvfL, dsp::SVFLowPass& rSvfR,
@@ -443,17 +577,29 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     constexpr float kMinDelay = 2.0f;
     // Signed ITD: positive itdSamples → source right → delay left ear
     // Bypass: read at fixed 2.0 (no interaural time difference)
+    // binBlend scales ITD: 1=full binaural, 0=no ITD (hardpan mode)
     float dL, dR;
     if (currentParams.bypassITD) {
         dL = dl.read(kMinDelay, interpMode);
         dR = dr.read(kMinDelay, interpMode);
     } else {
-        dL = dl.read(kMinDelay + std::max(0.0f,  itdSamples), interpMode);
-        dR = dr.read(kMinDelay + std::max(0.0f, -itdSamples), interpMode);
+        const float itdL = std::max(0.0f,  itdSamples) * binBlend;
+        const float itdR = std::max(0.0f, -itdSamples) * binBlend;
+        dL = dl.read(kMinDelay + itdL, interpMode);
+        dR = dr.read(kMinDelay + itdR, interpMode);
     }
 
     if (!std::isfinite(dL)) dL = 0.0f;
     if (!std::isfinite(dR)) dR = 0.0f;
+
+    // Hardpan — opposite-ear attenuation when binaural is OFF
+    if (binBlend < 0.999f) {
+        const float hpAmount = 1.0f - binBlend;
+        const float hpGain = 1.0f - (1.0f - hardpanGainBase_) * nodeAbsEffAzimuth;
+        const float appliedGain = 1.0f - hpAmount * (1.0f - hpGain);
+        if (nodeEffAzimuth > 0.0f)      dL *= appliedGain;  // source right → cut left
+        else if (nodeEffAzimuth < 0.0f) dR *= appliedGain;  // source left → cut right
+    }
 
     // ILD — smooth crossfade around ITD zero to avoid gain discontinuity
     if (!currentParams.bypassILD) {
@@ -485,61 +631,61 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
 }
 
 // ============================================================================
+// processDopplerMono() — mono doppler delay (applied before comb/binaural)
+// ============================================================================
+
+float XYZPanEngine::processDopplerMono(
+    float input, float rawNodeDistFrac,
+    float sr, bool effectiveDoppler, int interpMode,
+    dsp::FractionalDelayLine& delay,
+    dsp::OnePoleLP& preAA, dsp::OnePoleLP& postAA,
+    dsp::OnePoleSmooth& delaySm, float& prevDelay)
+{
+    const float delayTargetSamples = std::max(2.0f,
+        rawNodeDistFrac * currentParams.distDelayMaxMs * 0.001f * sr);
+
+    float out;
+    if (effectiveDoppler) {
+        input = preAA.process(input);
+        delay.push(input);
+        float smoothed = delaySm.process(delayTargetSamples);
+        prevDelay = smoothed;
+        const float delaySamp = std::max(2.0f, smoothed);
+        out = delay.read(delaySamp, interpMode);
+    } else {
+        delay.push(input);
+        delaySm.process(currentParams.dopplerEnabled ? delayTargetSamples : 2.0f);
+        prevDelay = 2.0f;
+        out = delay.read(2.0f, interpMode);
+    }
+    out = postAA.process(out);
+    return out;
+}
+
+// ============================================================================
 // processDistanceForNode() — distance processing for a single source node
 // ============================================================================
 
 XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
     float dL, float dR,
     float nodeX, float nodeY, float nodeZ,
-    float sr, bool dopplerOn, int interpMode,
-    dsp::FractionalDelayLine& ddL, dsp::FractionalDelayLine& ddR,
-    dsp::OnePoleLP& preAAL, dsp::OnePoleLP& preAAR,
-    dsp::OnePoleLP& aaL, dsp::OnePoleLP& aaR,
+    float sr,
     dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
     dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
-    dsp::OnePoleSmooth& dgSmooth,
-    dsp::OnePoleSmooth& ddSmooth,
-    float& prevDelay
+    dsp::OnePoleSmooth& dgSmooth
 ) {
     const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
     const float nodeDist = std::max(rawDist, kMinDistance);
     const float maxRange = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
     const float nodeDistFrac = std::clamp((nodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);
-    const float rawNodeDistFrac = std::clamp(rawDist / kSqrt3, 0.0f, 1.0f);
 
     // Distance gain (inverse-square law) — smoother always runs
-    const float distRefScale = std::pow(10.0f, currentParams.distGainFloorDb / 40.0f);
+    const float distRefScale = blkDistRefScale_;
     const float distRef = currentParams.sphereRadius * distRefScale;
     const float distRatio = distRef / nodeDist;
     const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
     const float distGain = dgSmooth.process(distGainTarget);
 
-    // Distance delay + doppler
-    // Effective doppler: dopplerOn && !bypassDoppler
-    const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
-    const float delayTargetSamples = std::max(2.0f,
-        rawNodeDistFrac * currentParams.distDelayMaxMs * 0.001f * sr);
-
-    if (effectiveDoppler) {
-        dL = preAAL.process(dL);
-        dR = preAAR.process(dR);
-    }
-    ddL.push(dL);
-    ddR.push(dR);
-    if (effectiveDoppler) {
-        float smoothed = ddSmooth.process(delayTargetSamples);
-        prevDelay = smoothed;
-        const float delaySamp = std::max(2.0f, smoothed);
-        dL = ddL.read(delaySamp, interpMode);
-        dR = ddR.read(delaySamp, interpMode);
-    } else {
-        ddSmooth.process(dopplerOn ? delayTargetSamples : 2.0f);
-        prevDelay = 2.0f;
-        dL = ddL.read(2.0f, interpMode);
-        dR = ddR.read(2.0f, interpMode);
-    }
-    dL = aaL.process(dL);
-    dR = aaR.process(dR);
     dL *= currentParams.bypassDistGain ? 1.0f : distGain;
     dR *= currentParams.bypassDistGain ? 1.0f : distGain;
 
@@ -552,6 +698,167 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
     }
 
     return { dL, dR, nodeDistFrac };
+}
+
+// ============================================================================
+// processChestForNode() — per-node chest bounce
+// ============================================================================
+
+float XYZPanEngine::processChestForNode(
+    float input, float nodeZ,
+    float sr, int interpMode, float chestGainLin,
+    std::array<dsp::SVFFilter, 4>& hpf, dsp::OnePoleLP& lp,
+    dsp::FractionalDelayLine& delay,
+    dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm)
+{
+    const float chestElevNorm  = std::clamp((-nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
+    const float chestDelaySamp = std::clamp((nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f)
+                                 * currentParams.chestDelayMaxMs * 0.001f * sr;
+    const float chestLinTarget = chestGainLin * chestElevNorm;
+
+    float chestSig = input;
+    for (auto& hp_f : hpf)
+        chestSig = hp_f.process(chestSig);
+    chestSig = lp.process(chestSig);
+    delay.push(chestSig);
+
+    const float chestGain = gainSm.process(chestLinTarget);
+    const float chestReadSamp = std::max(2.0f, delaySm.process(chestDelaySamp));
+
+    if (!currentParams.bypassChest && chestGain > 1e-6f)
+        return delay.read(chestReadSamp, interpMode) * chestGain;
+    return 0.0f;
+}
+
+// ============================================================================
+// processFloorForNode() — per-node floor bounce (modifies dL/dR in-place)
+// ============================================================================
+
+void XYZPanEngine::processFloorForNode(
+    float& dL, float& dR, float nodeZ,
+    float sr, int interpMode, float floorGainLin,
+    dsp::FractionalDelayLine& fDelayL, dsp::FractionalDelayLine& fDelayR,
+    dsp::OnePoleLP& lpfL, dsp::OnePoleLP& lpfR,
+    dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm)
+{
+    const float floorDelaySamp = std::clamp((nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f)
+                                 * currentParams.floorDelayMaxMs * 0.001f * sr;
+    const float floorElevNorm  = std::clamp((-nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
+    const float floorLinTarget = floorGainLin * floorElevNorm;
+
+    fDelayL.push(dL);
+    fDelayR.push(dR);
+
+    const float floorGain = gainSm.process(floorLinTarget);
+    const float floorReadSamp = std::max(2.0f, delaySm.process(floorDelaySamp));
+
+    if (!currentParams.bypassFloor && floorGain > 1e-6f) {
+        float floorL = fDelayL.read(floorReadSamp, interpMode);
+        float floorR = fDelayR.read(floorReadSamp, interpMode);
+        floorL = lpfL.process(floorL);
+        floorR = lpfR.process(floorR);
+        dL += floorL * floorGain;
+        dR += floorR * floorGain;
+    }
+}
+
+// ============================================================================
+// processERForNode() — per-node early reflections (image source method)
+// ============================================================================
+
+XYZPanEngine::ERResult XYZPanEngine::processERForNode(
+    float input, float nodeX, float nodeY, float nodeZ,
+    float distGainTarget, float sr, int interpMode,
+    float dampCutoff, float roomHalf,
+    std::array<EarlyReflection, kNumER>& reflections,
+    dsp::FractionalDelayLine& sharedDelay,
+    bool rotated, float cY, float sY, float cP, float sP)
+{
+    sharedDelay.push(input);
+
+    float erDirectL = 0.0f, erDirectR = 0.0f;
+    float erRevL = 0.0f, erRevR = 0.0f;
+
+    constexpr int wallAxis[6]  = { 0, 0, 1, 1, 2, 2 };
+    constexpr float wallSign[6] = { 1.0f, -1.0f, 1.0f, -1.0f, 1.0f, -1.0f };
+
+    const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
+    const float directDist = std::max(rawDist, kMinDistance);
+
+    for (int w = 0; w < kNumER; ++w) {
+        auto& er = reflections[w];
+
+        // Image source position from this node's position
+        float imgX = nodeX, imgY = nodeY, imgZ = nodeZ;
+        const int axis = wallAxis[w];
+        const float sign = wallSign[w];
+        if (axis == 0)      imgX = 2.0f * sign - nodeX;
+        else if (axis == 1) imgY = 2.0f * sign - nodeY;
+        else                imgZ = 2.0f * sign - nodeZ;
+
+        const float pathNorm = std::sqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
+        const float pathMeters = pathNorm * roomHalf;
+        const float delaySamp = std::max(2.0f, pathMeters / kSpeedOfSound * sr);
+
+        er.wallAbsorption.setCoefficients(dampCutoff, sr);
+
+        const float reflDist = std::max(pathNorm, kMinDistance);
+        const float ratioPenalty = directDist / reflDist;
+        const float gainTarget = std::clamp(distGainTarget * ratioPenalty, 0.0f, currentParams.distGainMax);
+
+        const float smoothDelay = std::max(2.0f, er.delaySmooth.process(delaySamp));
+        const float smoothGain = er.gainSmooth.process(gainTarget);
+
+        float reflected = sharedDelay.read(smoothDelay, interpMode);
+        reflected = er.wallAbsorption.process(reflected);
+        reflected *= smoothGain;
+
+        // Simplified binaural from image source azimuth (listener-relative)
+        float lrImgX = imgX, lrImgY = imgY;
+        if (rotated) {
+            const float rx = imgX * cY + imgY * sY;
+            const float ry = -imgX * sY + imgY * cY;
+            lrImgX = rx;
+            lrImgY = ry * cP + imgZ * sP;
+        }
+        const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
+        const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;
+
+        const float erItdTarget = currentParams.maxITD_ms * imgAzFactor * sr / 1000.0f;
+        const float erItdSamples = er.itdSmooth.process(erItdTarget);
+
+        const float absImgAz = std::abs(imgAzFactor);
+        const float erIldTarget = 1.0f - (1.0f - ildGainBase_) * absImgAz;
+        const float erIldGain = er.ildSmooth.process(erIldTarget);
+
+        const float erShadowRange = currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz;
+        er.shadowL.setCoefficients(
+            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f,  imgAzFactor), sr);
+        er.shadowR.setCoefficients(
+            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f, -imgAzFactor), sr);
+
+        er.itdDelayL.push(reflected);
+        er.itdDelayR.push(reflected);
+
+        constexpr float kERMinDelay = 2.0f;
+        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples), interpMode);
+        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples), interpMode);
+
+        const float erIldAtten = 1.0f - erIldGain;
+        const float erBlend = std::clamp(erItdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
+        erL *= 1.0f - erIldAtten * std::max(0.0f,  erBlend);
+        erR *= 1.0f - erIldAtten * std::max(0.0f, -erBlend);
+
+        erL = er.shadowL.process(erL);
+        erR = er.shadowR.process(erR);
+
+        erDirectL += erL;
+        erDirectR += erR;
+        erRevL += erL;
+        erRevR += erR;
+    }
+
+    return { erDirectL, erDirectR, erRevL, erRevR };
 }
 
 // ============================================================================
@@ -642,15 +949,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     auto lfoRate = [&](float freeHz, float beatDiv, bool tempoSync) -> float {
         if (tempoSync && currentParams.hostBpm > 0.0f)
-            return (currentParams.hostBpm / 60.0f) * beatDiv;
+            return (currentParams.hostBpm / 60.0f) / beatDiv;
         return freeHz;
     };
     lfoX_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoXWaveform);
     lfoY_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoYWaveform);
     lfoZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoZWaveform);
-    lfoX_.setRateHz(lfoRate(currentParams.lfoXRate, currentParams.lfoXBeatDiv, currentParams.lfoTempoSync) * currentParams.lfoSpeedMul);
-    lfoY_.setRateHz(lfoRate(currentParams.lfoYRate, currentParams.lfoYBeatDiv, currentParams.lfoTempoSync) * currentParams.lfoSpeedMul);
-    lfoZ_.setRateHz(lfoRate(currentParams.lfoZRate, currentParams.lfoZBeatDiv, currentParams.lfoTempoSync) * currentParams.lfoSpeedMul);
+    lfoX_.setRateHz(lfoRate(currentParams.lfoXRate, currentParams.lfoXBeatDiv, currentParams.lfoXTempoSync) * (currentParams.lfoXTempoSync ? 1.0f : currentParams.lfoSpeedMul));
+    lfoY_.setRateHz(lfoRate(currentParams.lfoYRate, currentParams.lfoYBeatDiv, currentParams.lfoYTempoSync) * (currentParams.lfoYTempoSync ? 1.0f : currentParams.lfoSpeedMul));
+    lfoZ_.setRateHz(lfoRate(currentParams.lfoZRate, currentParams.lfoZBeatDiv, currentParams.lfoZTempoSync) * (currentParams.lfoZTempoSync ? 1.0f : currentParams.lfoSpeedMul));
     lfoX_.setPhaseOffset(currentParams.lfoXPhase);
     lfoY_.setPhaseOffset(currentParams.lfoYPhase);
     lfoZ_.setPhaseOffset(currentParams.lfoZPhase);
@@ -667,9 +974,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     orbitLfoXY_.waveform = static_cast<dsp::LFOWaveform>(currentParams.stereoOrbitXYWaveform);
     orbitLfoXZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.stereoOrbitXZWaveform);
     orbitLfoYZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.stereoOrbitYZWaveform);
-    orbitLfoXY_.setRateHz(lfoRate(currentParams.stereoOrbitXYRate, currentParams.stereoOrbitXYBeatDiv, currentParams.stereoOrbitTempoSync) * currentParams.stereoOrbitSpeedMul);
-    orbitLfoXZ_.setRateHz(lfoRate(currentParams.stereoOrbitXZRate, currentParams.stereoOrbitXZBeatDiv, currentParams.stereoOrbitTempoSync) * currentParams.stereoOrbitSpeedMul);
-    orbitLfoYZ_.setRateHz(lfoRate(currentParams.stereoOrbitYZRate, currentParams.stereoOrbitYZBeatDiv, currentParams.stereoOrbitTempoSync) * currentParams.stereoOrbitSpeedMul);
+    orbitLfoXY_.setRateHz(lfoRate(currentParams.stereoOrbitXYRate, currentParams.stereoOrbitXYBeatDiv, currentParams.stereoOrbitXYTempoSync) * (currentParams.stereoOrbitXYTempoSync ? 1.0f : currentParams.stereoOrbitSpeedMul));
+    orbitLfoXZ_.setRateHz(lfoRate(currentParams.stereoOrbitXZRate, currentParams.stereoOrbitXZBeatDiv, currentParams.stereoOrbitXZTempoSync) * (currentParams.stereoOrbitXZTempoSync ? 1.0f : currentParams.stereoOrbitSpeedMul));
+    orbitLfoYZ_.setRateHz(lfoRate(currentParams.stereoOrbitYZRate, currentParams.stereoOrbitYZBeatDiv, currentParams.stereoOrbitYZTempoSync) * (currentParams.stereoOrbitYZTempoSync ? 1.0f : currentParams.stereoOrbitSpeedMul));
     orbitLfoXY_.setPhaseOffset(currentParams.stereoOrbitXYPhase);
     orbitLfoXZ_.setPhaseOffset(currentParams.stereoOrbitXZPhase);
     orbitLfoYZ_.setPhaseOffset(currentParams.stereoOrbitYZPhase);
@@ -717,30 +1024,67 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     constexpr float kPI = 3.14159265358979323846f;
     constexpr float kTwoPI = 2.0f * kPI;
+    constexpr float kInvHalfPI = 1.0f / (kPI * 0.5f);  // 2/pi ≈ 0.6366
 
     // Pre-compute dB-to-linear conversions (std::pow) once per block
     const float chestGainLin   = std::pow(10.0f, currentParams.chestGainDb / 20.0f);
     const float floorGainLin   = std::pow(10.0f, currentParams.floorGainDb / 20.0f);
     ildGainBase_               = std::pow(10.0f, -currentParams.ildMaxDb / 20.0f);
+    hardpanGainBase_           = std::pow(10.0f, kHardpanMaxDb / 20.0f);
     const float auxMaxBoostLin = std::pow(10.0f, currentParams.auxSendGainMaxDb / 20.0f);
     blkDistRefScale_           = std::pow(10.0f, currentParams.distGainFloorDb / 40.0f);
+
+    // Per-block chest filter coefficient update (cheap: only recalc when params change)
+    {
+        const float chestHPF = currentParams.chestHPFHz;
+        const float chestLP  = currentParams.chestLPHz;
+        for (auto& hp : chestHPF_)
+            hp.setCoefficients(chestHPF, sr);
+        chestLP_.setCoefficients(chestLP, sr);
+        // R-channel chest pipeline (stereo node splitting)
+        for (auto& hp : chestR_.hpf)
+            hp.setCoefficients(chestHPF, sr);
+        chestR_.lp.setCoefficients(chestLP, sr);
+    }
 
     // Block-start position: peek LFO at block start (no phase advance) so
     // per-block filter coefficients track the modulated position.  LFO delta
     // within one 64-128 sample block is negligible for coefficient purposes.
-    const float blkX = currentParams.x + lfoX_.peek() * lfoDepthXSmooth_.current();
-    const float blkY = currentParams.y + lfoY_.peek() * lfoDepthYSmooth_.current();
-    const float blkZ = currentParams.z + lfoZ_.peek() * lfoDepthZSmooth_.current();
+    float blkX = currentParams.x + lfoX_.peek() * lfoDepthXSmooth_.current();
+    float blkY = currentParams.y + lfoY_.peek() * lfoDepthYSmooth_.current();
+    float blkZ = currentParams.z + lfoZ_.peek() * lfoDepthZSmooth_.current();
+
+    // Listener head rotation — cache trig at block start (not LFO-modulated)
+    const float listYaw   = currentParams.listenerYaw;
+    const float listPitch = currentParams.listenerPitch;
+    const bool listenerRotated = (std::abs(listYaw) > 1e-7f || std::abs(listPitch) > 1e-7f);
+    const float cosY = std::cos(listYaw);
+    const float sinY = std::sin(listYaw);
+    const float cosP = std::cos(listPitch);
+    const float sinP = std::sin(listPitch);
+
+    // Rotate block-start position into listener-relative frame for EQ targets.
+    // Inverse yaw around Z, then inverse pitch around X.
+    if (listenerRotated) {
+        const float rx = blkX * cosY + blkY * sinY;
+        const float ry = -blkX * sinY + blkY * cosY;
+        blkX = rx;
+        blkY = ry * cosP + blkZ * sinP;
+        blkZ = -ry * sinP + blkZ * cosP;
+    }
+
     const float blkHorizMag  = std::sqrt(blkX * blkX + blkY * blkY);
     const float blkRearFactor = (blkHorizMag > 1e-7f) ? (-blkY / blkHorizMag) : blkY;
 
-    // Block-start EQ targets (Z-driven pinna, Y-driven presence/earCanal)
+    // Block-start EQ targets (elevation-driven pinna, Y-driven presence/earCanal)
     const float blkPresenceGainDb  = currentParams.presenceShelfMaxDb * (-blkRearFactor);
     const float blkEarCanalGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-blkRearFactor));
-    const float blkZ_clamped       = std::clamp(blkZ, 0.0f, 1.0f);
-    const float blkPinnaGainDb     = -15.0f + 20.0f * blkZ_clamped;
-    const float blkShelfGainDb     = 3.0f * std::clamp(blkZ + 1.0f, 0.0f, 1.0f);
-    const float blkPinnaN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * ((blkZ + 1.0f) * 0.5f), currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
+    const float blkElevation       = std::atan2(blkZ, blkHorizMag);                         // -pi/2 to +pi/2
+    const float blkElevFactor      = blkElevation * kInvHalfPI * 0.5f + 0.5f;               // 0=nadir, 1=zenith
+    const float blkElevAbove       = std::max(0.0f, blkElevFactor * 2.0f - 1.0f);           // 0 at horizon, 1 at zenith
+    const float blkPinnaGainDb     = -15.0f + 20.0f * blkElevAbove;
+    const float blkShelfGainDb     = 3.0f * std::min(1.0f, blkElevFactor * 2.0f);           // 0 at nadir, 3 at horizon+
+    const float blkPinnaN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * blkElevFactor, currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
     const float blkPinnaN2Freq     = blkPinnaN1Freq + currentParams.pinnaN2OffsetHz;
 
     // Block-start binaural targets (mono path)
@@ -779,8 +1123,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
     // Expanded pinna EQ (P5) — 4 additional bands, mono path
     {
-        const float belowFactor = std::clamp((-blkZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-        const float aboveFactor = std::clamp((blkZ + 1.0f) * 0.5f, 0.0f, 1.0f);
+        const float belowFactor = 1.0f - blkElevFactor;
+        const float aboveFactor = blkElevFactor;
         const float blkShoulderGainDb = currentParams.shoulderPeakMaxDb * belowFactor;
         const float blkConchaGainDb   = currentParams.conchaNotchMaxDb * belowFactor;
         const float blkUpperPinnaGainDb = currentParams.upperPinnaMinDb
@@ -812,6 +1156,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
     // Floor bounce HF absorption LPF — smoothed to avoid block-boundary clicks
     floorLPF_.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
+    floorLPF_R_.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
+    floorR_.lpfL.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
+    floorR_.lpfR.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
 
     // --- Stereo path per-block setCoefficients ---
     // For the stereo path, compute L-node and R-node block-start positions using
@@ -891,10 +1238,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float lRearFactor = (lHorizMag > 1e-7f) ? (-blkLNodeY / lHorizMag) : blkLNodeY;
         const float lPresGainDb = currentParams.presenceShelfMaxDb * (-lRearFactor);
         const float lEarGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-lRearFactor));
-        const float lZ_cl       = std::clamp(blkLNodeZ, 0.0f, 1.0f);
-        const float lPinnaGain  = -15.0f + 20.0f * lZ_cl;
-        const float lShelfGain  = 3.0f * std::clamp(blkLNodeZ + 1.0f, 0.0f, 1.0f);
-        const float lN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * ((blkLNodeZ + 1.0f) * 0.5f), currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
+        const float lElevation  = std::atan2(blkLNodeZ, lHorizMag);
+        const float lElevFactor = lElevation * kInvHalfPI * 0.5f + 0.5f;
+        const float lElevAbove  = std::max(0.0f, lElevFactor * 2.0f - 1.0f);
+        const float lPinnaGain  = -15.0f + 20.0f * lElevAbove;
+        const float lShelfGain  = 3.0f * std::min(1.0f, lElevFactor * 2.0f);
+        const float lN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * lElevFactor, currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
         const float lN2Freq     = lN1Freq + currentParams.pinnaN2OffsetHz;
         const float lAzFactor   = (lHorizMag > 1e-7f) ? blkLNodeX / lHorizMag : 0.0f;
         const float lCylT       = std::clamp(lHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
@@ -914,10 +1263,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float rRearFactor = (rHorizMag > 1e-7f) ? (-blkRNodeY / rHorizMag) : blkRNodeY;
         const float rPresGainDb = currentParams.presenceShelfMaxDb * (-rRearFactor);
         const float rEarGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-rRearFactor));
-        const float rZ_cl       = std::clamp(blkRNodeZ, 0.0f, 1.0f);
-        const float rPinnaGain  = -15.0f + 20.0f * rZ_cl;
-        const float rShelfGain  = 3.0f * std::clamp(blkRNodeZ + 1.0f, 0.0f, 1.0f);
-        const float rN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * ((blkRNodeZ + 1.0f) * 0.5f), currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
+        const float rElevation  = std::atan2(blkRNodeZ, rHorizMag);
+        const float rElevFactor = rElevation * kInvHalfPI * 0.5f + 0.5f;
+        const float rElevAbove  = std::max(0.0f, rElevFactor * 2.0f - 1.0f);
+        const float rPinnaGain  = -15.0f + 20.0f * rElevAbove;
+        const float rShelfGain  = 3.0f * std::min(1.0f, rElevFactor * 2.0f);
+        const float rN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * rElevFactor, currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
         const float rN2Freq     = rN1Freq + currentParams.pinnaN2OffsetHz;
         const float rAzFactor   = (rHorizMag > 1e-7f) ? blkRNodeX / rHorizMag : 0.0f;
         const float rCylT       = std::clamp(rHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
@@ -946,8 +1297,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // L pipeline expanded pinna EQ (P5)
         {
-            const float lBelow = std::clamp((-blkLNodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-            const float lAbove = std::clamp((blkLNodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
+            const float lBelow = 1.0f - lElevFactor;
+            const float lAbove = lElevFactor;
             const float lShoulderDb = currentParams.shoulderPeakMaxDb * lBelow;
             const float lConchaDb   = currentParams.conchaNotchMaxDb * lBelow;
             const float lUpperDb    = currentParams.upperPinnaMinDb
@@ -988,8 +1339,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // R pipeline expanded pinna EQ (P5)
         {
-            const float rBelow = std::clamp((-blkRNodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-            const float rAbove = std::clamp((blkRNodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
+            const float rBelow = 1.0f - rElevFactor;
+            const float rAbove = rElevFactor;
             const float rShoulderDb = currentParams.shoulderPeakMaxDb * rBelow;
             const float rConchaDb   = currentParams.conchaNotchMaxDb * rBelow;
             const float rUpperDb    = currentParams.upperPinnaMinDb
@@ -1079,6 +1430,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     sawPhase_ += sawIncrement;
                     if (sawPhase_ >= 1.0f) sawPhase_ -= 1.0f;
                     break;
+                case xyzpan::TestToneWaveform::Click: {
+                    const float gate = pulseLFO_.tick() > 0.0f ? 1.0f : 0.0f;
+                    const bool gateOn = gate > 0.5f;
+                    if (gateOn && !prevPulseGate_)
+                        clickSamplesLeft_ = static_cast<float>(sampleRate) * 0.001f;
+                    prevPulseGate_ = gateOn;
+                    testSig = (clickSamplesLeft_ > 0.0f) ? 1.0f : 0.0f;
+                    clickSamplesLeft_ = std::max(0.0f, clickSamplesLeft_ - 1.0f);
+                    break;
+                }
                 case xyzpan::TestToneWaveform::Saw: default:
                     testSig = 2.0f * sawPhase_ - 1.0f;
                     sawPhase_ += sawIncrement;
@@ -1117,11 +1478,24 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             modZ = currentParams.z;
         }
 
+        // Save world-space position for bridge (source sphere stays at world position)
+        const float worldModX = modX, worldModY = modY, worldModZ = modZ;
+
+        // Rotate into listener-relative frame for DSP (binaural cues, EQ targets)
+        if (listenerRotated) {
+            const float rx = modX * cosY + modY * sinY;
+            const float ry = -modX * sinY + modY * cosY;
+            modX = rx;
+            modY = ry * cosP + modZ * sinP;
+            modZ = -ry * sinP + modZ * cosP;
+        }
+
         // Position-dependent targets from object center position
-        // Skip sqrt when position is block-constant (zero-LFO fast path)
+        // rawModDist uses world-space (distance is rotation-invariant)
+        // horizontalMag uses rotated values (needed for azimuth/rear factor)
         float rawModDist, horizontalMag;
         if (lfoActive) {
-            rawModDist    = std::sqrt(modX * modX + modY * modY + modZ * modZ);
+            rawModDist    = std::sqrt(worldModX * worldModX + worldModY * worldModY + worldModZ * worldModZ);
             horizontalMag = std::sqrt(modX * modX + modY * modY);
         } else {
             rawModDist    = blkRawModDist;
@@ -1144,8 +1518,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // Distance targets
         const float distRatio = distRef / modDist;
         const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
-        const float delayTargetSamples = std::max(2.0f,
-            rawDistFrac * currentParams.distDelayMaxMs * 0.001f * sr);
 
         // Air absorption coefficients — mono path only (stereo sets per-node in processDistanceForNode)
         const float airCutoffMod = currentParams.airAbsMaxHz
@@ -1163,8 +1535,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float floorElevNorm     = std::clamp((-modZ + 1.0f) * 0.5f, 0.0f, 1.0f);
         const float floorLinearTarget = floorGainLin * floorElevNorm;
 
-        // Capture modulated position
-        lastModulated_ = {modX, modY, modZ};
+        // Capture modulated position (world-space for GL bridge)
+        lastModulated_ = {worldModX, worldModY, worldModZ};
 
         // ----------------------------------------------------------------
         // Stereo width smooth + orbit LFOs
@@ -1183,19 +1555,26 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float orbitValXZ = orbitRawXZ * orbitDepXZ;
         const float orbitValYZ = orbitRawYZ * orbitDepYZ;
 
+        // Binaural blend smoother — once per sample, shared across mono/stereo paths
+        const float binBlend = binauralBlendSmooth_.process(
+            currentParams.binauralEnabled ? 1.0f : 0.0f);
+
         float dL, dR;
         float effectiveDistGain = 1.0f;
         float blendedDistFrac = modDistFrac;  // overwritten in stereo path
+        float dopplerInputMono = 0.0f;        // doppler'd input for chest/ER
+        float erReverbAccumL = 0.0f, erReverbAccumR = 0.0f;
 
         if (stereoActive) {
-            // Compute L/R node positions
+            // Compute L/R node positions in world space, then rotate for DSP
             const float halfSpread = smoothedWidth * kStereoMaxSpreadRadius;
 
-            // Spread direction: perpendicular to listener→object in XY plane
+            // Spread direction: perpendicular to listener→object in XY plane (world space)
+            const float worldHorizMag = std::sqrt(worldModX * worldModX + worldModY * worldModY);
             float spreadX, spreadY;
-            if (currentParams.stereoFaceListener && horizontalMag > 1e-5f) {
-                spreadX =  modY / horizontalMag;
-                spreadY = -modX / horizontalMag;
+            if (currentParams.stereoFaceListener && worldHorizMag > 1e-5f) {
+                spreadX =  worldModY / worldHorizMag;
+                spreadY = -worldModX / worldHorizMag;
             } else {
                 spreadX = 1.0f;
                 spreadY = 0.0f;
@@ -1254,24 +1633,63 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 rOffY = tmpY; rOffZ = tmpZ;
             }
 
-            // Final node positions
-            const float lNodeX = modX + lOffX;
-            const float lNodeY = modY + lOffY;
-            const float lNodeZ = modZ + lOffZ;
-            const float rNodeX = modX + rOffX;
-            const float rNodeY = modY + rOffY;
-            const float rNodeZ = modZ + rOffZ;
+            // Final node positions (world space — for bridge and distance)
+            const float lNodeX = worldModX + lOffX;
+            const float lNodeY = worldModY + lOffY;
+            const float lNodeZ = worldModZ + lOffZ;
+            const float rNodeX = worldModX + rOffX;
+            const float rNodeY = worldModY + rOffY;
+            const float rNodeZ = worldModZ + rOffZ;
 
-            // Store for position bridge
+            // Store world-space for position bridge
             lastStereoNodes_ = { lNodeX, lNodeY, lNodeZ, rNodeX, rNodeY, rNodeZ, smoothedWidth };
+
+            // Rotate node positions into listener-relative frame for DSP
+            float dspLX = lNodeX, dspLY = lNodeY, dspLZ = lNodeZ;
+            float dspRX = rNodeX, dspRY = rNodeY, dspRZ = rNodeZ;
+            if (listenerRotated) {
+                float rx, ry;
+                rx = lNodeX * cosY + lNodeY * sinY;
+                ry = -lNodeX * sinY + lNodeY * cosY;
+                dspLX = rx;
+                dspLY = ry * cosP + lNodeZ * sinP;
+                dspLZ = -ry * sinP + lNodeZ * cosP;
+
+                rx = rNodeX * cosY + rNodeY * sinY;
+                ry = -rNodeX * sinY + rNodeY * cosY;
+                dspRX = rx;
+                dspRY = ry * cosP + rNodeZ * sinP;
+                dspRZ = -ry * sinP + rNodeZ * cosP;
+            }
 
             // Get input samples — test tone overrides both channels
             float sampleL = currentParams.testToneEnabled ? (testStereo ? testSigL : testSig) : inputL[i];
             float sampleR = currentParams.testToneEnabled ? (testStereo ? testSigR : testSig) : inputR[i];
 
-            // Process L channel through L pipeline (existing flat members)
+            // Doppler FIRST — per-node mono doppler before comb/pinna/binaural
+            // Distance is rotation-invariant, use world-space node positions
+            const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
+            const float lRawDistFrac = std::clamp(
+                std::sqrt(lNodeX*lNodeX + lNodeY*lNodeY + lNodeZ*lNodeZ) / kSqrt3, 0.0f, 1.0f);
+            const float rRawDistFrac = std::clamp(
+                std::sqrt(rNodeX*rNodeX + rNodeY*rNodeY + rNodeZ*rNodeZ) / kSqrt3, 0.0f, 1.0f);
+
+            sampleL = processDopplerMono(sampleL, lRawDistFrac, sr, effectiveDoppler, interpMode,
+                dopplerDelay_, dopplerPreAA_, dopplerPostAA_,
+                distDelaySmooth_, prevDistDelay_);
+            sampleR = processDopplerMono(sampleR, rRawDistFrac, sr, effectiveDoppler, interpMode,
+                distR_.dopplerDelay, distR_.dopplerPreAA, distR_.dopplerPostAA,
+                distR_.distDelaySmooth, distR_.prevDelaySamp);
+
+            // Per-node chest bounce — uses listener-relative Z for elevation perception
+            float chestL = processChestForNode(sampleL, dspLZ, sr, interpMode, chestGainLin,
+                chestHPF_, chestLP_, chestDelay_, chestGainSmooth_, chestDelaySmooth_);
+            float chestROut = processChestForNode(sampleR, dspRZ, sr, interpMode, chestGainLin,
+                chestR_.hpf, chestR_.lp, chestR_.delay, chestR_.gainSmooth, chestR_.delaySmooth);
+
+            // Process L channel through L pipeline — listener-relative positions
             auto [dL_L, dR_L] = processBinauralForSource(
-                sampleL, lNodeX, lNodeY, lNodeZ, sr, interpMode,
+                sampleL, dspLX, dspLY, dspLZ, sr, interpMode, binBlend,
                 delayL_, delayR_, shadowL_, shadowR_, rearSvfL_, rearSvfR_,
                 itdSmooth_, shadowCutoffSmooth_, ildGainSmooth_, rearCutoffSmooth_,
                 nearFieldLF_L_, nearFieldLF_R_,
@@ -1280,9 +1698,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 shoulderPeak_, conchaNotch_, upperPinna_, tragusNotch_
             );
 
-            // Process R channel through R pipeline (srcR_)
+            // Process R channel through R pipeline — listener-relative positions
             auto [dL_R, dR_R] = processBinauralForSource(
-                sampleR, rNodeX, rNodeY, rNodeZ, sr, interpMode,
+                sampleR, dspRX, dspRY, dspRZ, sr, interpMode, binBlend,
                 srcR_.delayL, srcR_.delayR, srcR_.shadowL, srcR_.shadowR,
                 srcR_.rearSvfL, srcR_.rearSvfR,
                 srcR_.itdSmooth, srcR_.shadowCutoffSmooth, srcR_.ildGainSmooth, srcR_.rearCutoffSmooth,
@@ -1293,26 +1711,71 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 srcR_.shoulderPeak, srcR_.conchaNotch, srcR_.upperPinna, srcR_.tragusNotch
             );
 
-            // Per-node distance processing BEFORE summing
-            auto distL_result = processDistanceForNode(dL_L, dR_L, lNodeX, lNodeY, lNodeZ, sr, dopplerOn, interpMode,
-                distDelayL_, distDelayR_, dopplerPreAA_L_, dopplerPreAA_R_,
-                dopplerAA_L_, dopplerAA_R_,
-                airLPF_L_, airLPF_R_, airLPF2_L_, airLPF2_R_,
-                distGainSmooth_, distDelaySmooth_, prevDistDelay_);
+            // Add chest to per-node binaural (both ears, before distance)
+            dL_L += chestL; dR_L += chestL;
+            dL_R += chestROut; dR_R += chestROut;
 
-            auto distR_result = processDistanceForNode(dL_R, dR_R, rNodeX, rNodeY, rNodeZ, sr, dopplerOn, interpMode,
-                distR_.distDelayL, distR_.distDelayR,
-                distR_.dopplerPreAA_L, distR_.dopplerPreAA_R,
-                distR_.dopplerAA_L, distR_.dopplerAA_R,
+            // Per-node distance processing (gain + air absorption only, no doppler)
+            auto distL_result = processDistanceForNode(dL_L, dR_L, lNodeX, lNodeY, lNodeZ, sr,
+                airLPF_L_, airLPF_R_, airLPF2_L_, airLPF2_R_,
+                distGainSmooth_);
+
+            auto distR_result = processDistanceForNode(dL_R, dR_R, rNodeX, rNodeY, rNodeZ, sr,
                 distR_.airLPF_L, distR_.airLPF_R,
                 distR_.airLPF2_L, distR_.airLPF2_R,
-                distR_.distGainSmooth, distR_.distDelaySmooth,
-                distR_.prevDelaySamp);
+                distR_.distGainSmooth);
 
-            dL = distL_result.left + distR_result.left;
-            dR = distL_result.right + distR_result.right;
+            // Per-node floor bounce (on per-node distance output, before combine)
+            float fL_L = distL_result.left, fR_L = distL_result.right;
+            float fL_R = distR_result.left,  fR_R = distR_result.right;
+            processFloorForNode(fL_L, fR_L, dspLZ, sr, interpMode, floorGainLin,
+                floorDelayL_, floorDelayR_, floorLPF_, floorLPF_R_,
+                floorGainSmooth_, floorDelaySmooth_);
+            processFloorForNode(fL_R, fR_R, dspRZ, sr, interpMode, floorGainLin,
+                floorR_.delayL, floorR_.delayR, floorR_.lpfL, floorR_.lpfR,
+                floorR_.gainSmooth, floorR_.delaySmooth);
+
+            // Combine with -3dB per node to maintain energy parity with mono path
+            dL = (fL_L + fL_R) * kStereoNodeGain;
+            dR = (fR_L + fR_R) * kStereoNodeGain;
             blendedDistFrac = 0.5f * (distL_result.distFrac + distR_result.distFrac);
             effectiveDistGain = 0.5f * (distGainSmooth_.current() + distR_.distGainSmooth.current());
+
+            // Per-node early reflections (6 reflections per node = 12 total)
+            {
+                const float erLevelSm = erLevelSmooth_.process(
+                    (currentParams.erEnabled && !currentParams.bypassER) ? currentParams.erLevel : 0.0f);
+                const float erSendSm = erReverbSendSmooth_.process(currentParams.erReverbSend);
+
+                if (erLevelSm > 1e-6f) {
+                    const float roomHalf = currentParams.erRoomSize;
+                    const float dampCutoff = kERDampingLPMaxHz
+                        + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
+
+                    // Per-node distGainTarget for ER gain scaling
+                    const float lNodeDist = std::max(std::sqrt(lNodeX*lNodeX + lNodeY*lNodeY + lNodeZ*lNodeZ), kMinDistance);
+                    const float lDistRatio = distRef / lNodeDist;
+                    const float lDistGainTarget = std::clamp(lDistRatio * lDistRatio, 0.0f, currentParams.distGainMax);
+
+                    const float rNodeDist = std::max(std::sqrt(rNodeX*rNodeX + rNodeY*rNodeY + rNodeZ*rNodeZ), kMinDistance);
+                    const float rDistRatio = distRef / rNodeDist;
+                    const float rDistGainTarget = std::clamp(rDistRatio * rDistRatio, 0.0f, currentParams.distGainMax);
+
+                    auto erLResult = processERForNode(sampleL, lNodeX, lNodeY, lNodeZ,
+                        lDistGainTarget, sr, interpMode, dampCutoff, roomHalf,
+                        earlyReflections_, erSharedDelay_,
+                        listenerRotated, cosY, sinY, cosP, sinP);
+                    auto erRResult = processERForNode(sampleR, rNodeX, rNodeY, rNodeZ,
+                        rDistGainTarget, sr, interpMode, dampCutoff, roomHalf,
+                        erR_.reflections, erR_.sharedDelay,
+                        listenerRotated, cosY, sinY, cosP, sinP);
+
+                    dL += (erLResult.directL + erRResult.directL) * erLevelSm;
+                    dR += (erLResult.directR + erRResult.directR) * erLevelSm;
+                    erReverbAccumL = (erLResult.reverbL + erRResult.reverbL) * erLevelSm * erSendSm;
+                    erReverbAccumR = (erLResult.reverbR + erRResult.reverbR) * erLevelSm * erSendSm;
+                }
+            }
         } else {
             // Mono path — sum to mono, use existing pipeline
             float mono;
@@ -1324,7 +1787,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 mono = inputL[i];
             }
 
-            lastStereoNodes_ = { modX, modY, modZ, modX, modY, modZ, 0.0f };
+            lastStereoNodes_ = { worldModX, worldModY, worldModZ, worldModX, worldModY, worldModZ, 0.0f };
+
+            // Doppler FIRST — mono doppler before comb/pinna/binaural
+            const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
+            mono = processDopplerMono(mono, rawDistFrac, sr, effectiveDoppler, interpMode,
+                dopplerDelay_, dopplerPreAA_, dopplerPostAA_,
+                distDelaySmooth_, prevDistDelay_);
+            dopplerInputMono = mono;
 
             // Binaural targets from LFO-modulated position (per-sample)
             // SVF shadow/rear coefficients updated per-sample below (TPT safe)
@@ -1397,16 +1867,28 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             constexpr float kMinDelay = 2.0f;
             // Signed ITD: bypass reads at fixed 2.0 (no interaural time difference)
+            // binBlend scales ITD: 1=full binaural, 0=no ITD (hardpan mode)
             if (currentParams.bypassITD) {
                 dL = delayL_.read(kMinDelay, interpMode);
                 dR = delayR_.read(kMinDelay, interpMode);
             } else {
-                dL = delayL_.read(kMinDelay + std::max(0.0f,  itdSamples), interpMode);
-                dR = delayR_.read(kMinDelay + std::max(0.0f, -itdSamples), interpMode);
+                const float itdL = std::max(0.0f,  itdSamples) * binBlend;
+                const float itdR = std::max(0.0f, -itdSamples) * binBlend;
+                dL = delayL_.read(kMinDelay + itdL, interpMode);
+                dR = delayR_.read(kMinDelay + itdR, interpMode);
             }
 
             if (!std::isfinite(dL)) dL = 0.0f;
             if (!std::isfinite(dR)) dR = 0.0f;
+
+            // Hardpan — opposite-ear attenuation when binaural is OFF
+            if (binBlend < 0.999f) {
+                const float hpAmount = 1.0f - binBlend;
+                const float hpGain = 1.0f - (1.0f - hardpanGainBase_) * absEffAzimuth;
+                const float appliedGain = 1.0f - hpAmount * (1.0f - hpGain);
+                if (effectiveAzimuth > 0.0f)      dL *= appliedGain;  // source right → cut left
+                else if (effectiveAzimuth < 0.0f) dR *= appliedGain;  // source left → cut right
+            }
 
             // ILD — smooth crossfade around ITD zero to avoid gain discontinuity
             if (!currentParams.bypassILD) {
@@ -1444,84 +1926,166 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         }
 
         // ----------------------------------------------------------------
-        // Shared pipeline: chest bounce → floor bounce → distance → reverb
+        // Mono-only pipeline: chest bounce → floor bounce → distance → ER
+        // (Stereo path handles these per-node inside the stereoActive block above)
         // ----------------------------------------------------------------
-
-        // Chest bounce — smoothers/delay always run; bypass skips adding to output
-        {
-            float chestSig = stereoActive
-                ? (currentParams.testToneEnabled ? (testStereo ? 0.5f * (testSigL + testSigR) : testSig) : 0.5f * (inputL[i] + (inputR ? inputR[i] : inputL[i])))
-                : (currentParams.testToneEnabled ? (testStereo ? 0.5f * (testSigL + testSigR) : testSig) : (inputR ? monoBuffer[static_cast<size_t>(i)] : inputL[i]));
-            for (auto& hp : chestHPF_)
-                chestSig = hp.process(chestSig);
-            chestSig = chestLP_.process(chestSig);
-            chestDelay_.push(chestSig);
-
-            const float chestGain = chestGainSmooth_.process(chestLinearTarget);
-            const float chestReadSamp = std::max(2.0f, chestDelaySmooth_.process(chestDelaySamp));
-            if (!currentParams.bypassChest && chestGain > 1e-6f) {
-                float chestOut = chestDelay_.read(chestReadSamp, interpMode) * chestGain * effectiveDistGain;
-                dL += chestOut;
-                dR += chestOut;
-            }
-        }
-
-        // Floor bounce — smoothers/delay always run; bypass skips adding to output
-        {
-            floorDelayL_.push(dL);
-            floorDelayR_.push(dR);
-
-            const float floorGain = floorGainSmooth_.process(floorLinearTarget);
-            const float floorReadSamp = std::max(2.0f, floorDelaySmooth_.process(floorDelaySamp));
-            if (!currentParams.bypassFloor && floorGain > 1e-6f) {
-                float floorL = floorDelayL_.read(floorReadSamp, interpMode);
-                float floorR = floorDelayR_.read(floorReadSamp, interpMode);
-                floorL = floorLPF_.process(floorL);
-                floorR = floorLPF_.process(floorR);
-                dL += floorL * floorGain;
-                dR += floorR * floorGain;
-            }
-        }
-
-        // Distance processing — mono path only (stereo path handled per-node above)
         if (!stereoActive) {
-            const float distGain = distGainSmooth_.process(distGainTarget);
-            effectiveDistGain = distGainSmooth_.current();
 
-            // Effective doppler: dopplerOn && !bypassDoppler
-            const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
+            // Chest bounce — smoothers/delay always run; bypass skips adding to output
+            {
+                float chestSig = dopplerInputMono;
+                for (auto& hp : chestHPF_)
+                    chestSig = hp.process(chestSig);
+                chestSig = chestLP_.process(chestSig);
+                chestDelay_.push(chestSig);
 
-            if (effectiveDoppler) {
-                dL = dopplerPreAA_L_.process(dL);
-                dR = dopplerPreAA_R_.process(dR);
+                const float chestGain = chestGainSmooth_.process(chestLinearTarget);
+                const float chestReadSamp = std::max(2.0f, chestDelaySmooth_.process(chestDelaySamp));
+                if (!currentParams.bypassChest && chestGain > 1e-6f) {
+                    float chestOut = chestDelay_.read(chestReadSamp, interpMode) * chestGain * effectiveDistGain;
+                    dL += chestOut;
+                    dR += chestOut;
+                }
             }
-            distDelayL_.push(dL);
-            distDelayR_.push(dR);
-            if (effectiveDoppler) {
-                float smoothed = distDelaySmooth_.process(delayTargetSamples);
-                prevDistDelay_ = smoothed;
-                const float delaySamp = std::max(2.0f, smoothed);
-                dL = distDelayL_.read(delaySamp, interpMode);
-                dR = distDelayR_.read(delaySamp, interpMode);
-            } else {
-                distDelaySmooth_.process(dopplerOn ? delayTargetSamples : 2.0f);
-                prevDistDelay_ = 2.0f;
-                dL = distDelayL_.read(2.0f, interpMode);
-                dR = distDelayR_.read(2.0f, interpMode);
-            }
-            dL = dopplerAA_L_.process(dL);
-            dR = dopplerAA_R_.process(dR);
-            dL *= currentParams.bypassDistGain ? 1.0f : distGain;
-            dR *= currentParams.bypassDistGain ? 1.0f : distGain;
 
-            // Air absorption
-            if (!currentParams.bypassAirAbs) {
-                dL = airLPF_L_.process(dL);
-                dR = airLPF_R_.process(dR);
-                dL = airLPF2_L_.process(dL);
-                dR = airLPF2_R_.process(dR);
+            // Floor bounce — smoothers/delay always run; bypass skips adding to output
+            {
+                floorDelayL_.push(dL);
+                floorDelayR_.push(dR);
+
+                const float floorGain = floorGainSmooth_.process(floorLinearTarget);
+                const float floorReadSamp = std::max(2.0f, floorDelaySmooth_.process(floorDelaySamp));
+                if (!currentParams.bypassFloor && floorGain > 1e-6f) {
+                    float floorL = floorDelayL_.read(floorReadSamp, interpMode);
+                    float floorR = floorDelayR_.read(floorReadSamp, interpMode);
+                    floorL = floorLPF_.process(floorL);
+                    floorR = floorLPF_R_.process(floorR);
+                    dL += floorL * floorGain;
+                    dR += floorR * floorGain;
+                }
             }
-        }
+
+            // Distance processing — mono path only (gain + air absorption; doppler already applied)
+            {
+                const float distGain = distGainSmooth_.process(distGainTarget);
+                effectiveDistGain = distGainSmooth_.current();
+
+                dL *= currentParams.bypassDistGain ? 1.0f : distGain;
+                dR *= currentParams.bypassDistGain ? 1.0f : distGain;
+
+                // Air absorption
+                if (!currentParams.bypassAirAbs) {
+                    dL = airLPF_L_.process(dL);
+                    dR = airLPF_R_.process(dR);
+                    dL = airLPF2_L_.process(dL);
+                    dR = airLPF2_R_.process(dR);
+                }
+            }
+
+            // Early Reflections (Image Source Method) — mono path
+            // ER input = doppler'd mono input (carries pitch shift into reflections)
+            {
+                erSharedDelay_.push(dopplerInputMono);
+
+                const float erLevelSm = erLevelSmooth_.process(
+                    (currentParams.erEnabled && !currentParams.bypassER) ? currentParams.erLevel : 0.0f);
+                const float erSendSm = erReverbSendSmooth_.process(currentParams.erReverbSend);
+
+                if (erLevelSm > 1e-6f) {
+                    const float roomHalf = currentParams.erRoomSize;
+                    const float dampCutoff = kERDampingLPMaxHz
+                        + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
+
+                    float erDirectL = 0.0f, erDirectR = 0.0f;
+                    float erRevL = 0.0f, erRevR = 0.0f;
+
+                    constexpr int wallAxis[6]  = { 0, 0, 1, 1, 2, 2 };
+                    constexpr float wallSign[6] = { 1.0f, -1.0f, 1.0f, -1.0f, 1.0f, -1.0f };
+
+                    const float directDist = std::max(rawModDist, kMinDistance);
+
+                    for (int w = 0; w < kNumER; ++w) {
+                        auto& er = earlyReflections_[w];
+
+                        // Image source in world space (mirror across room walls)
+                        float imgX = worldModX, imgY = worldModY, imgZ = worldModZ;
+                        const int axis = wallAxis[w];
+                        const float sign = wallSign[w];
+                        if (axis == 0)      imgX = 2.0f * sign - worldModX;
+                        else if (axis == 1) imgY = 2.0f * sign - worldModY;
+                        else                imgZ = 2.0f * sign - worldModZ;
+
+                        // Path distance is rotation-invariant
+                        const float pathNorm = std::sqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
+                        const float pathMeters = pathNorm * roomHalf;
+                        const float delaySamp = std::max(2.0f, pathMeters / kSpeedOfSound * sr);
+
+                        er.wallAbsorption.setCoefficients(dampCutoff, sr);
+
+                        const float reflDist = std::max(pathNorm, kMinDistance);
+                        const float ratioPenalty = directDist / reflDist;
+                        const float gainTarget = std::clamp(distGainTarget * ratioPenalty, 0.0f, currentParams.distGainMax);
+
+                        const float smoothDelay = std::max(2.0f, er.delaySmooth.process(delaySamp));
+                        const float smoothGain = er.gainSmooth.process(gainTarget);
+
+                        float reflected = erSharedDelay_.read(smoothDelay, interpMode);
+                        reflected = er.wallAbsorption.process(reflected);
+                        reflected *= smoothGain;
+
+                        // Rotate image source into listener-relative frame for binaural cues
+                        float lrImgX = imgX, lrImgY = imgY;
+                        if (listenerRotated) {
+                            const float rx = imgX * cosY + imgY * sinY;
+                            const float ry = -imgX * sinY + imgY * cosY;
+                            lrImgX = rx;
+                            lrImgY = ry * cosP + imgZ * sinP;
+                        }
+                        const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
+                        const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;
+
+                        const float erItdTarget = currentParams.maxITD_ms * imgAzFactor * sr / 1000.0f;
+                        const float erItdSamples = er.itdSmooth.process(erItdTarget);
+
+                        const float absImgAz = std::abs(imgAzFactor);
+                        const float erIldTarget = 1.0f - (1.0f - ildGainBase_) * absImgAz;
+                        const float erIldGain = er.ildSmooth.process(erIldTarget);
+
+                        const float erShadowRange = currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz;
+                        er.shadowL.setCoefficients(
+                            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f,  imgAzFactor), sr);
+                        er.shadowR.setCoefficients(
+                            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f, -imgAzFactor), sr);
+
+                        er.itdDelayL.push(reflected);
+                        er.itdDelayR.push(reflected);
+
+                        constexpr float kERMinDelay = 2.0f;
+                        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples), interpMode);
+                        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples), interpMode);
+
+                        const float erIldAtten = 1.0f - erIldGain;
+                        const float erBlend = std::clamp(erItdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
+                        erL *= 1.0f - erIldAtten * std::max(0.0f,  erBlend);
+                        erR *= 1.0f - erIldAtten * std::max(0.0f, -erBlend);
+
+                        erL = er.shadowL.process(erL);
+                        erR = er.shadowR.process(erR);
+
+                        erDirectL += erL;
+                        erDirectR += erR;
+                        erRevL += erL;
+                        erRevR += erR;
+                    }
+
+                    dL += erDirectL * erLevelSm;
+                    dR += erDirectR * erLevelSm;
+
+                    erReverbAccumL = erRevL * erLevelSm * erSendSm;
+                    erReverbAccumR = erRevR * erLevelSm * erSendSm;
+                }
+            }
+        } // end !stereoActive
 
         // Use blendedDistFrac (averaged from both nodes) in stereo, modDistFrac in mono
         const float effectiveDistFrac = blendedDistFrac;
@@ -1546,8 +2110,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         {
             const float preDelaySamp = effectiveDistFrac
                 * (currentParams.verbPreDelayMax * static_cast<float>(sampleRate) / 1000.0f);
+            // Feed FDN with dry signal + ER reverb accumulation
             float wetL, wetR;
-            reverb_.processSample(dL, dR, preDelaySamp, wetL, wetR);
+            reverb_.processSample(dL + erReverbAccumL, dR + erReverbAccumR, preDelaySamp, wetL, wetR);
             const float wetGain = verbWetSmooth_.process(currentParams.verbWet);
             if (!currentParams.bypassReverb) {
                 dL += wetGain * wetL;
@@ -1631,16 +2196,14 @@ void XYZPanEngine::reset() {
     floorDelayL_.reset();
     floorDelayR_.reset();
     floorLPF_.reset();
+    floorLPF_R_.reset();
     floorGainSmooth_.reset(0.0f);
     floorDelaySmooth_.reset(2.0f);
 
     // Phase 4: distance processing
-    distDelayL_.reset();
-    distDelayR_.reset();
-    dopplerAA_L_.reset();
-    dopplerAA_R_.reset();
-    dopplerPreAA_L_.reset();
-    dopplerPreAA_R_.reset();
+    dopplerDelay_.reset();
+    dopplerPostAA_.reset();
+    dopplerPreAA_.reset();
     prevDistDelay_ = 2.0f;
     airLPF_L_.reset();
     airLPF_R_.reset();
@@ -1672,6 +2235,9 @@ void XYZPanEngine::reset() {
     // Stereo source node splitting
     srcR_.reset();
     distR_.reset();
+    chestR_.reset();
+    floorR_.reset();
+    erR_.reset();
     orbitLfoXY_.reset(currentParams.stereoOrbitXYPhase);
     orbitLfoXZ_.reset(currentParams.stereoOrbitXZPhase);
     orbitLfoYZ_.reset(currentParams.stereoOrbitYZPhase);
@@ -1684,12 +2250,33 @@ void XYZPanEngine::reset() {
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;
 
+    // Early Reflections
+    erSharedDelay_.reset();
+    for (auto& er : earlyReflections_) {
+        er.wallAbsorption.reset();
+        er.delaySmooth.reset(2.0f);
+        er.gainSmooth.reset(0.0f);
+        er.itdDelayL.reset();
+        er.itdDelayR.reset();
+        er.shadowL.reset();
+        er.shadowR.reset();
+        er.itdSmooth.reset(0.0f);
+        er.ildSmooth.reset(1.0f);
+    }
+    erLevelSmooth_.reset(0.0f);
+    erReverbSendSmooth_.reset(kERReverbSendDefault);
+
+    // Binaural toggle smoother
+    binauralBlendSmooth_.reset(1.0f);
+
     // LFO output values for UI display
     lastLfoOutX_ = 0.f; lastLfoOutY_ = 0.f; lastLfoOutZ_ = 0.f;
     lastLfoOutOrbitXY_ = 0.f; lastLfoOutOrbitXZ_ = 0.f; lastLfoOutOrbitYZ_ = 0.f;
 
     // Dev tool: test tone oscillator
     sawPhase_ = 0.0f;
+    clickSamplesLeft_ = 0.0f;
+    prevPulseGate_ = false;
     pulseLFO_.reset(0.0f);
 }
 

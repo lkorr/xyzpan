@@ -24,6 +24,7 @@ enum class TestToneWaveform : int {
     PulsingWhiteNoise = 5,
     StereoNoiseSaw    = 6,
     Sine              = 7,
+    Click             = 8,
 };
 
 // Parameters passed to the engine each processBlock.
@@ -44,6 +45,8 @@ struct EngineParams {
     float smoothMs_ITD      = kDefaultSmoothMs_ITD;    // ITD smoother time constant
     float smoothMs_Filter   = kDefaultSmoothMs_Filter; // SVF cutoff smoother time constant
     float smoothMs_Gain     = kDefaultSmoothMs_Gain;   // ILD gain smoother time constant
+
+    bool binauralEnabled    = true;  // false = ITD off + hardpan mode
 
     // =========================================================================
     // Phase 3: Depth (DEPTH-01, DEPTH-02, DEPTH-04, DEPTH-05)
@@ -72,6 +75,8 @@ struct EngineParams {
     float chestGainDb      = kChestGainDb;        // -8 dB  — chest bounce attenuation
     float floorDelayMaxMs  = kFloorDelayMaxMs;    // 20.0 ms — floor bounce max delay
     float floorGainDb      = kFloorGainDb;        // -5 dB  — floor bounce attenuation
+    float chestHPFHz       = kChestHPFHz;         // 700 Hz — chest bounce HP cascade cutoff
+    float chestLPHz        = kChestLPHz;          // 1000 Hz — chest bounce LP cutoff
     float floorAbsHz       = kFloorAbsHz;         // 5000 Hz — floor HF absorption LPF
 
     // Pinna P1 fixed peak
@@ -127,8 +132,10 @@ struct EngineParams {
     float lfoXPhase     = 0.0f;             float lfoYPhase     = 0.0f;             float lfoZPhase     = 0.0f;
     int   lfoXWaveform  = 0;                int   lfoYWaveform  = 0;                int   lfoZWaveform  = 0;
     float lfoXSmooth    = 0.0f;             float lfoYSmooth    = 0.0f;             float lfoZSmooth    = 0.0f;
-    // Tempo sync (shared across all axes)
-    bool  lfoTempoSync  = false;
+    // Tempo sync (per-axis)
+    bool  lfoXTempoSync = false;
+    bool  lfoYTempoSync = false;
+    bool  lfoZTempoSync = false;
     float hostBpm       = 120.0f;           // passed from processBlock AudioPlayHead
     float lfoXBeatDiv   = 1.0f;             float lfoYBeatDiv   = 1.0f;             float lfoZBeatDiv   = 1.0f;
 
@@ -178,7 +185,9 @@ struct EngineParams {
     bool  stereoOrbitXYResetPhase = false;                   bool  stereoOrbitXZResetPhase = false;                   bool  stereoOrbitYZResetPhase = false;
     float stereoOrbitXYDepth      = 0.0f;                    float stereoOrbitXZDepth      = 0.0f;                    float stereoOrbitYZDepth      = 0.0f;
     float stereoOrbitXYSmooth     = 0.0f;                    float stereoOrbitXZSmooth     = 0.0f;                    float stereoOrbitYZSmooth     = 0.0f;
-    bool  stereoOrbitTempoSync    = false;
+    bool  stereoOrbitXYTempoSync  = false;
+    bool  stereoOrbitXZTempoSync  = false;
+    bool  stereoOrbitYZTempoSync  = false;
     float stereoOrbitSpeedMul     = 1.0f;
 
     // =========================================================================
@@ -216,8 +225,24 @@ struct EngineParams {
     float tragusNotchMaxDb   = kTragusNotchMaxDb;      // -5.0 dB
 
     // =========================================================================
+    // Early Reflections (Image Source Method)
+    // =========================================================================
+    bool  erEnabled     = false;
+    float erRoomSize    = kERRoomSizeDefault;   // half-dimension in meters
+    float erDamping     = kERDampingDefault;     // 0–1: wall absorption
+    float erLevel       = kERLevelDefault;       // 0–1: overall ER wet level
+    float erReverbSend  = kERReverbSendDefault;  // 0–1: volume send to FDN reverb
+
+    // =========================================================================
+    // Listener head orientation
+    // =========================================================================
+    float listenerYaw   = 0.0f;  // radians
+    float listenerPitch = 0.0f;  // radians
+
+    // =========================================================================
     // Dev tool: Per-feature bypass toggles
     // =========================================================================
+    bool bypassER         = false;
     bool bypassITD        = false;
     bool bypassHeadShadow = false;
     bool bypassILD        = false;

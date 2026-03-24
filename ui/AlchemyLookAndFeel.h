@@ -86,6 +86,12 @@ public:
     static constexpr uint32_t kVerdigrisLight = 0xFF685C45u;
     static constexpr uint32_t kVerdigrisPale  = 0xFF7B6E54u;
 
+    // 4b. Alchemical Aqua — copper-patina turquoise (Y-axis accent)
+    static constexpr uint32_t kAquaDark  = 0xFF2E7A7Au;
+    static constexpr uint32_t kAqua      = 0xFF4CA8A8u;
+    static constexpr uint32_t kAquaLight = 0xFF6CC4C4u;
+    static constexpr uint32_t kAquaPale  = 0xFF8ED8D8u;
+
     // 5. Cinnabar — highlight (use sparingly)
     static constexpr uint32_t kCinnabarDark  = 0xFF6B2A2Au;
     static constexpr uint32_t kCinnabar      = 0xFF8B3A3Au;

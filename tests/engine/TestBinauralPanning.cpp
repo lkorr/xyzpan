@@ -223,14 +223,20 @@ TEST_CASE("OnePoleSmooth: reset(value) sets state immediately", "[Smoother]") {
 // Engine integration tests (Task 2 - added here for single file)
 // ============================================================================
 
-// Helper: process silence through the engine to let smoothers settle
-static void settle(XYZPanEngine& eng, const EngineParams& params, int samples = 8192) {
+// Helper: process silence through the engine to let smoothers settle.
+// Processes in blockSize-sized chunks to respect maxBlockSize.
+static void settle(XYZPanEngine& eng, const EngineParams& params, int samples = 8192, int blockSize = 4096) {
     eng.setParams(params);
-    std::vector<float> silence(static_cast<size_t>(samples), 0.0f);
-    std::vector<float> outL(static_cast<size_t>(samples));
-    std::vector<float> outR(static_cast<size_t>(samples));
-    const float* ins[1] = { silence.data() };
-    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, samples);
+    std::vector<float> silence(static_cast<size_t>(blockSize), 0.0f);
+    std::vector<float> outL(static_cast<size_t>(blockSize));
+    std::vector<float> outR(static_cast<size_t>(blockSize));
+    int offset = 0;
+    while (offset < samples) {
+        int batch = std::min(blockSize, samples - offset);
+        const float* ins[1] = { silence.data() };
+        eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, batch);
+        offset += batch;
+    }
 }
 
 TEST_CASE("Engine ITD center: X=0 produces identical L and R output", "[Integration][ITD]") {
@@ -318,14 +324,16 @@ TEST_CASE("Engine ITD delay: X=+1 delays left ear relative to right", "[Integrat
 
 TEST_CASE("Engine head shadow: X=1 far ear (left) has less HF than near ear (right)", "[Integration][HeadShadow]") {
     XYZPanEngine eng;
-    eng.prepare(44100.0, 4096);
+    const int N = 16384;
+    eng.prepare(44100.0, N);
 
     EngineParams p;
     p.x = 1.0f; p.y = 1.0f; p.z = 0.0f;
+    p.dopplerEnabled = false;
+    p.bypassDistGain = true;
     settle(eng, p, 44100);
 
     // Process white noise and compare HF energy in L vs R
-    const int N = 16384;
     std::vector<float> noise(N);
     // Deterministic pseudo-noise using simple LCG
     uint32_t rng = 12345u;
@@ -351,15 +359,16 @@ TEST_CASE("Engine head shadow: X=1 far ear (left) has less HF than near ear (rig
 
 TEST_CASE("Engine ILD: X=1 close distance, left ear has lower RMS than right", "[Integration][ILD]") {
     XYZPanEngine eng;
-    eng.prepare(44100.0, 4096);
+    const int N = 8192;
+    eng.prepare(44100.0, N);
 
     // X=1, Y=0, Z=0: close enough for ILD to be significant
     // (distance = sqrt(1^2 + 0^2 + 0^2) = 1.0)
     EngineParams p;
     p.x = 1.0f; p.y = 0.0f; p.z = 0.0f;
+    p.dopplerEnabled = false;
+    p.bypassDistGain = true;
     settle(eng, p, 44100);
-
-    const int N = 8192;
     std::vector<float> noise(N);
     uint32_t rng = 99999u;
     for (int i = 0; i < N; ++i) {
@@ -418,10 +427,9 @@ TEST_CASE("Engine ILD negligible at max distance: ILD gain approaches 1.0 at kSq
 }
 
 TEST_CASE("Engine rear shadow: Y=-1 has less HF than Y=+1", "[Integration]") {
-    XYZPanEngine eng;
-    eng.prepare(44100.0, 4096);
-
     const int N = 16384;
+    XYZPanEngine eng;
+    eng.prepare(44100.0, N);
     uint32_t rng = 55555u;
     std::vector<float> noise(N);
     for (int i = 0; i < N; ++i) {
@@ -432,6 +440,8 @@ TEST_CASE("Engine rear shadow: Y=-1 has less HF than Y=+1", "[Integration]") {
     // Process with Y=+1 (front)
     EngineParams pFront;
     pFront.x = 0.0f; pFront.y = 1.0f; pFront.z = 0.0f;
+    pFront.dopplerEnabled = false;
+    pFront.bypassDistGain = true;
     settle(eng, pFront, 44100);
     std::vector<float> outL_front(N), outR_front(N);
     {
@@ -444,6 +454,8 @@ TEST_CASE("Engine rear shadow: Y=-1 has less HF than Y=+1", "[Integration]") {
     eng.reset();
     EngineParams pRear;
     pRear.x = 0.0f; pRear.y = -1.0f; pRear.z = 0.0f;
+    pRear.dopplerEnabled = false;
+    pRear.bypassDistGain = true;
     settle(eng, pRear, 44100);
     std::vector<float> outL_rear(N), outR_rear(N);
     {
@@ -629,4 +641,149 @@ TEST_CASE("Engine smoothing time change: slower smoothMs takes more samples to r
 
     // Slower smoothing time must produce a longer convergence
     CHECK(slow > fast);
+}
+
+// ============================================================================
+// Binaural toggle / hardpan tests
+// ============================================================================
+
+TEST_CASE("Binaural OFF: ITD is zero - impulse arrives at same sample in both ears", "[Integration][Binaural]") {
+    const float sr = 48000.0f;
+    const int N = 4096;
+    XYZPanEngine eng;
+    eng.prepare(sr, N);
+
+    EngineParams p;
+    p.x = 1.0f; p.y = 1.0f; p.z = 0.0f;
+    p.binauralEnabled = false;
+    // Bypass all filters so only ITD/hardpan affect the output
+    p.bypassHeadShadow = true;
+    p.bypassRearShadow = true;
+    p.bypassPinnaEQ    = true;
+    p.bypassComb       = true;
+    p.bypassChest      = true;
+    p.bypassFloor      = true;
+    p.bypassDistGain   = true;
+    p.bypassDoppler    = true;
+    p.bypassAirAbs     = true;
+    p.bypassNearField  = true;
+    p.bypassILD        = true;
+    p.bypassReverb     = true;
+
+    // Settle the smoother to 0 (binaural OFF)
+    settle(eng, p, 8192);
+
+    // Process a single impulse
+    std::vector<float> input(N, 0.0f);
+    input[0] = 1.0f;
+    std::vector<float> outL(N), outR(N);
+    const float* ins[1] = { input.data() };
+    eng.setParams(p);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
+
+    // Find peak positions in L and R
+    int peakL = 0, peakR = 0;
+    float maxL = 0.0f, maxR = 0.0f;
+    for (int i = 0; i < N; ++i) {
+        if (std::abs(outL[i]) > maxL) { maxL = std::abs(outL[i]); peakL = i; }
+        if (std::abs(outR[i]) > maxR) { maxR = std::abs(outR[i]); peakR = i; }
+    }
+
+    // With binaural OFF, there should be zero ITD — peaks at same sample
+    CHECK(peakL == peakR);
+}
+
+TEST_CASE("Binaural OFF: hardpan attenuates opposite ear at x=1", "[Integration][Binaural]") {
+    const float sr = 48000.0f;
+    const int N = 4096;
+    XYZPanEngine eng;
+    eng.prepare(sr, N);
+
+    EngineParams p;
+    p.x = 1.0f; p.y = 1.0f; p.z = 0.0f;  // source right
+    p.binauralEnabled = false;
+    p.bypassHeadShadow = true;
+    p.bypassRearShadow = true;
+    p.bypassPinnaEQ    = true;
+    p.bypassComb       = true;
+    p.bypassChest      = true;
+    p.bypassFloor      = true;
+    p.bypassDistGain   = true;
+    p.bypassDoppler    = true;
+    p.bypassAirAbs     = true;
+    p.bypassNearField  = true;
+    p.bypassILD        = true;
+    p.bypassReverb     = true;
+
+    settle(eng, p, 8192);
+
+    // Constant signal for RMS measurement
+    std::vector<float> input(N, 0.5f);
+    std::vector<float> outL(N), outR(N);
+    const float* ins[1] = { input.data() };
+    eng.setParams(p);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
+
+    // Compute RMS of second half (after any transient)
+    float rmsL = 0.0f, rmsR = 0.0f;
+    const int start = N / 2;
+    for (int i = start; i < N; ++i) {
+        rmsL += outL[i] * outL[i];
+        rmsR += outR[i] * outR[i];
+    }
+    rmsL = std::sqrt(rmsL / (N - start));
+    rmsR = std::sqrt(rmsR / (N - start));
+
+    // Source is right (x=1), so left ear (opposite) should be attenuated
+    // hardpanMaxDb = -10dB → ratio ~0.316 at full azimuth
+    // Allow range 0.2 to 0.6 for the ratio
+    float ratio = rmsL / rmsR;
+    CHECK(ratio < 0.6f);
+    CHECK(ratio > 0.15f);
+}
+
+TEST_CASE("Binaural ON: no hardpan applied - both ears similar level", "[Integration][Binaural]") {
+    const float sr = 48000.0f;
+    const int N = 4096;
+    XYZPanEngine eng;
+    eng.prepare(sr, N);
+
+    EngineParams p;
+    p.x = 1.0f; p.y = 1.0f; p.z = 0.0f;
+    p.binauralEnabled = true;  // default ON
+    p.bypassHeadShadow = true;
+    p.bypassRearShadow = true;
+    p.bypassPinnaEQ    = true;
+    p.bypassComb       = true;
+    p.bypassChest      = true;
+    p.bypassFloor      = true;
+    p.bypassDistGain   = true;
+    p.bypassDoppler    = true;
+    p.bypassAirAbs     = true;
+    p.bypassNearField  = true;
+    p.bypassILD        = true;
+    p.bypassReverb     = true;
+
+    settle(eng, p, 8192);
+
+    std::vector<float> input(N, 0.5f);
+    std::vector<float> outL(N), outR(N);
+    const float* ins[1] = { input.data() };
+    eng.setParams(p);
+    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
+
+    float rmsL = 0.0f, rmsR = 0.0f;
+    const int start = N / 2;
+    for (int i = start; i < N; ++i) {
+        rmsL += outL[i] * outL[i];
+        rmsR += outR[i] * outR[i];
+    }
+    rmsL = std::sqrt(rmsL / (N - start));
+    rmsR = std::sqrt(rmsR / (N - start));
+
+    // With binaural ON and ILD bypassed, both ears should have similar level
+    // (only ITD delay differs, not gain)
+    float ratio = rmsL / rmsR;
+    CHECK(ratio > 0.9f);
+    CHECK(ratio < 1.1f);
 }

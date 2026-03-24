@@ -12,9 +12,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
       xLFO_('X', p.apvts),
       yLFO_('Y', p.apvts),
       zLFO_('Z', p.apvts),
-      orbitXYLFO_("stereo_orbit_xy", ParamID::STEREO_ORBIT_TEMPO_SYNC, p.apvts),
-      orbitXZLFO_("stereo_orbit_xz", ParamID::STEREO_ORBIT_TEMPO_SYNC, p.apvts),
-      orbitYZLFO_("stereo_orbit_yz", ParamID::STEREO_ORBIT_TEMPO_SYNC, p.apvts),
+      orbitXYLFO_("stereo_orbit_xy", ParamID::STEREO_ORBIT_XY_TEMPO_SYNC, p.apvts),
+      orbitXZLFO_("stereo_orbit_xz", ParamID::STEREO_ORBIT_XZ_TEMPO_SYNC, p.apvts),
+      orbitYZLFO_("stereo_orbit_yz", ParamID::STEREO_ORBIT_YZ_TEMPO_SYNC, p.apvts),
       devPanel_(p.apvts, &p.dspStateBridge)
 {
     // Apply alchemy look and feel to this editor; child components inherit via addAndMakeVisible
@@ -30,10 +30,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         addAndMakeVisible(knob);
     }
 
-    // Per-axis arc colours: X=Gold Leaf, Y=Verdigris, Z=Cinnabar
-    xKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
-    yKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kVerdigris));
-    zKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    // Per-axis arc colours: X=Cinnabar (red), Y=Aqua (cyan), Z=Gold Leaf (gold)
+    xKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    yKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    zKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
 
     xAtt_ = std::make_unique<SA>(p.apvts, ParamID::X, xKnob_);
     yAtt_ = std::make_unique<SA>(p.apvts, ParamID::Y, yKnob_);
@@ -117,10 +117,43 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(faceListenerToggle_);
     faceListenerAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
 
-    orbitTempoSyncToggle_.setButtonText("Sync");
-    orbitTempoSyncToggle_.setClickingTogglesState(true);
-    addAndMakeVisible(orbitTempoSyncToggle_);
-    orbitTempoSyncAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_ORBIT_TEMPO_SYNC, orbitTempoSyncToggle_);
+    // ----- Listener head orientation knobs -----
+    for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_}) {
+        knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 55, 14);
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                        juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold));
+        addAndMakeVisible(knob);
+    }
+    listenerYawAtt_   = std::make_unique<SA>(p.apvts, ParamID::LISTENER_YAW,   listenerYawKnob_);
+    listenerPitchAtt_ = std::make_unique<SA>(p.apvts, ParamID::LISTENER_PITCH, listenerPitchKnob_);
+    listenerYawLabel_.setText("Yaw", juce::dontSendNotification);
+    listenerPitchLabel_.setText("Pitch", juce::dontSendNotification);
+    for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_}) {
+        lbl->setJustificationType(juce::Justification::centred);
+        lbl->setFont(juce::Font(juce::FontOptions(10.0f)));
+        addAndMakeVisible(lbl);
+    }
+
+    binauralToggle_.setButtonText("");
+    binauralToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(binauralToggle_);
+    binauralAtt_ = std::make_unique<BA>(p.apvts, ParamID::BINAURAL_ENABLED, binauralToggle_);
+
+    binauralLabel_.setText("Binaural", juce::dontSendNotification);
+    binauralLabel_.setJustificationType(juce::Justification::centred);
+    binauralLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addAndMakeVisible(binauralLabel_);
+
+    earlyReflToggle_.setButtonText("");
+    earlyReflToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(earlyReflToggle_);
+    earlyReflAtt_ = std::make_unique<BA>(p.apvts, ParamID::ER_ENABLED, earlyReflToggle_);
+
+    earlyReflLabel_.setText("Early Reflections", juce::dontSendNotification);
+    earlyReflLabel_.setJustificationType(juce::Justification::centred);
+    earlyReflLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addAndMakeVisible(earlyReflLabel_);
 
     // ----- Reset Orbit LFO Phases button -----
     resetOrbitPhasesBtn_.onClick = [this] {
@@ -230,6 +263,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     devPanel_.setVisible(false);
     glView_.addAndMakeVisible(devPanel_);
 
+    // ----- Output meter (right edge) -----
+    addAndMakeVisible(outputMeter_);
+    outputMeter_.setRMSSources(&p.outputRmsL, &p.outputRmsR);
+
     // ----- Preset controls (top bar) -----
     addAndMakeVisible(presetCombo_);
     for (int i = 0; i < XYZPresets::kNumPresets; ++i)
@@ -306,7 +343,7 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
     l.leftColH    = totalH - kBottomH - kPresetBarH;
     l.bottomY     = totalH - kBottomH;
     const int maxStripW = 185;
-    const int availLfoW = totalW - kOrbitCtrlW - kReverbSectionW;
+    const int availLfoW = totalW - kMeterW - kOrbitCtrlW - kReverbSectionW;
     l.lfoTotalW   = juce::jmin(availLfoW, maxStripW * 3);
     l.lfoX        = kOrbitCtrlW;
     l.reverbX     = l.lfoX + l.lfoTotalW;
@@ -323,7 +360,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
     using ALF = xyzpan::AlchemyLookAndFeel;
     const auto lo = Layout::compute(getWidth(), getHeight());
     const int bx = 0;
-    const int bw = getWidth();
+    const int bw = getWidth() - kMeterW;
 
     // ===== BACKGROUNDS =====
     g.fillAll(juce::Colour(ALF::kBackground));
@@ -355,8 +392,20 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // "POSITION" header — top of left column (below preset bar)
     drawHeader(0, lo.contentY, kLeftColW, "POSITION");
 
-    // "STEREO ORBIT" header — bottom row, orbit portion (controls + LFO strips only)
-    drawHeader(bx, lo.bottomY, kOrbitCtrlW + lo.lfoTotalW, "STEREO ORBIT");
+    // "OPTIONS" header — bottom row, orbit portion (controls + LFO strips only)
+    drawHeader(bx, lo.bottomY, kOrbitCtrlW + lo.lfoTotalW, "OPTIONS");
+
+    // Orbit LFO plane labels (XY / XZ / YZ) in the header bar
+    {
+        const int lfoX = lo.lfoX;
+        const int stripW = lo.lfoTotalW / 3;
+        const int hdrY = lo.bottomY;
+        g.setColour(juce::Colour(ALF::kBrightGold));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText("XY", lfoX,              hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
+        g.drawText("XZ", lfoX + stripW,     hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
+        g.drawText("YZ", lfoX + stripW * 2, hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
+    }
 
     // "REVERB" header — bottom row, reverb portion
     drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW, "REVERB");
@@ -374,7 +423,8 @@ void XYZPanEditor::paint(juce::Graphics& g)
     {
         const int subColW = kLeftColW / 3;
         const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
-        const float divBot = static_cast<float>(lo.bottomY);
+        const int lfoSpeedRowH = 32;
+        const float divBot = static_cast<float>(lo.bottomY - lfoSpeedRowH);
         g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
         g.drawVerticalLine(subColW * 2, divTop, divBot);
@@ -398,16 +448,6 @@ void XYZPanEditor::paint(juce::Graphics& g)
         // Thin bronze separator above orbit speed slider row
         g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.4f));
         g.drawHorizontalLine(speedSepY, static_cast<float>(lfoX), static_cast<float>(lfoX + lfoTotalW));
-    }
-
-    // "Stereo Orbit" sub-header text inside orbit controls column
-    // (between sphere/doppler knobs and width/offset/phase sliders)
-    {
-        const int subHdrY = lo.contentTop + 80;  // after sphere/doppler knob row
-        g.setColour(juce::Colour(ALF::kBrightGold).withAlpha(0.7f));
-        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText("Stereo Orbit", bx + 10, subHdrY, kOrbitCtrlW - 20, 16,
-                   juce::Justification::centredLeft);
     }
 
     // Vertical divider between orbit section and reverb section
@@ -471,6 +511,10 @@ void XYZPanEditor::resized()
         presetSaveBtn_.setBounds(saveBtnArea.reduced(2));
         presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
     }
+
+    // Output meter strip — full height right edge (below preset bar)
+    auto meterStrip = b.removeFromRight(kMeterW);
+    outputMeter_.setBounds(meterStrip);
 
     // Carve out bottom row
     auto bottomRow = b.removeFromBottom(kBottomH);
@@ -565,21 +609,38 @@ void XYZPanEditor::resized()
             const int ow = kOrbitCtrlW;
             const int pad = 4;
 
-            // Sphere + Doppler knobs — labels below, 58px knobs (×1.2)
+            // Sphere + Doppler + Binaural + Early Reflections — single horizontal row
             {
-                const int halfW = ow / 2;
                 const int knobSz = 58;
                 const int labelH_b = 14;
                 const int doppSubLabelH = 12;
+                const int boxSz = 27;
+                const int boxLabelH = 12;
 
-                int sKnobX = ox + (halfW - knobSz) / 2;
+                // Four columns: Sphere | Doppler | Binaural | Early Reflections
+                const int colW = ow / 4;
+
+                int sKnobX = ox + (colW - knobSz) / 2;
                 sphereRadiusKnob_.setBounds(sKnobX, contentTop + 2, knobSz, knobSz);
-                sphereRadiusLabel_.setBounds(ox, contentTop + 2 + knobSz, halfW, labelH_b);
+                sphereRadiusLabel_.setBounds(ox, contentTop + 2 + knobSz, colW, labelH_b);
 
-                int dKnobX = ox + halfW + (halfW - knobSz) / 2;
+                int dKnobX = ox + colW + (colW - knobSz) / 2;
                 dopplerKnob_.setBounds(dKnobX, contentTop + 2, knobSz, knobSz);
-                dopplerLabel_.setBounds(ox + halfW, contentTop + 2 + knobSz, halfW, labelH_b);
-                dopplerSubLabel_.setBounds(ox + halfW, contentTop + 2 + knobSz + labelH_b, halfW, doppSubLabelH);
+                dopplerLabel_.setBounds(ox + colW, contentTop + 2 + knobSz, colW, labelH_b);
+                dopplerSubLabel_.setBounds(ox + colW, contentTop + 2 + knobSz + labelH_b, colW, doppSubLabelH);
+
+                // Binaural checkbox — vertically centered with knobs
+                const int binColX = ox + colW * 2;
+                int boxY = contentTop + 2 + (knobSz - boxSz) / 2;
+                int binX = binColX + (colW - boxSz) / 2;
+                binauralToggle_.setBounds(binX, boxY, boxSz, boxSz);
+                binauralLabel_.setBounds(binColX, boxY + boxSz + 1, colW, boxLabelH);
+
+                // Early Reflections checkbox — same row
+                const int erColX = ox + colW * 3;
+                int erX = erColX + (colW - boxSz) / 2;
+                earlyReflToggle_.setBounds(erX, boxY, boxSz, boxSz);
+                earlyReflLabel_.setBounds(erColX, boxY + boxSz + 1, colW, boxLabelH);
             }
 
             // Orbit sliders below knobs + sub-header
@@ -600,10 +661,23 @@ void XYZPanEditor::resized()
             placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
 
             sy += 2;
-            const int faceBtnW  = ow * 2 / 3 - 4;
-            const int syncBtnW  = ow / 3 - 4;
-            faceListenerToggle_.setBounds(ox + pad, sy, faceBtnW, btnH);
-            orbitTempoSyncToggle_.setBounds(ox + pad + faceBtnW + 4, sy, syncBtnW, btnH);
+            faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
+            sy += btnH + 4;
+
+            // Listener head orientation knobs — two 58px rotary knobs side-by-side
+            {
+                const int knobSz = 58;
+                const int labelH_k = 14;
+                const int colW = ow / 2;
+
+                int yawKX = ox + (colW - knobSz) / 2;
+                listenerYawKnob_.setBounds(yawKX, sy, knobSz, knobSz);
+                listenerYawLabel_.setBounds(ox, sy + knobSz, colW, labelH_k);
+
+                int pitchKX = ox + colW + (colW - knobSz) / 2;
+                listenerPitchKnob_.setBounds(pitchKX, sy, knobSz, knobSz);
+                listenerPitchLabel_.setBounds(ox + colW, sy + knobSz, colW, labelH_k);
+            }
         }
 
         // --- ORBIT LFO STRIPS + SPEED/RESET ROW (capped width, right-aligned against reverb) ---
@@ -681,11 +755,13 @@ void XYZPanEditor::updateOrbitEnabled()
     for (auto* c : {(juce::Component*)&orbitSpeedMulKnob_,  (juce::Component*)&orbitSpeedMulLabel_,
                     (juce::Component*)&orbitOffsetKnob_,     (juce::Component*)&orbitOffsetLabel_,
                     (juce::Component*)&orbitPhaseKnob_,      (juce::Component*)&orbitPhaseLabel_,
-                    (juce::Component*)&faceListenerToggle_,  (juce::Component*)&orbitTempoSyncToggle_,
-                    (juce::Component*)&resetOrbitPhasesBtn_,
-                    (juce::Component*)&orbitXYLFO_,          (juce::Component*)&orbitXZLFO_,
-                    (juce::Component*)&orbitYZLFO_})
+                    (juce::Component*)&faceListenerToggle_,
+                    (juce::Component*)&resetOrbitPhasesBtn_})
         c->setEnabled(active);
+
+    for (auto* lfo : {(juce::Component*)&orbitXYLFO_, (juce::Component*)&orbitXZLFO_,
+                      (juce::Component*)&orbitYZLFO_})
+        lfo->setEnabled(active);
 }
 
 // ---------------------------------------------------------------------------

@@ -96,7 +96,9 @@ static constexpr const char* kDefaultXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -123,7 +125,9 @@ static constexpr const char* kDefaultXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
@@ -217,7 +221,9 @@ static constexpr const char* kOrbitXYXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -244,7 +250,9 @@ static constexpr const char* kOrbitXYXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
@@ -335,7 +343,9 @@ static constexpr const char* kSlowDriftXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -362,7 +372,9 @@ static constexpr const char* kSlowDriftXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
@@ -453,7 +465,9 @@ static constexpr const char* kBehindYouXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -480,7 +494,9 @@ static constexpr const char* kBehindYouXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
@@ -571,7 +587,9 @@ static constexpr const char* kFlyAroundXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -598,7 +616,9 @@ static constexpr const char* kFlyAroundXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
@@ -689,7 +709,9 @@ static constexpr const char* kOverheadXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -716,7 +738,9 @@ static constexpr const char* kOverheadXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
@@ -808,7 +832,9 @@ static constexpr const char* kNearWhisperXml = R"(
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
   <PARAM id="lfo_z_beat_div" value="6"/>
-  <PARAM id="lfo_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_x_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_y_tempo_sync" value="0.0"/>
+  <PARAM id="lfo_z_tempo_sync" value="0.0"/>
   <PARAM id="lfo_speed_mul" value="1.0"/>
   <PARAM id="stereo_width" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
@@ -835,7 +861,9 @@ static constexpr const char* kNearWhisperXml = R"(
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="presence_shelf_freq_hz" value="3000.0"/>
   <PARAM id="presence_shelf_max_db" value="4.0"/>
