@@ -3,17 +3,6 @@
 
 namespace xyzpan {
 
-// Delay line interpolation mode (dev panel switch).
-// 0 = Hermite (4-tap cubic), 1–4 = polyphase sinc with 2/4/8/16 taps.
-enum class DelayInterpMode : int {
-    Hermite = 0,
-    Sinc2   = 1,
-    Sinc4   = 2,
-    Sinc8   = 3,
-    Sinc16  = 4,
-    ZOH     = 5,   // Zero-order hold (nearest neighbor) — intentionally terrible
-};
-
 // Waveform selector for the dev-tool test tone oscillator.
 enum class TestToneWaveform : int {
     Saw               = 0,
@@ -198,11 +187,6 @@ struct EngineParams {
     float            testTonePitchHz  = kTestTonePitchDefault;
     float            testTonePulseHz  = kTestTonePulseDefault;
     TestToneWaveform testToneWaveform = TestToneWaveform::Saw;
-
-    // =========================================================================
-    // Dev tool: Delay line interpolation mode
-    // =========================================================================
-    DelayInterpMode delayInterpMode = DelayInterpMode::Hermite;
 
     // =========================================================================
     // Expanded Pinna EQ (P5) — 4 additional bands

@@ -141,7 +141,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     binauralAtt_ = std::make_unique<BA>(p.apvts, ParamID::BINAURAL_ENABLED, binauralToggle_);
 
     binauralLabel_.setText("Binaural", juce::dontSendNotification);
-    binauralLabel_.setJustificationType(juce::Justification::centred);
+    binauralLabel_.setJustificationType(juce::Justification::centredLeft);
     binauralLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     addAndMakeVisible(binauralLabel_);
 
@@ -151,7 +151,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     earlyReflAtt_ = std::make_unique<BA>(p.apvts, ParamID::ER_ENABLED, earlyReflToggle_);
 
     earlyReflLabel_.setText("Early Reflections", juce::dontSendNotification);
-    earlyReflLabel_.setJustificationType(juce::Justification::centred);
+    earlyReflLabel_.setJustificationType(juce::Justification::centredLeft);
     earlyReflLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     addAndMakeVisible(earlyReflLabel_);
 
@@ -609,47 +609,56 @@ void XYZPanEditor::resized()
             const int ow = kOrbitCtrlW;
             const int pad = 4;
 
-            // Sphere + Doppler + Binaural + Early Reflections — single horizontal row
+            // Top row: Sphere | Doppler | Yaw | Pitch — four 58px rotary knobs
             {
                 const int knobSz = 58;
                 const int labelH_b = 14;
                 const int doppSubLabelH = 12;
-                const int boxSz = 27;
-                const int boxLabelH = 12;
-
-                // Four columns: Sphere | Doppler | Binaural | Early Reflections
                 const int colW = ow / 4;
 
                 int sKnobX = ox + (colW - knobSz) / 2;
                 sphereRadiusKnob_.setBounds(sKnobX, contentTop + 2, knobSz, knobSz);
-                sphereRadiusLabel_.setBounds(ox, contentTop + 2 + knobSz, colW, labelH_b);
+                sphereRadiusLabel_.setBounds(ox, contentTop + 60, colW, labelH_b);
 
                 int dKnobX = ox + colW + (colW - knobSz) / 2;
                 dopplerKnob_.setBounds(dKnobX, contentTop + 2, knobSz, knobSz);
-                dopplerLabel_.setBounds(ox + colW, contentTop + 2 + knobSz, colW, labelH_b);
-                dopplerSubLabel_.setBounds(ox + colW, contentTop + 2 + knobSz + labelH_b, colW, doppSubLabelH);
+                dopplerLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
+                dopplerSubLabel_.setBounds(ox + colW, contentTop + 74, colW, doppSubLabelH);
 
-                // Binaural checkbox — vertically centered with knobs
-                const int binColX = ox + colW * 2;
-                int boxY = contentTop + 2 + (knobSz - boxSz) / 2;
-                int binX = binColX + (colW - boxSz) / 2;
-                binauralToggle_.setBounds(binX, boxY, boxSz, boxSz);
-                binauralLabel_.setBounds(binColX, boxY + boxSz + 1, colW, boxLabelH);
+                int yawKX = ox + colW * 2 + (colW - knobSz) / 2;
+                listenerYawKnob_.setBounds(yawKX, contentTop + 2, knobSz, knobSz);
+                listenerYawLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
 
-                // Early Reflections checkbox — same row
-                const int erColX = ox + colW * 3;
-                int erX = erColX + (colW - boxSz) / 2;
-                earlyReflToggle_.setBounds(erX, boxY, boxSz, boxSz);
-                earlyReflLabel_.setBounds(erColX, boxY + boxSz + 1, colW, boxLabelH);
+                int pitchKX = ox + colW * 3 + (colW - knobSz) / 2;
+                listenerPitchKnob_.setBounds(pitchKX, contentTop + 2, knobSz, knobSz);
+                listenerPitchLabel_.setBounds(ox + colW * 3, contentTop + 60, colW, labelH_b);
             }
 
-            // Orbit sliders below knobs + sub-header
+            // Checkbox row: Binaural | Early Reflections
+            {
+                const int cbY = contentTop + 87;
+                const int boxSz = 27;
+                const int cbLabelW = 70;
+                const int cbGap = 4;
+                const int pairW = boxSz + cbGap + cbLabelW;  // 101px per pair
+                const int halfW = ow / 2;                     // 120px per half
+
+                int binPairX = ox + (halfW - pairW) / 2;
+                binauralToggle_.setBounds(binPairX, cbY, boxSz, boxSz);
+                binauralLabel_.setBounds(binPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
+
+                int erPairX = ox + halfW + (halfW - pairW) / 2;
+                earlyReflToggle_.setBounds(erPairX, cbY, boxSz, boxSz);
+                earlyReflLabel_.setBounds(erPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
+            }
+
+            // Orbit sliders below checkbox row
             const int labelW = 46;
             const int sliderH = 22;
             const int gap = 4;
             const int btnH = 22;
 
-            int sy = contentTop + 80 + 16 + 4;  // after knob row + sub-header
+            int sy = contentTop + 118;
             auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
                 label.setBounds(ox + pad, sy, labelW, sliderH);
                 slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
@@ -662,22 +671,6 @@ void XYZPanEditor::resized()
 
             sy += 2;
             faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
-            sy += btnH + 4;
-
-            // Listener head orientation knobs — two 58px rotary knobs side-by-side
-            {
-                const int knobSz = 58;
-                const int labelH_k = 14;
-                const int colW = ow / 2;
-
-                int yawKX = ox + (colW - knobSz) / 2;
-                listenerYawKnob_.setBounds(yawKX, sy, knobSz, knobSz);
-                listenerYawLabel_.setBounds(ox, sy + knobSz, colW, labelH_k);
-
-                int pitchKX = ox + colW + (colW - knobSz) / 2;
-                listenerPitchKnob_.setBounds(pitchKX, sy, knobSz, knobSz);
-                listenerPitchLabel_.setBounds(ox + colW, sy + knobSz, colW, labelH_k);
-            }
         }
 
         // --- ORBIT LFO STRIPS + SPEED/RESET ROW (capped width, right-aligned against reverb) ---

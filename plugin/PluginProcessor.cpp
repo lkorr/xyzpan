@@ -5,6 +5,7 @@
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
 #include <cmath>
+#include <unordered_set>
 
 XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
@@ -312,10 +313,6 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(testTonePulseHzParam  != nullptr);
     jassert(testToneWaveformParam != nullptr);
 
-    // Dev panel: Delay line interpolation mode
-    delayInterpModeParam = apvts.getRawParameterValue(ParamID::DELAY_INTERP_MODE);
-    jassert(delayInterpModeParam != nullptr);
-
     // Dev panel: Expanded pinna EQ (P5)
     conchaNotchFreqParam  = apvts.getRawParameterValue(ParamID::CONCHA_NOTCH_FREQ_HZ);
     conchaNotchQParam     = apvts.getRawParameterValue(ParamID::CONCHA_NOTCH_Q);
@@ -617,10 +614,6 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.testToneWaveform = static_cast<xyzpan::TestToneWaveform>(
         static_cast<int>(std::round(testToneWaveformParam->load())));
 
-    // Dev panel: Delay line interpolation mode
-    params.delayInterpMode = static_cast<xyzpan::DelayInterpMode>(
-        static_cast<int>(std::round(delayInterpModeParam->load())));
-
     // Dev panel: Expanded pinna EQ (P5)
     params.conchaNotchFreqHz  = conchaNotchFreqParam->load();
     params.conchaNotchQ       = conchaNotchQParam->load();
@@ -745,9 +738,46 @@ juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {
     return new XYZPanEditor(*this);
 }
 
+// User-facing params saved in DAW state / user presets.
+// Dev-panel tuning params are intentionally excluded — they keep
+// defaults on load so hand-tuned values aren't overwritten.
+static const std::unordered_set<juce::String> kUserParams = {
+    // position + geometry
+    "x", "y", "z", "sphere_radius", "dist_delay_max_ms",
+    // reverb
+    "verb_size", "verb_decay", "verb_damping", "verb_wet",
+    // XYZ LFOs
+    "lfo_x_rate", "lfo_x_depth", "lfo_x_phase", "lfo_x_waveform", "lfo_x_smooth", "lfo_x_beat_div", "lfo_x_tempo_sync",
+    "lfo_y_rate", "lfo_y_depth", "lfo_y_phase", "lfo_y_waveform", "lfo_y_smooth", "lfo_y_beat_div", "lfo_y_tempo_sync",
+    "lfo_z_rate", "lfo_z_depth", "lfo_z_phase", "lfo_z_waveform", "lfo_z_smooth", "lfo_z_beat_div", "lfo_z_tempo_sync",
+    "lfo_speed_mul",
+    // stereo
+    "stereo_width", "stereo_face_listener", "stereo_orbit_phase", "stereo_orbit_offset", "stereo_orbit_speed_mul",
+    // orbit LFOs
+    "stereo_orbit_xy_waveform", "stereo_orbit_xy_rate", "stereo_orbit_xy_beat_div",
+    "stereo_orbit_xy_phase", "stereo_orbit_xy_reset_phase", "stereo_orbit_xy_depth", "stereo_orbit_xy_smooth", "stereo_orbit_xy_tempo_sync",
+    "stereo_orbit_xz_waveform", "stereo_orbit_xz_rate", "stereo_orbit_xz_beat_div",
+    "stereo_orbit_xz_phase", "stereo_orbit_xz_reset_phase", "stereo_orbit_xz_depth", "stereo_orbit_xz_smooth", "stereo_orbit_xz_tempo_sync",
+    "stereo_orbit_yz_waveform", "stereo_orbit_yz_rate", "stereo_orbit_yz_beat_div",
+    "stereo_orbit_yz_phase", "stereo_orbit_yz_reset_phase", "stereo_orbit_yz_depth", "stereo_orbit_yz_smooth", "stereo_orbit_yz_tempo_sync",
+    // toggles
+    "binaural_enabled", "er_enabled",
+    // listener
+    "listener_yaw", "listener_pitch",
+};
+
 void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+
+    // Strip dev-panel-only parameters from saved state
+    for (int i = xml->getNumChildElements() - 1; i >= 0; --i) {
+        auto* child = xml->getChildElement(i);
+        if (child->hasTagName("PARAM")
+            && kUserParams.count(child->getStringAttribute("id")) == 0)
+            xml->removeChildElement(child, true);
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 

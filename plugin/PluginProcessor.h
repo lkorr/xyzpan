@@ -239,9 +239,6 @@ private:
     std::atomic<float>* testTonePulseHzParam  = nullptr;
     std::atomic<float>* testToneWaveformParam = nullptr;
 
-    // Dev panel: Delay line interpolation mode
-    std::atomic<float>* delayInterpModeParam = nullptr;
-
     // Dev panel: Expanded pinna EQ (P5)
     std::atomic<float>* conchaNotchFreqParam  = nullptr;
     std::atomic<float>* conchaNotchQParam     = nullptr;

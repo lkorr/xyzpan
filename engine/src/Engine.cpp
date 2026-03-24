@@ -481,7 +481,7 @@ void XYZPanEngine::setParams(const EngineParams& params) {
 XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     float inputSample,
     float nodeX, float nodeY, float nodeZ,
-    float sr, int interpMode, float binBlend,
+    float sr, float binBlend,
     dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
     dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
     dsp::SVFLowPass& rSvfL, dsp::SVFLowPass& rSvfR,
@@ -580,13 +580,13 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     // binBlend scales ITD: 1=full binaural, 0=no ITD (hardpan mode)
     float dL, dR;
     if (currentParams.bypassITD) {
-        dL = dl.read(kMinDelay, interpMode);
-        dR = dr.read(kMinDelay, interpMode);
+        dL = dl.read(kMinDelay);
+        dR = dr.read(kMinDelay);
     } else {
         const float itdL = std::max(0.0f,  itdSamples) * binBlend;
         const float itdR = std::max(0.0f, -itdSamples) * binBlend;
-        dL = dl.read(kMinDelay + itdL, interpMode);
-        dR = dr.read(kMinDelay + itdR, interpMode);
+        dL = dl.read(kMinDelay + itdL);
+        dR = dr.read(kMinDelay + itdR);
     }
 
     if (!std::isfinite(dL)) dL = 0.0f;
@@ -636,7 +636,7 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
 
 float XYZPanEngine::processDopplerMono(
     float input, float rawNodeDistFrac,
-    float sr, bool effectiveDoppler, int interpMode,
+    float sr, bool effectiveDoppler,
     dsp::FractionalDelayLine& delay,
     dsp::OnePoleLP& preAA, dsp::OnePoleLP& postAA,
     dsp::OnePoleSmooth& delaySm, float& prevDelay)
@@ -651,12 +651,12 @@ float XYZPanEngine::processDopplerMono(
         float smoothed = delaySm.process(delayTargetSamples);
         prevDelay = smoothed;
         const float delaySamp = std::max(2.0f, smoothed);
-        out = delay.read(delaySamp, interpMode);
+        out = delay.read(delaySamp);
     } else {
         delay.push(input);
         delaySm.process(currentParams.dopplerEnabled ? delayTargetSamples : 2.0f);
         prevDelay = 2.0f;
-        out = delay.read(2.0f, interpMode);
+        out = delay.read(2.0f);
     }
     out = postAA.process(out);
     return out;
@@ -706,7 +706,7 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
 
 float XYZPanEngine::processChestForNode(
     float input, float nodeZ,
-    float sr, int interpMode, float chestGainLin,
+    float sr, float chestGainLin,
     std::array<dsp::SVFFilter, 4>& hpf, dsp::OnePoleLP& lp,
     dsp::FractionalDelayLine& delay,
     dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm)
@@ -726,7 +726,7 @@ float XYZPanEngine::processChestForNode(
     const float chestReadSamp = std::max(2.0f, delaySm.process(chestDelaySamp));
 
     if (!currentParams.bypassChest && chestGain > 1e-6f)
-        return delay.read(chestReadSamp, interpMode) * chestGain;
+        return delay.read(chestReadSamp) * chestGain;
     return 0.0f;
 }
 
@@ -736,7 +736,7 @@ float XYZPanEngine::processChestForNode(
 
 void XYZPanEngine::processFloorForNode(
     float& dL, float& dR, float nodeZ,
-    float sr, int interpMode, float floorGainLin,
+    float sr, float floorGainLin,
     dsp::FractionalDelayLine& fDelayL, dsp::FractionalDelayLine& fDelayR,
     dsp::OnePoleLP& lpfL, dsp::OnePoleLP& lpfR,
     dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm)
@@ -753,8 +753,8 @@ void XYZPanEngine::processFloorForNode(
     const float floorReadSamp = std::max(2.0f, delaySm.process(floorDelaySamp));
 
     if (!currentParams.bypassFloor && floorGain > 1e-6f) {
-        float floorL = fDelayL.read(floorReadSamp, interpMode);
-        float floorR = fDelayR.read(floorReadSamp, interpMode);
+        float floorL = fDelayL.read(floorReadSamp);
+        float floorR = fDelayR.read(floorReadSamp);
         floorL = lpfL.process(floorL);
         floorR = lpfR.process(floorR);
         dL += floorL * floorGain;
@@ -768,7 +768,7 @@ void XYZPanEngine::processFloorForNode(
 
 XYZPanEngine::ERResult XYZPanEngine::processERForNode(
     float input, float nodeX, float nodeY, float nodeZ,
-    float distGainTarget, float sr, int interpMode,
+    float distGainTarget, float sr,
     float dampCutoff, float roomHalf,
     std::array<EarlyReflection, kNumER>& reflections,
     dsp::FractionalDelayLine& sharedDelay,
@@ -809,7 +809,7 @@ XYZPanEngine::ERResult XYZPanEngine::processERForNode(
         const float smoothDelay = std::max(2.0f, er.delaySmooth.process(delaySamp));
         const float smoothGain = er.gainSmooth.process(gainTarget);
 
-        float reflected = sharedDelay.read(smoothDelay, interpMode);
+        float reflected = sharedDelay.read(smoothDelay);
         reflected = er.wallAbsorption.process(reflected);
         reflected *= smoothGain;
 
@@ -841,8 +841,8 @@ XYZPanEngine::ERResult XYZPanEngine::processERForNode(
         er.itdDelayR.push(reflected);
 
         constexpr float kERMinDelay = 2.0f;
-        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples), interpMode);
-        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples), interpMode);
+        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples));
+        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples));
 
         const float erIldAtten = 1.0f - erIldGain;
         const float erBlend = std::clamp(erItdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
@@ -936,7 +936,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     }
 
     const bool dopplerOn = currentParams.dopplerEnabled;
-    const int interpMode = static_cast<int>(currentParams.delayInterpMode);
 
     // -------------------------------------------------------------------------
     // Phase 5: per-block reverb parameter updates
@@ -1674,22 +1673,22 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             const float rRawDistFrac = std::clamp(
                 std::sqrt(rNodeX*rNodeX + rNodeY*rNodeY + rNodeZ*rNodeZ) / kSqrt3, 0.0f, 1.0f);
 
-            sampleL = processDopplerMono(sampleL, lRawDistFrac, sr, effectiveDoppler, interpMode,
+            sampleL = processDopplerMono(sampleL, lRawDistFrac, sr, effectiveDoppler,
                 dopplerDelay_, dopplerPreAA_, dopplerPostAA_,
                 distDelaySmooth_, prevDistDelay_);
-            sampleR = processDopplerMono(sampleR, rRawDistFrac, sr, effectiveDoppler, interpMode,
+            sampleR = processDopplerMono(sampleR, rRawDistFrac, sr, effectiveDoppler,
                 distR_.dopplerDelay, distR_.dopplerPreAA, distR_.dopplerPostAA,
                 distR_.distDelaySmooth, distR_.prevDelaySamp);
 
             // Per-node chest bounce — uses listener-relative Z for elevation perception
-            float chestL = processChestForNode(sampleL, dspLZ, sr, interpMode, chestGainLin,
+            float chestL = processChestForNode(sampleL, dspLZ, sr, chestGainLin,
                 chestHPF_, chestLP_, chestDelay_, chestGainSmooth_, chestDelaySmooth_);
-            float chestROut = processChestForNode(sampleR, dspRZ, sr, interpMode, chestGainLin,
+            float chestROut = processChestForNode(sampleR, dspRZ, sr, chestGainLin,
                 chestR_.hpf, chestR_.lp, chestR_.delay, chestR_.gainSmooth, chestR_.delaySmooth);
 
             // Process L channel through L pipeline — listener-relative positions
             auto [dL_L, dR_L] = processBinauralForSource(
-                sampleL, dspLX, dspLY, dspLZ, sr, interpMode, binBlend,
+                sampleL, dspLX, dspLY, dspLZ, sr, binBlend,
                 delayL_, delayR_, shadowL_, shadowR_, rearSvfL_, rearSvfR_,
                 itdSmooth_, shadowCutoffSmooth_, ildGainSmooth_, rearCutoffSmooth_,
                 nearFieldLF_L_, nearFieldLF_R_,
@@ -1700,7 +1699,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Process R channel through R pipeline — listener-relative positions
             auto [dL_R, dR_R] = processBinauralForSource(
-                sampleR, dspRX, dspRY, dspRZ, sr, interpMode, binBlend,
+                sampleR, dspRX, dspRY, dspRZ, sr, binBlend,
                 srcR_.delayL, srcR_.delayR, srcR_.shadowL, srcR_.shadowR,
                 srcR_.rearSvfL, srcR_.rearSvfR,
                 srcR_.itdSmooth, srcR_.shadowCutoffSmooth, srcR_.ildGainSmooth, srcR_.rearCutoffSmooth,
@@ -1728,10 +1727,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Per-node floor bounce (on per-node distance output, before combine)
             float fL_L = distL_result.left, fR_L = distL_result.right;
             float fL_R = distR_result.left,  fR_R = distR_result.right;
-            processFloorForNode(fL_L, fR_L, dspLZ, sr, interpMode, floorGainLin,
+            processFloorForNode(fL_L, fR_L, dspLZ, sr, floorGainLin,
                 floorDelayL_, floorDelayR_, floorLPF_, floorLPF_R_,
                 floorGainSmooth_, floorDelaySmooth_);
-            processFloorForNode(fL_R, fR_R, dspRZ, sr, interpMode, floorGainLin,
+            processFloorForNode(fL_R, fR_R, dspRZ, sr, floorGainLin,
                 floorR_.delayL, floorR_.delayR, floorR_.lpfL, floorR_.lpfR,
                 floorR_.gainSmooth, floorR_.delaySmooth);
 
@@ -1762,11 +1761,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float rDistGainTarget = std::clamp(rDistRatio * rDistRatio, 0.0f, currentParams.distGainMax);
 
                     auto erLResult = processERForNode(sampleL, lNodeX, lNodeY, lNodeZ,
-                        lDistGainTarget, sr, interpMode, dampCutoff, roomHalf,
+                        lDistGainTarget, sr, dampCutoff, roomHalf,
                         earlyReflections_, erSharedDelay_,
                         listenerRotated, cosY, sinY, cosP, sinP);
                     auto erRResult = processERForNode(sampleR, rNodeX, rNodeY, rNodeZ,
-                        rDistGainTarget, sr, interpMode, dampCutoff, roomHalf,
+                        rDistGainTarget, sr, dampCutoff, roomHalf,
                         erR_.reflections, erR_.sharedDelay,
                         listenerRotated, cosY, sinY, cosP, sinP);
 
@@ -1791,7 +1790,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Doppler FIRST — mono doppler before comb/pinna/binaural
             const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
-            mono = processDopplerMono(mono, rawDistFrac, sr, effectiveDoppler, interpMode,
+            mono = processDopplerMono(mono, rawDistFrac, sr, effectiveDoppler,
                 dopplerDelay_, dopplerPreAA_, dopplerPostAA_,
                 distDelaySmooth_, prevDistDelay_);
             dopplerInputMono = mono;
@@ -1869,13 +1868,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Signed ITD: bypass reads at fixed 2.0 (no interaural time difference)
             // binBlend scales ITD: 1=full binaural, 0=no ITD (hardpan mode)
             if (currentParams.bypassITD) {
-                dL = delayL_.read(kMinDelay, interpMode);
-                dR = delayR_.read(kMinDelay, interpMode);
+                dL = delayL_.read(kMinDelay);
+                dR = delayR_.read(kMinDelay);
             } else {
                 const float itdL = std::max(0.0f,  itdSamples) * binBlend;
                 const float itdR = std::max(0.0f, -itdSamples) * binBlend;
-                dL = delayL_.read(kMinDelay + itdL, interpMode);
-                dR = delayR_.read(kMinDelay + itdR, interpMode);
+                dL = delayL_.read(kMinDelay + itdL);
+                dR = delayR_.read(kMinDelay + itdR);
             }
 
             if (!std::isfinite(dL)) dL = 0.0f;
@@ -1942,7 +1941,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 const float chestGain = chestGainSmooth_.process(chestLinearTarget);
                 const float chestReadSamp = std::max(2.0f, chestDelaySmooth_.process(chestDelaySamp));
                 if (!currentParams.bypassChest && chestGain > 1e-6f) {
-                    float chestOut = chestDelay_.read(chestReadSamp, interpMode) * chestGain * effectiveDistGain;
+                    float chestOut = chestDelay_.read(chestReadSamp) * chestGain * effectiveDistGain;
                     dL += chestOut;
                     dR += chestOut;
                 }
@@ -1956,8 +1955,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 const float floorGain = floorGainSmooth_.process(floorLinearTarget);
                 const float floorReadSamp = std::max(2.0f, floorDelaySmooth_.process(floorDelaySamp));
                 if (!currentParams.bypassFloor && floorGain > 1e-6f) {
-                    float floorL = floorDelayL_.read(floorReadSamp, interpMode);
-                    float floorR = floorDelayR_.read(floorReadSamp, interpMode);
+                    float floorL = floorDelayL_.read(floorReadSamp);
+                    float floorR = floorDelayR_.read(floorReadSamp);
                     floorL = floorLPF_.process(floorL);
                     floorR = floorLPF_R_.process(floorR);
                     dL += floorL * floorGain;
@@ -2029,7 +2028,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                         const float smoothDelay = std::max(2.0f, er.delaySmooth.process(delaySamp));
                         const float smoothGain = er.gainSmooth.process(gainTarget);
 
-                        float reflected = erSharedDelay_.read(smoothDelay, interpMode);
+                        float reflected = erSharedDelay_.read(smoothDelay);
                         reflected = er.wallAbsorption.process(reflected);
                         reflected *= smoothGain;
 
@@ -2061,8 +2060,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                         er.itdDelayR.push(reflected);
 
                         constexpr float kERMinDelay = 2.0f;
-                        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples), interpMode);
-                        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples), interpMode);
+                        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples));
+                        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples));
 
                         const float erIldAtten = 1.0f - erIldGain;
                         const float erBlend = std::clamp(erItdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
@@ -2098,8 +2097,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 effectiveDistFrac * currentParams.verbPreDelayMax * sr / 1000.0f));
             const float auxGainTarget = 1.0f + effectiveDistFrac * (auxMaxBoostLin - 1.0f);
             const float auxGain = auxGainSmooth_.process(auxGainTarget);
-            auxL[i] = std::clamp(auxPreDelayL_.read(auxDelaySamp, interpMode) * auxGain, -2.0f, 2.0f);
-            auxR[i] = std::clamp(auxPreDelayR_.read(auxDelaySamp, interpMode) * auxGain, -2.0f, 2.0f);
+            auxL[i] = std::clamp(auxPreDelayL_.read(auxDelaySamp) * auxGain, -2.0f, 2.0f);
+            auxR[i] = std::clamp(auxPreDelayR_.read(auxDelaySamp) * auxGain, -2.0f, 2.0f);
         } else {
             auxPreDelayL_.push(0.0f);
             auxPreDelayR_.push(0.0f);

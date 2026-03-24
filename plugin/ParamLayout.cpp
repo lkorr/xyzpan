@@ -532,12 +532,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(0.0f, 8.0f, 1.0f), 0.0f));
 
     // -------------------------------------------------------------------------
-    // Dev Panel: Delay line interpolation mode
-    // -------------------------------------------------------------------------
-    layout.add(std::make_unique<APF>(PID{ParamID::DELAY_INTERP_MODE, 1}, "Delay Interp Mode",
-        NR(0.0f, 5.0f, 1.0f), 0.0f));
-
-    // -------------------------------------------------------------------------
     // Dev Panel: Expanded pinna EQ (P5)
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<APF>(PID{ParamID::SHOULDER_PEAK_FREQ_HZ, 1}, "Shoulder Peak Hz",

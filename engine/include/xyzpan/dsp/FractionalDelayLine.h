@@ -1,22 +1,20 @@
 #pragma once
 // FractionalDelayLine.h
 // Ring buffer with cubic Hermite (Catmull-Rom) interpolation for fractional
-// delay positions. Used for ITD (Interaural Time Difference) in the binaural
-// panning pipeline.
+// delay positions. Used for ITD, doppler, chest/floor bounce, early reflections,
+// and aux pre-delay in the binaural panning pipeline.
 //
 // Design:
 //   - Power-of-2 buffer size with bitmask wraparound (never modulo).
 //   - prepare() allocates and zeros the buffer.
 //   - push() writes one sample at writePos_ and advances.
-//   - read(delayInSamples) returns Hermite-interpolated sample (backward compat).
-//   - read(delayInSamples, interpMode) dispatches to Hermite (0) or Sinc 2/4/8/16 (1-4).
+//   - read(delayInSamples) returns Hermite-interpolated sample.
 //   - reset() zeros all state.
 //   - Zero allocation in push/read/reset after prepare().
 //
 // Source: demofox.org/2015/08/08/cubic-hermite-interpolation/
 //         (bitmask ring buffer pattern, standard audio DSP)
 
-#include "xyzpan/dsp/SincTable.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -27,10 +25,10 @@ class FractionalDelayLine {
 public:
     // Allocate the ring buffer with at least capacitySamples usable delay.
     // Internal size is next power-of-2 >= capacitySamples + padding.
-    // Padding = 2 * SincTable::kLobes (16) to accommodate both Hermite (4) and Sinc (16).
+    // Padding = 4 (Hermite needs 4 taps: base-1 to base+2).
     void prepare(int capacitySamples) {
         int n = 1;
-        while (n < capacitySamples + 2 * SincTable::kLobes) n <<= 1;
+        while (n < capacitySamples + 4) n <<= 1;
         mask_     = n - 1;
         buf_.assign(static_cast<size_t>(n), 0.0f);
         writePos_ = 0;
@@ -48,27 +46,10 @@ public:
         ++writePos_;
     }
 
-    // Read the buffer at a fractional delay — backward-compatible Hermite path.
+    // Read the buffer at a fractional delay using Hermite interpolation.
     //   delayInSamples == 0.0 returns the most recent pushed sample.
-    //   Must satisfy: 0 <= delayInSamples < (buffer_size - 2*kLobes).
+    //   Must satisfy: 0 <= delayInSamples < (buffer_size - 4).
     float read(float delayInSamples) const {
-        return readHermite(delayInSamples);
-    }
-
-    // Read with selectable interpolation mode.
-    //   interpMode == 0 → Hermite (4-point cubic, fast)
-    //   interpMode == 1 → Sinc 2-tap
-    //   interpMode == 2 → Sinc 4-tap
-    //   interpMode == 3 → Sinc 8-tap
-    //   interpMode == 4 → Sinc 16-tap
-    //   interpMode == 5 → ZOH (nearest neighbor — intentionally terrible)
-    float read(float delayInSamples, int interpMode) const {
-        if (interpMode == 5) return readZOH(delayInSamples);
-        if (interpMode >= 1) {
-            static constexpr int tapCounts[] = { 2, 4, 8, 16 };
-            const int idx = std::clamp(interpMode - 1, 0, 3);
-            return readSinc(delayInSamples, tapCounts[idx]);
-        }
         return readHermite(delayInSamples);
     }
 
@@ -94,26 +75,6 @@ private:
         float c = -0.5f*A           + 0.5f*C;
 
         return ((a * t + b) * t + c) * t + B;
-    }
-
-    // Polyphase windowed-sinc interpolation — up to 16 taps.
-    float readSinc(float delayInSamples, int activeTaps = 16) const {
-        int d   = static_cast<int>(delayInSamples);
-        float t = delayInSamples - static_cast<float>(d);
-
-        // Invert fractional part so interpolation moves toward OLDER samples.
-        if (t > 0.0f) { t = 1.0f - t; d += 1; }
-
-        int base = writePos_ - 1 - d;
-
-        return SincTable::interpolate(buf_.data(), mask_, base, t, activeTaps);
-    }
-
-    // Zero-order hold (nearest neighbor) — no interpolation at all.
-    // Intentionally terrible: produces zipper noise and quantization artifacts.
-    float readZOH(float delayInSamples) const {
-        const int pos = (writePos_ - static_cast<int>(std::round(delayInSamples))) & mask_;
-        return buf_[static_cast<size_t>(pos)];
     }
 
     std::vector<float> buf_;

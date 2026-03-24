@@ -179,9 +179,6 @@ namespace ParamID {
     constexpr const char* TEST_TONE_PULSE_HZ = "test_tone_pulse_hz";
     constexpr const char* TEST_TONE_WAVEFORM = "test_tone_waveform";
 
-    // Dev panel: Delay line interpolation mode
-    constexpr const char* DELAY_INTERP_MODE = "delay_interp_mode";
-
     // Dev panel: Expanded pinna EQ (P5)
     constexpr const char* CONCHA_NOTCH_FREQ_HZ  = "concha_notch_freq_hz";
     constexpr const char* CONCHA_NOTCH_Q        = "concha_notch_q";

@@ -348,7 +348,7 @@ private:
     // Helper: mono doppler processing (applied before comb/pinna/binaural)
     float processDopplerMono(
         float input, float rawNodeDistFrac,
-        float sr, bool effectiveDoppler, int interpMode,
+        float sr, bool effectiveDoppler,
         dsp::FractionalDelayLine& delay,
         dsp::OnePoleLP& preAA, dsp::OnePoleLP& postAA,
         dsp::OnePoleSmooth& delaySm, float& prevDelay);
@@ -369,7 +369,7 @@ private:
     BinauralResult processBinauralForSource(
         float inputSample,
         float nodeX, float nodeY, float nodeZ,
-        float sr, int interpMode, float binBlend,
+        float sr, float binBlend,
         // Pipeline state — references to either existing flat members (L) or srcR_ (R)
         dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
         dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
@@ -389,7 +389,7 @@ private:
     // Helper: per-node chest bounce processing
     float processChestForNode(
         float input, float nodeZ,
-        float sr, int interpMode, float chestGainLin,
+        float sr, float chestGainLin,
         std::array<dsp::SVFFilter, 4>& hpf, dsp::OnePoleLP& lp,
         dsp::FractionalDelayLine& delay,
         dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm);
@@ -397,7 +397,7 @@ private:
     // Helper: per-node floor bounce processing (modifies dL/dR in-place)
     void processFloorForNode(
         float& dL, float& dR, float nodeZ,
-        float sr, int interpMode, float floorGainLin,
+        float sr, float floorGainLin,
         dsp::FractionalDelayLine& fDelayL, dsp::FractionalDelayLine& fDelayR,
         dsp::OnePoleLP& lpfL, dsp::OnePoleLP& lpfR,
         dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm);
@@ -406,7 +406,7 @@ private:
     struct ERResult { float directL, directR, reverbL, reverbR; };
     ERResult processERForNode(
         float input, float nodeX, float nodeY, float nodeZ,
-        float distGainTarget, float sr, int interpMode,
+        float distGainTarget, float sr,
         float dampCutoff, float roomHalf,
         std::array<EarlyReflection, kNumER>& reflections,
         dsp::FractionalDelayLine& sharedDelay,

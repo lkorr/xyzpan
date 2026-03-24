@@ -84,9 +84,6 @@ namespace {
     constexpr const char* kTEST_TONE_PULSE_HZ = "test_tone_pulse_hz";
     constexpr const char* kTEST_TONE_WAVEFORM = "test_tone_waveform";
 
-    // Interpolation
-    constexpr const char* kDELAY_INTERP_MODE  = "delay_interp_mode";
-
     // Expanded pinna EQ (P5)
     constexpr const char* kSHOULDER_PEAK_FREQ = "shoulder_peak_freq_hz";
     constexpr const char* kSHOULDER_PEAK_Q    = "shoulder_peak_q";
@@ -197,9 +194,6 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         // Geometry
         { "sphere_radius",       "Radius of the spatial sphere in world units. All source positions are normalised to this radius. Larger values spread the spatial field wider." },
 
-        // Interpolation
-        { "delay_interp_mode",   "Delay line interpolation. 0 = Hermite (4-tap cubic). 1 = Sinc 2-tap. 2 = Sinc 4-tap. 3 = Sinc 8-tap. 4 = Sinc 16-tap. 5 = ZOH (nearest-neighbor, intentionally terrible). Applies to ALL delay lines." },
-
         // Per-feature bypass toggles
         { "bypass_itd",         "Bypass interaural time difference. Removes the delay offset between ears — the primary low-frequency azimuth cue." },
         { "bypass_head_shadow", "Bypass head shadow low-pass filter. Removes the far-ear HF attenuation that models the head blocking high frequencies." },
@@ -251,7 +245,6 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "section:Comb Filters",        "10-line pinna comb filter bank. Models complex interference patterns of the outer ear at different elevations." },
         { "section:Distance",          "Distance rendering: propagation delay, air absorption low-pass, gain attenuation, and aux reverb send." },
         { "section:Smoothing",         "Parameter smoothing time constants. Control how quickly DSP coefficients update during source motion to balance responsiveness vs. artefacts." },
-        { "section:Interpolation",     "Delay line interpolation algorithm. Sweep from Hermite (4-tap) through Sinc 2/4/8/16 to compare CPU cost and audible artefacts. Mode 5 (ZOH) is intentionally terrible for diagnostics." },
         // Readout descriptions
         { "readout:ITD Samples",   "Current interaural time difference in samples. Positive = right ear delayed. Derived from azimuth angle and itd_max_ms." },
         { "readout:Shadow Cutoff", "Current head-shadow low-pass cutoff in Hz. Varies with azimuth — lower when source is far to one side." },
@@ -431,12 +424,6 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kER_LEVEL,       apvts);
     addDevSlider(kER_GAIN_DB,     apvts);
     addDevSlider(kER_REVERB_SEND, apvts);
-
-    // -------------------------------------------------------------------
-    // Section 9: Interpolation (delay line algorithm switch)
-    // -------------------------------------------------------------------
-    beginSection("Interpolation");
-    addDevSlider(kDELAY_INTERP_MODE, apvts);
 
     // -------------------------------------------------------------------
     // Section 9: Smoothing (cross-axis utility)
