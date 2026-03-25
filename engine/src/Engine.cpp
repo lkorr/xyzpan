@@ -9,205 +9,6 @@
 namespace xyzpan {
 
 // ============================================================================
-// BinauralPipeline — per-source DSP state
-// ============================================================================
-
-void BinauralPipeline::prepare(float sr, int delayCap, float combMaxMs) {
-    delayL.prepare(delayCap);
-    delayR.prepare(delayCap);
-    shadowL.setCoefficients(kHeadShadowFullOpenHz, sr);
-    shadowR.setCoefficients(kHeadShadowFullOpenHz, sr);
-    rearSvfL.setCoefficients(kRearShadowFullOpenHz, sr);
-    rearSvfR.setCoefficients(kRearShadowFullOpenHz, sr);
-    itdSmooth.prepare(kDefaultSmoothMs_ITD, sr);
-    shadowCutoffSmooth.prepare(kDefaultSmoothMs_Filter, sr);
-    ildGainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-    rearCutoffSmooth.prepare(kDefaultSmoothMs_Filter, sr);
-
-    int combCap = static_cast<int>(combMaxMs * 0.001f * sr) + 4;
-    for (int i = 0; i < kMaxCombFilters; ++i) {
-        combBank[i].prepare(combCap);
-        combBank[i].setDelay(static_cast<int>(kCombDefaultDelays_ms[i] * 0.001f * sr));
-        combBank[i].setFeedback(kCombDefaultFeedback[i]);
-    }
-    combWetSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-
-    reset();
-}
-
-void BinauralPipeline::reset() {
-    delayL.reset();
-    delayR.reset();
-    shadowL.reset();
-    shadowR.reset();
-    rearSvfL.reset();
-    rearSvfR.reset();
-    itdSmooth.reset(0.0f);
-    shadowCutoffSmooth.reset(kHeadShadowFullOpenHz);
-    ildGainSmooth.reset(1.0f);
-    rearCutoffSmooth.reset(kRearShadowFullOpenHz);
-    nearFieldLF_L.reset();
-    nearFieldLF_R.reset();
-    for (auto& c : combBank) c.reset();
-    combWetSmooth.reset(0.0f);
-    presenceShelf.reset();
-    earCanalPeak.reset();
-    pinnaP1.reset();
-    pinnaNotch.reset();
-    pinnaNotch2.reset();
-    pinnaShelf.reset();
-    shoulderPeak.reset();
-    conchaNotch.reset();
-    upperPinna.reset();
-    tragusNotch.reset();
-}
-
-// ============================================================================
-// DistancePipeline — per-source distance DSP state
-// ============================================================================
-
-void DistancePipeline::prepare(float sr) {
-    int distDelayCap = static_cast<int>(kDistDelayMaxMs * 0.001f * 192000.0f) + 8;
-    dopplerDelay.prepare(distDelayCap);
-    dopplerDelay.reset();
-    const float aaCutoff = std::min(kDopplerAAMaxHz, sr * 0.45f);
-    dopplerPostAA.setCoefficients(aaCutoff, sr);
-    dopplerPostAA.reset();
-    dopplerPreAA.setCoefficients(aaCutoff, sr);
-    dopplerPreAA.reset();
-    airLPF_L.setCoefficients(kAirAbsMaxHz, sr);
-    airLPF_R.setCoefficients(kAirAbsMaxHz, sr);
-    airLPF_L.reset();
-    airLPF_R.reset();
-    airLPF2_L.setCoefficients(kAirAbs2MaxHz, sr);
-    airLPF2_R.setCoefficients(kAirAbs2MaxHz, sr);
-    airLPF2_L.reset();
-    airLPF2_R.reset();
-    distDelaySmooth.prepare(kDistSmoothMs, sr);
-    distDelaySmooth.reset(2.0f);
-    distGainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-    distGainSmooth.reset(1.0f);
-}
-
-void DistancePipeline::reset() {
-    dopplerDelay.reset();
-    dopplerPostAA.reset();
-    dopplerPreAA.reset();
-    airLPF_L.reset();
-    airLPF_R.reset();
-    airLPF2_L.reset();
-    airLPF2_R.reset();
-    distDelaySmooth.reset(2.0f);
-    distGainSmooth.reset(1.0f);
-    prevDelaySamp = 2.0f;
-}
-
-// ============================================================================
-// ChestPipeline — per-node chest bounce DSP state
-// ============================================================================
-
-void ChestPipeline::prepare(float sr) {
-    for (auto& hp : hpf) {
-        hp.setType(dsp::SVFType::HP);
-        hp.setCoefficients(kChestHPFHz, sr);
-        hp.reset();
-    }
-    lp.setCoefficients(kChestLPHz, sr);
-    lp.reset();
-    int chestCap = static_cast<int>(kChestDelayMaxMs * 0.001f * sr) + 8;
-    delay.prepare(chestCap);
-    delay.reset();
-    gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-    gainSmooth.reset(0.0f);
-    delaySmooth.prepare(kDefaultSmoothMs_Gain, sr);
-    delaySmooth.reset(2.0f);
-}
-
-void ChestPipeline::reset() {
-    for (auto& hp : hpf) hp.reset();
-    lp.reset();
-    delay.reset();
-    gainSmooth.reset(0.0f);
-    delaySmooth.reset(2.0f);
-}
-
-// ============================================================================
-// FloorPipeline — per-node floor bounce DSP state
-// ============================================================================
-
-void FloorPipeline::prepare(float sr) {
-    int floorCap = static_cast<int>(kFloorDelayMaxMs * 0.001f * sr) + 8;
-    delayL.prepare(floorCap);
-    delayR.prepare(floorCap);
-    delayL.reset();
-    delayR.reset();
-    lpfL.setCoefficients(kFloorAbsHz, sr);
-    lpfR.setCoefficients(kFloorAbsHz, sr);
-    lpfL.reset();
-    lpfR.reset();
-    gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-    gainSmooth.reset(0.0f);
-    delaySmooth.prepare(kDefaultSmoothMs_Gain, sr);
-    delaySmooth.reset(2.0f);
-}
-
-void FloorPipeline::reset() {
-    delayL.reset();
-    delayR.reset();
-    lpfL.reset();
-    lpfR.reset();
-    gainSmooth.reset(0.0f);
-    delaySmooth.reset(2.0f);
-}
-
-// ============================================================================
-// ERPipeline — per-node early reflections DSP state
-// ============================================================================
-
-void ERPipeline::prepare(float sr) {
-    int erDelayCap = static_cast<int>(kERMaxDelayMs * 0.001f * 192000.0f) + 8;
-    sharedDelay.prepare(erDelayCap);
-    sharedDelay.reset();
-
-    int itdCap = static_cast<int>(kMaxITDUpperBound_ms * 0.001f * sr) + 8;
-    for (auto& er : reflections) {
-        er.wallAbsorption.setCoefficients(kERDampingLPMaxHz, sr);
-        er.wallAbsorption.reset();
-        er.delaySmooth.prepare(kDefaultSmoothMs_ITD, sr);
-        er.delaySmooth.reset(2.0f);
-        er.gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-        er.gainSmooth.reset(0.0f);
-        er.itdDelayL.prepare(itdCap);
-        er.itdDelayR.prepare(itdCap);
-        er.itdDelayL.reset();
-        er.itdDelayR.reset();
-        er.shadowL.setCoefficients(kHeadShadowFullOpenHz, sr);
-        er.shadowR.setCoefficients(kHeadShadowFullOpenHz, sr);
-        er.shadowL.reset();
-        er.shadowR.reset();
-        er.itdSmooth.prepare(kDefaultSmoothMs_ITD, sr);
-        er.itdSmooth.reset(0.0f);
-        er.ildSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-        er.ildSmooth.reset(1.0f);
-    }
-}
-
-void ERPipeline::reset() {
-    sharedDelay.reset();
-    for (auto& er : reflections) {
-        er.wallAbsorption.reset();
-        er.delaySmooth.reset(2.0f);
-        er.gainSmooth.reset(0.0f);
-        er.itdDelayL.reset();
-        er.itdDelayR.reset();
-        er.shadowL.reset();
-        er.shadowR.reset();
-        er.itdSmooth.reset(0.0f);
-        er.ildSmooth.reset(1.0f);
-    }
-}
-
-// ============================================================================
 // prepare()
 // ============================================================================
 
@@ -287,22 +88,7 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // -------------------------------------------------------------------------
     // Phase 3: Chest bounce
     // -------------------------------------------------------------------------
-    for (auto& hp : chestHPF_) {
-        hp.setType(dsp::SVFType::HP);
-        hp.setCoefficients(kChestHPFHz, sr);
-        hp.reset();
-    }
-    chestLP_.setCoefficients(kChestLPHz, sr);
-    chestLP_.reset();
-    {
-        int chestCap = static_cast<int>(kChestDelayMaxMs * 0.001f * sr) + 8;
-        chestDelay_.prepare(chestCap);
-        chestDelay_.reset();
-    }
-    chestGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    chestGainSmooth_.reset(0.0f);
-    chestDelaySmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    chestDelaySmooth_.reset(2.0f);
+    chest_.prepare(sr);
 
     // -------------------------------------------------------------------------
     // Phase 3: Floor bounce
@@ -701,36 +487,6 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
 }
 
 // ============================================================================
-// processChestForNode() — per-node chest bounce
-// ============================================================================
-
-float XYZPanEngine::processChestForNode(
-    float input, float nodeZ,
-    float sr, float chestGainLin,
-    std::array<dsp::SVFFilter, 4>& hpf, dsp::OnePoleLP& lp,
-    dsp::FractionalDelayLine& delay,
-    dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm)
-{
-    const float chestElevNorm  = std::clamp((-nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-    const float chestDelaySamp = std::clamp((nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f)
-                                 * currentParams.chestDelayMaxMs * 0.001f * sr;
-    const float chestLinTarget = chestGainLin * chestElevNorm;
-
-    float chestSig = input;
-    for (auto& hp_f : hpf)
-        chestSig = hp_f.process(chestSig);
-    chestSig = lp.process(chestSig);
-    delay.push(chestSig);
-
-    const float chestGain = gainSm.process(chestLinTarget);
-    const float chestReadSamp = std::max(2.0f, delaySm.process(chestDelaySamp));
-
-    if (!currentParams.bypassChest && chestGain > 1e-6f)
-        return delay.read(chestReadSamp) * chestGain;
-    return 0.0f;
-}
-
-// ============================================================================
 // processFloorForNode() — per-node floor bounce (modifies dL/dR in-place)
 // ============================================================================
 
@@ -1037,9 +793,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     {
         const float chestHPF = currentParams.chestHPFHz;
         const float chestLP  = currentParams.chestLPHz;
-        for (auto& hp : chestHPF_)
+        for (auto& hp : chest_.hpf)
             hp.setCoefficients(chestHPF, sr);
-        chestLP_.setCoefficients(chestLP, sr);
+        chest_.lp.setCoefficients(chestLP, sr);
         // R-channel chest pipeline (stereo node splitting)
         for (auto& hp : chestR_.hpf)
             hp.setCoefficients(chestHPF, sr);
@@ -1681,10 +1437,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 distR_.distDelaySmooth, distR_.prevDelaySamp);
 
             // Per-node chest bounce — uses listener-relative Z for elevation perception
-            float chestL = processChestForNode(sampleL, dspLZ, sr, chestGainLin,
-                chestHPF_, chestLP_, chestDelay_, chestGainSmooth_, chestDelaySmooth_);
-            float chestROut = processChestForNode(sampleR, dspRZ, sr, chestGainLin,
-                chestR_.hpf, chestR_.lp, chestR_.delay, chestR_.gainSmooth, chestR_.delaySmooth);
+            float chestL = chest_.processSample(sampleL, dspLZ, sr, chestGainLin, currentParams);
+            float chestROut = chestR_.processSample(sampleR, dspRZ, sr, chestGainLin, currentParams);
 
             // Process L channel through L pipeline — listener-relative positions
             auto [dL_L, dR_L] = processBinauralForSource(
@@ -1932,19 +1686,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Chest bounce — smoothers/delay always run; bypass skips adding to output
             {
-                float chestSig = dopplerInputMono;
-                for (auto& hp : chestHPF_)
-                    chestSig = hp.process(chestSig);
-                chestSig = chestLP_.process(chestSig);
-                chestDelay_.push(chestSig);
-
-                const float chestGain = chestGainSmooth_.process(chestLinearTarget);
-                const float chestReadSamp = std::max(2.0f, chestDelaySmooth_.process(chestDelaySamp));
-                if (!currentParams.bypassChest && chestGain > 1e-6f) {
-                    float chestOut = chestDelay_.read(chestReadSamp) * chestGain * effectiveDistGain;
-                    dL += chestOut;
-                    dR += chestOut;
-                }
+                float chestOut = chest_.processSample(dopplerInputMono, modZ, sr,
+                                                       chestGainLin, currentParams);
+                dL += chestOut;
+                dR += chestOut;
             }
 
             // Floor bounce — smoothers/delay always run; bypass skips adding to output
@@ -2185,11 +1930,7 @@ void XYZPanEngine::reset() {
     tragusNotch_.reset();
 
     // Phase 3: chest bounce
-    for (auto& hp : chestHPF_) hp.reset();
-    chestLP_.reset();
-    chestDelay_.reset();
-    chestGainSmooth_.reset(0.0f);
-    chestDelaySmooth_.reset(2.0f);
+    chest_.reset();
 
     // Phase 3: floor bounce
     floorDelayL_.reset();

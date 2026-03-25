@@ -2,6 +2,11 @@
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
 #include "xyzpan/DSPStateBridge.h"
+#include "xyzpan/BinauralPipeline.h"
+#include "xyzpan/DistancePipeline.h"
+#include "xyzpan/ChestPipeline.h"
+#include "xyzpan/FloorPipeline.h"
+#include "xyzpan/ERPipeline.h"
 #include "xyzpan/dsp/FractionalDelayLine.h"
 #include "xyzpan/dsp/SVFLowPass.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
@@ -16,103 +21,6 @@
 #include <random>
 
 namespace xyzpan {
-
-// Per-source binaural DSP state. When stereo width > 0, L and R input channels
-// are each processed through an independent BinauralPipeline with the same
-// coefficients but separate filter state. Shared stages (chest/floor bounce,
-// distance, reverb) run once on the summed binaural output.
-struct BinauralPipeline {
-    // ITD delay lines — one per ear
-    dsp::FractionalDelayLine delayL, delayR;
-
-    // Head shadow SVFs — one per ear
-    dsp::SVFLowPass shadowL, shadowR;
-
-    // Rear shadow SVFs — both ears
-    dsp::SVFLowPass rearSvfL, rearSvfR;
-
-    // Per-parameter smoothers
-    dsp::OnePoleSmooth itdSmooth;
-    dsp::OnePoleSmooth shadowCutoffSmooth;
-    dsp::OnePoleSmooth ildGainSmooth;
-    dsp::OnePoleSmooth rearCutoffSmooth;
-
-    // Near-field ILD biquads
-    dsp::BiquadFilter nearFieldLF_L, nearFieldLF_R;
-
-    // Per-source comb bank (same coefficients as L, independent state)
-    std::array<dsp::FeedbackCombFilter, kMaxCombFilters> combBank;
-    dsp::OnePoleSmooth combWetSmooth;
-
-    // Per-source mono EQ chain (same coefficients, independent state)
-    dsp::BiquadFilter presenceShelf, earCanalPeak, pinnaP1;
-    dsp::BiquadFilter pinnaNotch, pinnaNotch2, pinnaShelf;
-
-    // Expanded pinna EQ (P5) — 4 additional bands
-    dsp::BiquadFilter shoulderPeak, conchaNotch, upperPinna, tragusNotch;
-
-    void prepare(float sr, int delayCap, float combMaxMs);
-    void reset();
-};
-
-// Per-source distance DSP state. When stereo width > 0, L and R input channels
-// each get independent distance processing (gain attenuation, delay+doppler,
-// air absorption) based on their own node positions.
-struct DistancePipeline {
-    dsp::FractionalDelayLine dopplerDelay;        // mono doppler delay line
-    dsp::OnePoleLP airLPF_L, airLPF_R;            // air absorption stage 1 (stereo, post-binaural)
-    dsp::OnePoleLP airLPF2_L, airLPF2_R;          // air absorption stage 2 (stereo, post-binaural)
-    dsp::OnePoleLP dopplerPostAA;                  // post-delay anti-alias LP (mono)
-    dsp::OnePoleLP dopplerPreAA;                   // pre-delay anti-alias LP (mono)
-    dsp::OnePoleSmooth distGainSmooth;
-    dsp::OnePoleSmooth distDelaySmooth;
-    float prevDelaySamp = 2.0f;  // rate limiter state for doppler
-    void prepare(float sr);
-    void reset();
-};
-
-// Per-reflection DSP state for the early reflections image source method.
-// 6 instances (one per wall face of the virtual cube: ±X, ±Y, ±Z).
-struct EarlyReflection {
-    dsp::OnePoleLP wallAbsorption;          // Wall absorption LPF
-    dsp::OnePoleSmooth delaySmooth;         // Smooth delay transitions
-    dsp::OnePoleSmooth gainSmooth;          // Smooth gain transitions
-    // Simplified binaural (ITD + ILD + head shadow per ear)
-    dsp::FractionalDelayLine itdDelayL, itdDelayR;
-    dsp::SVFLowPass shadowL, shadowR;
-    dsp::OnePoleSmooth itdSmooth;
-    dsp::OnePoleSmooth ildSmooth;
-};
-
-// Per-node chest bounce DSP state. When stereo width > 0, L and R nodes each
-// get independent chest bounce processing driven by their own Z position.
-struct ChestPipeline {
-    std::array<dsp::SVFFilter, 4> hpf;       // 4x HP cascade at 700Hz
-    dsp::OnePoleLP lp;                        // 1x 6dB/oct LP at 1kHz
-    dsp::FractionalDelayLine delay;           // 0–2ms delay
-    dsp::OnePoleSmooth gainSmooth, delaySmooth;
-    void prepare(float sr);
-    void reset();
-};
-
-// Per-node floor bounce DSP state. When stereo width > 0, L and R nodes each
-// get independent floor bounce with separate L/R absorption LPFs.
-struct FloorPipeline {
-    dsp::FractionalDelayLine delayL, delayR;
-    dsp::OnePoleLP lpfL, lpfR;               // separate L/R absorption
-    dsp::OnePoleSmooth gainSmooth, delaySmooth;
-    void prepare(float sr);
-    void reset();
-};
-
-// Per-node early reflections DSP state. When stereo width > 0, each node
-// gets its own set of 6 reflections with independent image source positions.
-struct ERPipeline {
-    std::array<EarlyReflection, kNumER> reflections;
-    dsp::FractionalDelayLine sharedDelay;
-    void prepare(float sr);
-    void reset();
-};
 
 // XYZPanEngine — pure C++ audio processing engine with no JUCE dependency.
 //
@@ -246,11 +154,7 @@ private:
     // =========================================================================
     // Phase 3: Elevation — chest bounce (post-binaural, parallel path)
     // =========================================================================
-    std::array<dsp::SVFFilter, 4> chestHPF_;  // 4x HP cascade at 700Hz
-    dsp::OnePoleLP                chestLP_;    // 1x 6dB/oct LP at 1kHz
-    dsp::FractionalDelayLine      chestDelay_; // 0–2ms delay
-    dsp::OnePoleSmooth            chestGainSmooth_;  // smooth chest gain transitions
-    dsp::OnePoleSmooth            chestDelaySmooth_; // smooth chest delay transitions
+    ChestPipeline chest_;  // L-channel chest pipeline
 
     // =========================================================================
     // Phase 3: Elevation — floor bounce (post-binaural, parallel path)
@@ -385,14 +289,6 @@ private:
         dsp::BiquadFilter& shoulder, dsp::BiquadFilter& concha,
         dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
     );
-
-    // Helper: per-node chest bounce processing
-    float processChestForNode(
-        float input, float nodeZ,
-        float sr, float chestGainLin,
-        std::array<dsp::SVFFilter, 4>& hpf, dsp::OnePoleLP& lp,
-        dsp::FractionalDelayLine& delay,
-        dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm);
 
     // Helper: per-node floor bounce processing (modifies dL/dR in-place)
     void processFloorForNode(

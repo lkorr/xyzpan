@@ -1,5 +1,10 @@
 add_library(xyzpan_engine STATIC
     src/Engine.cpp
+    src/BinauralPipeline.cpp
+    src/DistancePipeline.cpp
+    src/ChestPipeline.cpp
+    src/FloorPipeline.cpp
+    src/ERPipeline.cpp
     src/Coordinates.cpp
     src/FDNReverb.cpp
     src/LFO.cpp
