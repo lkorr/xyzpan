@@ -159,12 +159,7 @@ private:
     // =========================================================================
     // Phase 3: Elevation — floor bounce (post-binaural, parallel path)
     // =========================================================================
-    dsp::FractionalDelayLine floorDelayL_;   // per-ear floor bounce delay
-    dsp::FractionalDelayLine floorDelayR_;
-    dsp::OnePoleLP           floorLPF_;      // HF absorption on reflected floor signal (left ear)
-    dsp::OnePoleLP           floorLPF_R_;    // HF absorption on reflected floor signal (right ear)
-    dsp::OnePoleSmooth       floorGainSmooth_;  // smooth floor gain transitions
-    dsp::OnePoleSmooth       floorDelaySmooth_; // smooth floor delay transitions
+    FloorPipeline floor_;  // L-channel floor pipeline
 
     // =========================================================================
     // Phase 4: Distance Processing (DIST-01 through DIST-06)
@@ -290,13 +285,6 @@ private:
         dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
     );
 
-    // Helper: per-node floor bounce processing (modifies dL/dR in-place)
-    void processFloorForNode(
-        float& dL, float& dR, float nodeZ,
-        float sr, float floorGainLin,
-        dsp::FractionalDelayLine& fDelayL, dsp::FractionalDelayLine& fDelayR,
-        dsp::OnePoleLP& lpfL, dsp::OnePoleLP& lpfR,
-        dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm);
 
     // Helper: per-node early reflections processing
     struct ERResult { float directL, directR, reverbL, reverbR; };

@@ -93,21 +93,7 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // -------------------------------------------------------------------------
     // Phase 3: Floor bounce
     // -------------------------------------------------------------------------
-    {
-        int floorCap = static_cast<int>(kFloorDelayMaxMs * 0.001f * sr) + 8;
-        floorDelayL_.prepare(floorCap);
-        floorDelayR_.prepare(floorCap);
-        floorDelayL_.reset();
-        floorDelayR_.reset();
-    }
-    floorLPF_.setCoefficients(kFloorAbsHz, sr);
-    floorLPF_.reset();
-    floorLPF_R_.setCoefficients(kFloorAbsHz, sr);
-    floorLPF_R_.reset();
-    floorGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    floorGainSmooth_.reset(0.0f);
-    floorDelaySmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    floorDelaySmooth_.reset(2.0f);
+    floor_.prepare(sr);
 
     // -------------------------------------------------------------------------
     // Phase 4: Distance Processing
@@ -486,37 +472,6 @@ XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
     return { dL, dR, nodeDistFrac };
 }
 
-// ============================================================================
-// processFloorForNode() — per-node floor bounce (modifies dL/dR in-place)
-// ============================================================================
-
-void XYZPanEngine::processFloorForNode(
-    float& dL, float& dR, float nodeZ,
-    float sr, float floorGainLin,
-    dsp::FractionalDelayLine& fDelayL, dsp::FractionalDelayLine& fDelayR,
-    dsp::OnePoleLP& lpfL, dsp::OnePoleLP& lpfR,
-    dsp::OnePoleSmooth& gainSm, dsp::OnePoleSmooth& delaySm)
-{
-    const float floorDelaySamp = std::clamp((nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f)
-                                 * currentParams.floorDelayMaxMs * 0.001f * sr;
-    const float floorElevNorm  = std::clamp((-nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-    const float floorLinTarget = floorGainLin * floorElevNorm;
-
-    fDelayL.push(dL);
-    fDelayR.push(dR);
-
-    const float floorGain = gainSm.process(floorLinTarget);
-    const float floorReadSamp = std::max(2.0f, delaySm.process(floorDelaySamp));
-
-    if (!currentParams.bypassFloor && floorGain > 1e-6f) {
-        float floorL = fDelayL.read(floorReadSamp);
-        float floorR = fDelayR.read(floorReadSamp);
-        floorL = lpfL.process(floorL);
-        floorR = lpfR.process(floorR);
-        dL += floorL * floorGain;
-        dR += floorR * floorGain;
-    }
-}
 
 // ============================================================================
 // processERForNode() — per-node early reflections (image source method)
@@ -910,8 +865,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     airLPF2_R_.setCoefficientsSmoothed(blkAirCutoff2, sr, numSamples);
 
     // Floor bounce HF absorption LPF — smoothed to avoid block-boundary clicks
-    floorLPF_.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
-    floorLPF_R_.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
+    floor_.lpfL.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
+    floor_.lpfR.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
     floorR_.lpfL.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
     floorR_.lpfR.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
 
@@ -1278,18 +1233,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float airCutoffMod = currentParams.airAbsMaxHz
             + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * modDistFrac;
 
-        // Chest bounce (Z-driven) — use pre-computed chestGainLin (no std::pow per sample)
-        const float chestElevNorm     = std::clamp((-modZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-        const float chestDelaySamp    = std::clamp((modZ + 1.0f) * 0.5f, 0.0f, 1.0f)
-                                        * currentParams.chestDelayMaxMs * 0.001f * sr;
-        const float chestLinearTarget = chestGainLin * chestElevNorm;
-
-        // Floor bounce (Z-driven) — use pre-computed floorGainLin (no std::pow per sample)
-        const float floorDelaySamp    = std::clamp((modZ + 1.0f) * 0.5f, 0.0f, 1.0f)
-                                        * currentParams.floorDelayMaxMs * 0.001f * sr;
-        const float floorElevNorm     = std::clamp((-modZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-        const float floorLinearTarget = floorGainLin * floorElevNorm;
-
         // Capture modulated position (world-space for GL bridge)
         lastModulated_ = {worldModX, worldModY, worldModZ};
 
@@ -1481,12 +1424,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Per-node floor bounce (on per-node distance output, before combine)
             float fL_L = distL_result.left, fR_L = distL_result.right;
             float fL_R = distR_result.left,  fR_R = distR_result.right;
-            processFloorForNode(fL_L, fR_L, dspLZ, sr, floorGainLin,
-                floorDelayL_, floorDelayR_, floorLPF_, floorLPF_R_,
-                floorGainSmooth_, floorDelaySmooth_);
-            processFloorForNode(fL_R, fR_R, dspRZ, sr, floorGainLin,
-                floorR_.delayL, floorR_.delayR, floorR_.lpfL, floorR_.lpfR,
-                floorR_.gainSmooth, floorR_.delaySmooth);
+            floor_.processSample(fL_L, fR_L, dspLZ, sr, floorGainLin, currentParams);
+            floorR_.processSample(fL_R, fR_R, dspRZ, sr, floorGainLin, currentParams);
 
             // Combine with -3dB per node to maintain energy parity with mono path
             dL = (fL_L + fL_R) * kStereoNodeGain;
@@ -1693,21 +1632,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             }
 
             // Floor bounce — smoothers/delay always run; bypass skips adding to output
-            {
-                floorDelayL_.push(dL);
-                floorDelayR_.push(dR);
-
-                const float floorGain = floorGainSmooth_.process(floorLinearTarget);
-                const float floorReadSamp = std::max(2.0f, floorDelaySmooth_.process(floorDelaySamp));
-                if (!currentParams.bypassFloor && floorGain > 1e-6f) {
-                    float floorL = floorDelayL_.read(floorReadSamp);
-                    float floorR = floorDelayR_.read(floorReadSamp);
-                    floorL = floorLPF_.process(floorL);
-                    floorR = floorLPF_R_.process(floorR);
-                    dL += floorL * floorGain;
-                    dR += floorR * floorGain;
-                }
-            }
+            floor_.processSample(dL, dR, modZ, sr, floorGainLin, currentParams);
 
             // Distance processing — mono path only (gain + air absorption; doppler already applied)
             {
@@ -1933,12 +1858,7 @@ void XYZPanEngine::reset() {
     chest_.reset();
 
     // Phase 3: floor bounce
-    floorDelayL_.reset();
-    floorDelayR_.reset();
-    floorLPF_.reset();
-    floorLPF_R_.reset();
-    floorGainSmooth_.reset(0.0f);
-    floorDelaySmooth_.reset(2.0f);
+    floor_.reset();
 
     // Phase 4: distance processing
     dopplerDelay_.reset();
