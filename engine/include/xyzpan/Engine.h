@@ -8,16 +8,10 @@
 #include "xyzpan/FloorPipeline.h"
 #include "xyzpan/ERPipeline.h"
 #include "xyzpan/dsp/FractionalDelayLine.h"
-#include "xyzpan/dsp/SVFLowPass.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
-#include "xyzpan/dsp/FeedbackCombFilter.h"
-#include "xyzpan/dsp/SVFFilter.h"
-#include "xyzpan/dsp/BiquadFilter.h"
-#include "xyzpan/dsp/OnePoleLP.h"
 #include "xyzpan/dsp/FDNReverb.h"
 #include "xyzpan/dsp/LFO.h"
 #include <vector>
-#include <array>
 #include <random>
 
 namespace xyzpan {
@@ -189,9 +183,6 @@ private:
     float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
     float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
 
-
-
-
     // Last L/R node positions for position bridge
     StereoNodePositions lastStereoNodes_{};
 
@@ -206,8 +197,8 @@ private:
     // Per-block pre-computed cache (optimization: avoid per-sample transcendentals)
     // =========================================================================
     // Cached linear ILD gain base: pow(10, -ildMaxDb/20). Updated once per block.
-    // Used by processBinauralForSource() to compute per-node ILD target without
-    // re-calling std::pow on every sample.
+    // Used by BinauralPipeline::processSample() to compute per-node ILD target
+    // without re-calling std::pow on every sample.
     float ildGainBase_ = 1.0f;
     float blkDistRefScale_ = 0.047546796f;  // 10^(kDistGainFloorDb/40), recomputed per block
 
