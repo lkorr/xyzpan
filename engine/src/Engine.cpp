@@ -21,69 +21,13 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
 
     const float sr = static_cast<float>(inSampleRate);
 
-    // Allocate delay lines for maximum ITD upper bound.
-    // kMaxITDUpperBound_ms gives headroom for the dev panel creative exaggeration range.
     int delayCap = static_cast<int>(kMaxITDUpperBound_ms * 0.001f * sr) + 8;
-    delayL_.prepare(delayCap);
-    delayR_.prepare(delayCap);
-
-    // Set initial SVF coefficients — all wide open (inaudible) at start.
-    shadowL_.setCoefficients(kHeadShadowFullOpenHz, sr);
-    shadowR_.setCoefficients(kHeadShadowFullOpenHz, sr);
-    rearSvfL_.setCoefficients(kRearShadowFullOpenHz, sr);
-    rearSvfR_.setCoefficients(kRearShadowFullOpenHz, sr);
-
-    // Prepare smoothers with default time constants.
-    itdSmooth_.prepare(kDefaultSmoothMs_ITD, sr);
-    shadowCutoffSmooth_.prepare(kDefaultSmoothMs_Filter, sr);
-    ildGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    rearCutoffSmooth_.prepare(kDefaultSmoothMs_Filter, sr);
-
-    // Zero all delay and filter state.
-    delayL_.reset();
-    delayR_.reset();
-    shadowL_.reset();
-    shadowR_.reset();
-    rearSvfL_.reset();
-    rearSvfR_.reset();
-
-    // Initialize smoothers to neutral values:
-    //   ITD = 0 (no delay), cutoffs = wide open, gain = unity
-    itdSmooth_.reset(0.0f);
-    shadowCutoffSmooth_.reset(kHeadShadowFullOpenHz);
-    ildGainSmooth_.reset(1.0f);
-    rearCutoffSmooth_.reset(kRearShadowFullOpenHz);
+    src_.prepare(sr, delayCap, kCombMaxDelay_ms);
 
     // Sync tracking members.
     lastSmoothMs_ITD_    = kDefaultSmoothMs_ITD;
     lastSmoothMs_Filter_ = kDefaultSmoothMs_Filter;
     lastSmoothMs_Gain_   = kDefaultSmoothMs_Gain;
-
-    // -------------------------------------------------------------------------
-    // Phase 3: Comb bank
-    // -------------------------------------------------------------------------
-    for (int i = 0; i < kMaxCombFilters; ++i) {
-        int combCap = static_cast<int>(kCombMaxDelay_ms * 0.001f * sr) + 4;
-        combBank_[i].prepare(combCap);
-        combBank_[i].setDelay(static_cast<int>(kCombDefaultDelays_ms[i] * 0.001f * sr));
-        combBank_[i].setFeedback(kCombDefaultFeedback[i]);
-    }
-    combWetSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    combWetSmooth_.reset(0.0f);
-
-    // Phase 3: Pinna notch + shelf (biquad — no prepare needed, just reset)
-    pinnaNotch_.reset();
-    pinnaNotch2_.reset();
-    pinnaP1_.reset();
-    presenceShelf_.reset();
-    earCanalPeak_.reset();
-    pinnaShelf_.reset();
-
-    // P5: Expanded pinna EQ biquads
-    shoulderPeak_.reset();
-    conchaNotch_.reset();
-    upperPinna_.reset();
-    tragusNotch_.reset();
 
     // -------------------------------------------------------------------------
     // Phase 3: Chest bounce
@@ -99,8 +43,6 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // Phase 4: Distance Processing
     // -------------------------------------------------------------------------
     dist_.prepare(sr);
-    nearFieldLF_L_.reset();
-    nearFieldLF_R_.reset();
     lastDistSmoothMs_ = kDistSmoothMs;
 
     // -------------------------------------------------------------------------
@@ -195,163 +137,6 @@ void XYZPanEngine::setParams(const EngineParams& params) {
     currentParams = params;
 }
 
-// ============================================================================
-// processBinauralForSource() — binaural split for a single source node
-// Shadow/rear SVF coefficients are updated per-sample (TPT topology).
-// Biquad coefficients (pinna EQ, near-field) are pre-set per-block.
-// ============================================================================
-
-XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
-    float inputSample,
-    float nodeX, float nodeY, float nodeZ,
-    float sr, float binBlend,
-    dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
-    dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
-    dsp::SVFLowPass& rSvfL, dsp::SVFLowPass& rSvfR,
-    dsp::OnePoleSmooth& itdSm, dsp::OnePoleSmooth& shCutSm,
-    dsp::OnePoleSmooth& ildSm, dsp::OnePoleSmooth& rearCutSm,
-    dsp::BiquadFilter& nfL, dsp::BiquadFilter& nfR,
-    std::array<dsp::FeedbackCombFilter, kMaxCombFilters>& combs,
-    dsp::OnePoleSmooth& combWetSm,
-    dsp::BiquadFilter& presShelf, dsp::BiquadFilter& earCanal,
-    dsp::BiquadFilter& pP1, dsp::BiquadFilter& pN1,
-    dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf,
-    dsp::BiquadFilter& shoulder, dsp::BiquadFilter& concha,
-    dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
-) {
-    // Per-node position-derived values
-    const float nodeHorizMag = std::sqrt(nodeX * nodeX + nodeY * nodeY);
-    const float nodeAzimuthFactor = (nodeHorizMag > 1e-7f)
-        ? nodeX / nodeHorizMag : 0.0f;
-
-    // Per-node mono cylinder
-    const float cylRadius = currentParams.vertMonoCylinderRadius;
-    const float nodeT = std::clamp(nodeHorizMag / (cylRadius + 1e-7f), 0.0f, 1.0f);
-    const float nodeMonoBlend = 1.0f - nodeT * nodeT * (3.0f - 2.0f * nodeT);
-    const float nodeEffAzimuth = nodeAzimuthFactor * (1.0f - nodeMonoBlend);
-
-    // Per-node rear factor
-    const float nodeRearFactor = (nodeHorizMag > 1e-7f)
-        ? (-nodeY / nodeHorizMag) : nodeY;
-
-    // Per-node binaural cue targets (signed azimuth: +right, -left)
-    const float nodeAbsEffAzimuth = std::abs(nodeEffAzimuth);
-    const float nodeItdTarget = currentParams.maxITD_ms * nodeEffAzimuth * sr / 1000.0f;
-    const float nodeShadowRange = currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz;
-    const float nodeShadowCutTargetL = currentParams.headShadowFullOpenHz + nodeShadowRange * std::max(0.0f,  nodeEffAzimuth);
-    const float nodeShadowCutTargetR = currentParams.headShadowFullOpenHz + nodeShadowRange * std::max(0.0f, -nodeEffAzimuth);
-    // Pre-computed per-block: ildGainBase = std::pow(10.0f, -ildMaxDb/20.0f)
-    const float nodeIldTarget = 1.0f - (1.0f - ildGainBase_)
-        * nodeAbsEffAzimuth;
-    const float nodeRearAmount = std::max(0.0f, nodeRearFactor);
-    const float nodeRearCutTarget = kRearShadowFullOpenHz
-        + (currentParams.rearShadowMinHz - kRearShadowFullOpenHz) * nodeRearAmount;
-    const float nodeCombWetTarget = currentParams.combWetMax * std::max(0.0f, nodeRearFactor);
-
-    // NOTE: setCoefficients on presShelf/earCanal/pP1/pN1/pN2/pShelf biquads are called
-    // ONCE per block in the per-block preamble. Shadow/rear SVFs are updated per-sample above.
-
-    // Comb bank — smoother always runs; bypass skips audible effect
-    const float combWet = combWetSm.process(nodeCombWetTarget);
-    float combSig = inputSample;
-    for (int c = 0; c < kMaxCombFilters; ++c)
-        combSig = combs[c].process(combSig);
-    const float depthOut = currentParams.bypassComb
-        ? inputSample
-        : inputSample * (1.0f - combWet) + combSig * combWet;
-
-    // Mono EQ chain — bypass skips biquad .process() calls
-    float monoEQ;
-    if (currentParams.bypassPinnaEQ) {
-        monoEQ = depthOut;
-    } else {
-        monoEQ = presShelf.process(depthOut);
-        monoEQ = earCanal.process(monoEQ);
-        if (!currentParams.bypassExpandedPinna) {
-            monoEQ = shoulder.process(monoEQ);
-            monoEQ = concha.process(monoEQ);
-        }
-        monoEQ = pP1.process(monoEQ);
-        monoEQ = pN1.process(monoEQ);
-        monoEQ = pN2.process(monoEQ);
-        if (!currentParams.bypassExpandedPinna) {
-            monoEQ = upperPin.process(monoEQ);
-            monoEQ = tragus.process(monoEQ);
-        }
-        monoEQ = pShelf.process(monoEQ);
-    }
-
-    // Smooth binaural parameters — smoothers always run
-    const float itdSamples   = itdSm.process(nodeItdTarget);
-    const float shadowCutoff = shCutSm.process(nodeShadowCutTargetL); // display-only
-    const float ildGain      = ildSm.process(nodeIldTarget);
-    const float rearCutoff   = rearCutSm.process(nodeRearCutTarget);  // display-only
-
-    // Update SVF coefficients per-sample (TPT topology is modulation-safe)
-    shL.setCoefficients(nodeShadowCutTargetL, sr);
-    shR.setCoefficients(nodeShadowCutTargetR, sr);
-    rSvfL.setCoefficients(nodeRearCutTarget, sr);
-    rSvfR.setCoefficients(nodeRearCutTarget, sr);
-
-    // Push into delay lines — always push to keep delay state consistent
-    dl.push(monoEQ);
-    dr.push(monoEQ);
-
-    constexpr float kMinDelay = 2.0f;
-    // Signed ITD: positive itdSamples → source right → delay left ear
-    // Bypass: read at fixed 2.0 (no interaural time difference)
-    // binBlend scales ITD: 1=full binaural, 0=no ITD (hardpan mode)
-    float dL, dR;
-    if (currentParams.bypassITD) {
-        dL = dl.read(kMinDelay);
-        dR = dr.read(kMinDelay);
-    } else {
-        const float itdL = std::max(0.0f,  itdSamples) * binBlend;
-        const float itdR = std::max(0.0f, -itdSamples) * binBlend;
-        dL = dl.read(kMinDelay + itdL);
-        dR = dr.read(kMinDelay + itdR);
-    }
-
-    if (!std::isfinite(dL)) dL = 0.0f;
-    if (!std::isfinite(dR)) dR = 0.0f;
-
-    // Hardpan — opposite-ear attenuation when binaural is OFF
-    if (binBlend < 0.999f) {
-        const float hpAmount = 1.0f - binBlend;
-        const float hpGain = 1.0f - (1.0f - hardpanGainBase_) * nodeAbsEffAzimuth;
-        const float appliedGain = 1.0f - hpAmount * (1.0f - hpGain);
-        if (nodeEffAzimuth > 0.0f)      dL *= appliedGain;  // source right → cut left
-        else if (nodeEffAzimuth < 0.0f) dR *= appliedGain;  // source left → cut right
-    }
-
-    // ILD — smooth crossfade around ITD zero to avoid gain discontinuity
-    if (!currentParams.bypassILD) {
-        const float ildAtten = 1.0f - ildGain;
-        const float blend = std::clamp(itdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
-        dL *= 1.0f - ildAtten * std::max(0.0f,  blend);
-        dR *= 1.0f - ildAtten * std::max(0.0f, -blend);
-    }
-
-    // Near-field ILD — coefficients pre-set per-block, only .process() here
-    if (!currentParams.bypassNearField) {
-        dL = nfL.process(dL);
-        dR = nfR.process(dR);
-    }
-
-    // Head shadow — coefficients updated per-sample above
-    if (!currentParams.bypassHeadShadow) {
-        dL = shL.process(dL);
-        dR = shR.process(dR);
-    }
-
-    // Rear shadow — coefficients updated per-sample above
-    if (!currentParams.bypassRearShadow) {
-        dL = rSvfL.process(dL);
-        dR = rSvfR.process(dR);
-    }
-
-    return { dL, dR };
-}
 
 
 
@@ -394,16 +179,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float sr = static_cast<float>(sampleRate);
 
     if (currentParams.smoothMs_ITD != lastSmoothMs_ITD_) {
-        itdSmooth_.prepare(currentParams.smoothMs_ITD, sr);
+        src_.itdSmooth.prepare(currentParams.smoothMs_ITD, sr);
         lastSmoothMs_ITD_ = currentParams.smoothMs_ITD;
     }
     if (currentParams.smoothMs_Filter != lastSmoothMs_Filter_) {
-        shadowCutoffSmooth_.prepare(currentParams.smoothMs_Filter, sr);
-        rearCutoffSmooth_.prepare(currentParams.smoothMs_Filter, sr);
+        src_.shadowCutoffSmooth.prepare(currentParams.smoothMs_Filter, sr);
+        src_.rearCutoffSmooth.prepare(currentParams.smoothMs_Filter, sr);
         lastSmoothMs_Filter_ = currentParams.smoothMs_Filter;
     }
     if (currentParams.smoothMs_Gain != lastSmoothMs_Gain_) {
-        ildGainSmooth_.prepare(currentParams.smoothMs_Gain, sr);
+        src_.ildGainSmooth.prepare(currentParams.smoothMs_Gain, sr);
         lastSmoothMs_Gain_ = currentParams.smoothMs_Gain;
     }
 
@@ -411,14 +196,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // Phase 3: per-block updates (position-independent only)
     // -------------------------------------------------------------------------
     for (int c = 0; c < kMaxCombFilters; ++c) {
-        combBank_[c].setDelay(static_cast<int>(currentParams.combDelays_ms[c] * 0.001f * sr));
-        combBank_[c].setFeedback(currentParams.combFeedback[c]);
+        src_.combBank[c].setDelay(static_cast<int>(currentParams.combDelays_ms[c] * 0.001f * sr));
+        src_.combBank[c].setFeedback(currentParams.combFeedback[c]);
         // Also update srcR_ comb bank with same coefficients
         srcR_.combBank[c].setDelay(static_cast<int>(currentParams.combDelays_ms[c] * 0.001f * sr));
         srcR_.combBank[c].setFeedback(currentParams.combFeedback[c]);
     }
 
-    pinnaP1_.setCoefficients(dsp::BiquadType::PeakingEQ,
+    src_.pinnaP1.setCoefficients(dsp::BiquadType::PeakingEQ,
         currentParams.pinnaP1FreqHz, sr, currentParams.pinnaP1Q, currentParams.pinnaP1GainDb);
 
     // -------------------------------------------------------------------------
@@ -604,15 +389,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
     // --- Mono path per-block setCoefficients ---
     // Pinna EQ biquads — smoothed to avoid clicks from coefficient jumps at block boundaries
-    presenceShelf_.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
+    src_.presenceShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
         currentParams.presenceShelfFreqHz, sr, 0.7071f, blkPresenceGainDb, numSamples);
-    earCanalPeak_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+    src_.earCanalPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
         currentParams.earCanalFreqHz, sr, currentParams.earCanalQ, blkEarCanalGainDb, numSamples);
-    pinnaNotch_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+    src_.pinnaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
         blkPinnaN1Freq, sr, currentParams.pinnaNotchQ, blkPinnaGainDb, numSamples);
-    pinnaNotch2_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+    src_.pinnaNotch2.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
         blkPinnaN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb, numSamples);
-    pinnaShelf_.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
+    src_.pinnaShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
         currentParams.pinnaShelfFreqHz, sr, 0.7071f, blkShelfGainDb, numSamples);
 
     // Expanded pinna EQ (P5) — 4 additional bands, mono path
@@ -626,19 +411,19 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float blkTragusRear  = std::max(0.0f, blkRearFactor);
         const float blkTragusGainDb = currentParams.tragusNotchMaxDb * blkTragusRear * belowFactor;
 
-        shoulderPeak_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.shoulderPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             currentParams.shoulderPeakFreqHz, sr, currentParams.shoulderPeakQ, blkShoulderGainDb, numSamples);
-        conchaNotch_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.conchaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             currentParams.conchaNotchFreqHz, sr, currentParams.conchaNotchQ, blkConchaGainDb, numSamples);
-        upperPinna_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.upperPinna.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             currentParams.upperPinnaFreqHz, sr, currentParams.upperPinnaQ, blkUpperPinnaGainDb, numSamples);
-        tragusNotch_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.tragusNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             currentParams.tragusNotchFreqHz, sr, currentParams.tragusNotchQ, blkTragusGainDb, numSamples);
     }
 
     // Near-field ILD biquads (mono path) — smoothed, continuous blend through azimuth zero
-    nearFieldLF_R_.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainR, numSamples);
-    nearFieldLF_L_.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainL, numSamples);
+    src_.nearFieldLF_R.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainR, numSamples);
+    src_.nearFieldLF_L.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainL, numSamples);
 
     // Head shadow + rear shadow SVFs: coefficients updated per-sample in inner loop
 
@@ -778,15 +563,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float rAirCut2    = currentParams.airAbs2MaxHz + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * rRNodeDistFrac;
 
         // L pipeline EQ setCoefficients (stereo path) — smoothed
-        presenceShelf_.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
+        src_.presenceShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
             currentParams.presenceShelfFreqHz, sr, 0.7071f, lPresGainDb, numSamples);
-        earCanalPeak_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.earCanalPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             currentParams.earCanalFreqHz, sr, currentParams.earCanalQ, lEarGainDb, numSamples);
-        pinnaNotch_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.pinnaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             lN1Freq, sr, currentParams.pinnaNotchQ, lPinnaGain, numSamples);
-        pinnaNotch2_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+        src_.pinnaNotch2.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
             lN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb, numSamples);
-        pinnaShelf_.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
+        src_.pinnaShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
             currentParams.pinnaShelfFreqHz, sr, 0.7071f, lShelfGain, numSamples);
 
         // L pipeline expanded pinna EQ (P5)
@@ -799,18 +584,18 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 + (currentParams.upperPinnaMaxDb - currentParams.upperPinnaMinDb) * lAbove;
             const float lTragusDb   = currentParams.tragusNotchMaxDb
                 * std::max(0.0f, lRearFactor) * lBelow;
-            shoulderPeak_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            src_.shoulderPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
                 currentParams.shoulderPeakFreqHz, sr, currentParams.shoulderPeakQ, lShoulderDb, numSamples);
-            conchaNotch_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            src_.conchaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
                 currentParams.conchaNotchFreqHz, sr, currentParams.conchaNotchQ, lConchaDb, numSamples);
-            upperPinna_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            src_.upperPinna.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
                 currentParams.upperPinnaFreqHz, sr, currentParams.upperPinnaQ, lUpperDb, numSamples);
-            tragusNotch_.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            src_.tragusNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
                 currentParams.tragusNotchFreqHz, sr, currentParams.tragusNotchQ, lTragusDb, numSamples);
         }
 
-        nearFieldLF_R_.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainR, numSamples);
-        nearFieldLF_L_.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainL, numSamples);
+        src_.nearFieldLF_R.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainR, numSamples);
+        src_.nearFieldLF_L.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainL, numSamples);
         // Shadow + rear SVFs: coefficients updated per-sample in processBinauralForSource()
         dist_.airLPF_L.setCoefficientsSmoothed(lAirCut1, sr, numSamples);
         dist_.airLPF_R.setCoefficientsSmoothed(lAirCut1, sr, numSamples);
@@ -1004,11 +789,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         const float rawDistFrac = std::clamp(rawModDist / kSqrt3, 0.0f, 1.0f);
 
-        // Shared EQ targets from object position
-        const float rearFactor = (horizontalMag > 1e-7f)
-            ? (-modY / horizontalMag) : modY;
-        const float combWetTarget = currentParams.combWetMax * std::max(0.0f, rearFactor);
-
         // Distance targets
         const float distRatio = distRef / modDist;
         const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
@@ -1164,28 +944,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             float chestROut = chestR_.processSample(sampleR, dspRZ, sr, chestGainLin, currentParams);
 
             // Process L channel through L pipeline — listener-relative positions
-            auto [dL_L, dR_L] = processBinauralForSource(
+            auto [dL_L, dR_L] = src_.processSample(
                 sampleL, dspLX, dspLY, dspLZ, sr, binBlend,
-                delayL_, delayR_, shadowL_, shadowR_, rearSvfL_, rearSvfR_,
-                itdSmooth_, shadowCutoffSmooth_, ildGainSmooth_, rearCutoffSmooth_,
-                nearFieldLF_L_, nearFieldLF_R_,
-                combBank_, combWetSmooth_,
-                presenceShelf_, earCanalPeak_, pinnaP1_, pinnaNotch_, pinnaNotch2_, pinnaShelf_,
-                shoulderPeak_, conchaNotch_, upperPinna_, tragusNotch_
-            );
+                ildGainBase_, hardpanGainBase_, currentParams);
 
             // Process R channel through R pipeline — listener-relative positions
-            auto [dL_R, dR_R] = processBinauralForSource(
+            auto [dL_R, dR_R] = srcR_.processSample(
                 sampleR, dspRX, dspRY, dspRZ, sr, binBlend,
-                srcR_.delayL, srcR_.delayR, srcR_.shadowL, srcR_.shadowR,
-                srcR_.rearSvfL, srcR_.rearSvfR,
-                srcR_.itdSmooth, srcR_.shadowCutoffSmooth, srcR_.ildGainSmooth, srcR_.rearCutoffSmooth,
-                srcR_.nearFieldLF_L, srcR_.nearFieldLF_R,
-                srcR_.combBank, srcR_.combWetSmooth,
-                srcR_.presenceShelf, srcR_.earCanalPeak, srcR_.pinnaP1,
-                srcR_.pinnaNotch, srcR_.pinnaNotch2, srcR_.pinnaShelf,
-                srcR_.shoulderPeak, srcR_.conchaNotch, srcR_.upperPinna, srcR_.tragusNotch
-            );
+                ildGainBase_, hardpanGainBase_, currentParams);
 
             // Add chest to per-node binaural (both ears, before distance)
             dL_L += chestL; dR_L += chestL;
@@ -1263,133 +1029,27 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             mono = dist_.processDoppler(mono, rawDistFrac, sr, effectiveDoppler, currentParams);
             dopplerInputMono = mono;
 
-            // Binaural targets from LFO-modulated position (per-sample)
-            // SVF shadow/rear coefficients updated per-sample below (TPT safe)
-            const float rearAmount = std::max(0.0f, rearFactor);
-            const float rearCutoffTarget = kRearShadowFullOpenHz
-                + (currentParams.rearShadowMinHz - kRearShadowFullOpenHz) * rearAmount;
-
-            const float azimuthFactor = (horizontalMag > 1e-7f)
-                ? modX / horizontalMag : 0.0f;
-            const float cylR = currentParams.vertMonoCylinderRadius;
-            const float t = std::clamp(horizontalMag / (cylR + 1e-7f), 0.0f, 1.0f);
-            const float monoBlend = 1.0f - t * t * (3.0f - 2.0f * t);
-            const float effectiveAzimuth = azimuthFactor * (1.0f - monoBlend);
-
-            const float absEffAzimuth = std::abs(effectiveAzimuth);
-            const float itdTargetMod = currentParams.maxITD_ms * effectiveAzimuth * sr / 1000.0f;
-            const float shadowRangeMod = currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz;
-            const float shadowCutTargetModL = currentParams.headShadowFullOpenHz + shadowRangeMod * std::max(0.0f,  effectiveAzimuth);
-            const float shadowCutTargetModR = currentParams.headShadowFullOpenHz + shadowRangeMod * std::max(0.0f, -effectiveAzimuth);
-            // Use pre-computed ildGainBase_ (no std::pow per sample)
-            const float ildTargetMod = 1.0f - (1.0f - ildGainBase_) * absEffAzimuth;
-
-            // NOTE: Biquad setCoefficients (pinna EQ, near-field) called per-block above.
-            // Shadow/rear SVF setCoefficients called per-sample below.
-
-            // Comb bank — smoother always runs; bypass skips audible effect
-            const float combWet = combWetSmooth_.process(combWetTarget);
-            float combSig = mono;
-            for (int c = 0; c < kMaxCombFilters; ++c)
-                combSig = combBank_[c].process(combSig);
-            const float depthOut = currentParams.bypassComb
-                ? mono
-                : mono * (1.0f - combWet) + combSig * combWet;
-
-            // Mono EQ chain — bypass skips biquad .process() calls
-            float monoEQ;
-            if (currentParams.bypassPinnaEQ) {
-                monoEQ = depthOut;
-            } else {
-                monoEQ = presenceShelf_.process(depthOut);
-                monoEQ = earCanalPeak_.process(monoEQ);
-                if (!currentParams.bypassExpandedPinna) {
-                    monoEQ = shoulderPeak_.process(monoEQ);
-                    monoEQ = conchaNotch_.process(monoEQ);
-                }
-                monoEQ = pinnaP1_.process(monoEQ);
-                monoEQ = pinnaNotch_.process(monoEQ);
-                monoEQ = pinnaNotch2_.process(monoEQ);
-                if (!currentParams.bypassExpandedPinna) {
-                    monoEQ = upperPinna_.process(monoEQ);
-                    monoEQ = tragusNotch_.process(monoEQ);
-                }
-                monoEQ = pinnaShelf_.process(monoEQ);
+            // Binaural processing — comb bank + pinna EQ + ITD/ILD/shadow
+            {
+                auto [binL, binR] = src_.processSample(
+                    mono, modX, modY, modZ, sr, binBlend,
+                    ildGainBase_, hardpanGainBase_, currentParams);
+                dL = binL;
+                dR = binR;
             }
 
-            // Smooth binaural parameters — smoothers always run
-            const float itdSamples   = itdSmooth_.process(itdTargetMod);
-            const float shadowCutoff = shadowCutoffSmooth_.process(shadowCutTargetModL); // display-only
-            const float ildGain      = ildGainSmooth_.process(ildTargetMod);
-            const float rearCutoff   = rearCutoffSmooth_.process(rearCutoffTarget);      // display-only
-
-            // Update SVF coefficients per-sample (TPT topology is modulation-safe)
-            shadowL_.setCoefficients(shadowCutTargetModL, sr);
-            shadowR_.setCoefficients(shadowCutTargetModR, sr);
-            rearSvfL_.setCoefficients(rearCutoffTarget, sr);
-            rearSvfR_.setCoefficients(rearCutoffTarget, sr);
-
-            delayL_.push(monoEQ);
-            delayR_.push(monoEQ);
-
-            constexpr float kMinDelay = 2.0f;
-            // Signed ITD: bypass reads at fixed 2.0 (no interaural time difference)
-            // binBlend scales ITD: 1=full binaural, 0=no ITD (hardpan mode)
-            if (currentParams.bypassITD) {
-                dL = delayL_.read(kMinDelay);
-                dR = delayR_.read(kMinDelay);
-            } else {
-                const float itdL = std::max(0.0f,  itdSamples) * binBlend;
-                const float itdR = std::max(0.0f, -itdSamples) * binBlend;
-                dL = delayL_.read(kMinDelay + itdL);
-                dR = delayR_.read(kMinDelay + itdR);
+            // DSP state capture for mono path — read back from pipeline smoothers
+            {
+                const float cylR = currentParams.vertMonoCylinderRadius;
+                const float t = std::clamp(horizontalMag / (cylR + 1e-7f), 0.0f, 1.0f);
+                const float monoBlend = 1.0f - t * t * (3.0f - 2.0f * t);
+                lastDSPState_.itdSamples     = src_.itdSmooth.current();
+                lastDSPState_.shadowCutoffHz = src_.shadowCutoffSmooth.current();
+                lastDSPState_.ildGainLinear  = src_.ildGainSmooth.current();
+                lastDSPState_.rearCutoffHz   = src_.rearCutoffSmooth.current();
+                lastDSPState_.combWet        = src_.combWetSmooth.current();
+                lastDSPState_.monoBlend      = monoBlend;
             }
-
-            if (!std::isfinite(dL)) dL = 0.0f;
-            if (!std::isfinite(dR)) dR = 0.0f;
-
-            // Hardpan — opposite-ear attenuation when binaural is OFF
-            if (binBlend < 0.999f) {
-                const float hpAmount = 1.0f - binBlend;
-                const float hpGain = 1.0f - (1.0f - hardpanGainBase_) * absEffAzimuth;
-                const float appliedGain = 1.0f - hpAmount * (1.0f - hpGain);
-                if (effectiveAzimuth > 0.0f)      dL *= appliedGain;  // source right → cut left
-                else if (effectiveAzimuth < 0.0f) dR *= appliedGain;  // source left → cut right
-            }
-
-            // ILD — smooth crossfade around ITD zero to avoid gain discontinuity
-            if (!currentParams.bypassILD) {
-                const float ildAtten = 1.0f - ildGain;
-                const float blend = std::clamp(itdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
-                dL *= 1.0f - ildAtten * std::max(0.0f,  blend);
-                dR *= 1.0f - ildAtten * std::max(0.0f, -blend);
-            }
-
-            // Near-field ILD — coefficients pre-set per-block, only .process() here
-            if (!currentParams.bypassNearField) {
-                dL = nearFieldLF_L_.process(dL);
-                dR = nearFieldLF_R_.process(dR);
-            }
-
-            // Head shadow — coefficients updated per-sample above
-            if (!currentParams.bypassHeadShadow) {
-                dL = shadowL_.process(dL);
-                dR = shadowR_.process(dR);
-            }
-
-            // Rear shadow — coefficients updated per-sample above
-            if (!currentParams.bypassRearShadow) {
-                dL = rearSvfL_.process(dL);
-                dR = rearSvfR_.process(dR);
-            }
-
-            // DSP state capture for mono path
-            lastDSPState_.itdSamples     = itdSamples;
-            lastDSPState_.shadowCutoffHz = shadowCutoff;
-            lastDSPState_.ildGainLinear  = ildGain;
-            lastDSPState_.rearCutoffHz   = rearCutoff;
-            lastDSPState_.combWet        = combWet;
-            lastDSPState_.monoBlend      = monoBlend;
         }
 
         // ----------------------------------------------------------------
@@ -1505,44 +1165,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 // ============================================================================
 
 void XYZPanEngine::reset() {
-    // Clear all delay line state — prevents ringing on transport restart.
-    delayL_.reset();
-    delayR_.reset();
-
-    // Clear all filter state.
-    shadowL_.reset();
-    shadowR_.reset();
-    rearSvfL_.reset();
-    rearSvfR_.reset();
-
-    // Reset smoothers to neutral values (no sudden parameter jumps after reset).
-    itdSmooth_.reset(0.0f);
-    shadowCutoffSmooth_.reset(kHeadShadowFullOpenHz);
-    ildGainSmooth_.reset(1.0f);
-    rearCutoffSmooth_.reset(kRearShadowFullOpenHz);
+    // Binaural pipeline (ITD/ILD/shadow + comb + pinna EQ)
+    src_.reset();
 
     // Reset tracking members so the next process() block re-evaluates them.
     lastSmoothMs_ITD_    = kDefaultSmoothMs_ITD;
     lastSmoothMs_Filter_ = kDefaultSmoothMs_Filter;
     lastSmoothMs_Gain_   = kDefaultSmoothMs_Gain;
-
-    // Phase 3: comb bank
-    for (auto& c : combBank_) c.reset();
-    combWetSmooth_.reset(0.0f);
-
-    // Phase 3: pinna EQ
-    pinnaNotch_.reset();
-    pinnaNotch2_.reset();
-    pinnaP1_.reset();
-    presenceShelf_.reset();
-    earCanalPeak_.reset();
-    pinnaShelf_.reset();
-
-    // P5: expanded pinna EQ
-    shoulderPeak_.reset();
-    conchaNotch_.reset();
-    upperPinna_.reset();
-    tragusNotch_.reset();
 
     // Phase 3: chest bounce
     chest_.reset();
@@ -1552,8 +1181,6 @@ void XYZPanEngine::reset() {
 
     // Phase 4: distance processing
     dist_.reset();
-    nearFieldLF_L_.reset();
-    nearFieldLF_R_.reset();
 
     // Aux reverb send
     auxPreDelayL_.reset();

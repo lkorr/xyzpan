@@ -13,6 +13,8 @@ namespace xyzpan {
 // are each processed through an independent BinauralPipeline with the same
 // coefficients but separate filter state. Shared stages (chest/floor bounce,
 // distance, reverb) run once on the summed binaural output.
+struct EngineParams;
+
 struct BinauralPipeline {
     // ITD delay lines — one per ear
     dsp::FractionalDelayLine delayL, delayR;
@@ -45,6 +47,13 @@ struct BinauralPipeline {
 
     void prepare(float sr, int delayCap, float combMaxMs);
     void reset();
+
+    // Process comb bank + mono EQ + binaural split for one source node.
+    struct BinauralResult { float left; float right; };
+    BinauralResult processSample(float inputSample, float nodeX, float nodeY, float nodeZ,
+                                  float sr, float binBlend,
+                                  float ildGainBase, float hardpanGainBase,
+                                  const EngineParams& params);
 };
 
 } // namespace xyzpan

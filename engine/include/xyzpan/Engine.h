@@ -100,56 +100,13 @@ private:
     double sampleRate   = 44100.0;
     int    maxBlockSize = 512;
 
-    // ITD delay lines — one per ear.
-    // Allocated in prepare() for kMaxITDUpperBound_ms of capacity.
-    dsp::FractionalDelayLine delayL_;
-    dsp::FractionalDelayLine delayR_;
-
-    // Head shadow SVFs — one per ear.
-    // Near ear stays wide open (kHeadShadowFullOpenHz).
-    // Far ear gets cutoff modulated by azimuth magnitude.
-    dsp::SVFLowPass shadowL_;
-    dsp::SVFLowPass shadowR_;
-
-    // Rear shadow SVFs — applied equally to both ears when Y < 0 (source behind).
-    dsp::SVFLowPass rearSvfL_;
-    dsp::SVFLowPass rearSvfR_;
-
-    // Per-parameter exponential smoothers for click-free automation.
-    dsp::OnePoleSmooth itdSmooth_;           // ITD delay in samples
-    dsp::OnePoleSmooth shadowCutoffSmooth_;  // head shadow SVF cutoff
-    dsp::OnePoleSmooth ildGainSmooth_;       // ILD gain (linear, far ear)
-    dsp::OnePoleSmooth rearCutoffSmooth_;    // rear shadow SVF cutoff
+    // L-channel binaural pipeline (comb bank + pinna EQ + ITD/ILD/shadow)
+    BinauralPipeline src_;
 
     // Tracking last smoothing time constants to detect changes from dev panel.
-    // When a smoothMs param changes, the corresponding smoother is re-prepared
-    // with the new time constant (prepare() updates coefficients without resetting
-    // the smoother state — no click from parameter change).
     float lastSmoothMs_ITD_    = kDefaultSmoothMs_ITD;
     float lastSmoothMs_Filter_ = kDefaultSmoothMs_Filter;
     float lastSmoothMs_Gain_   = kDefaultSmoothMs_Gain;
-
-    // =========================================================================
-    // Phase 3: Depth — comb filter bank (series, Y-driven wet/dry)
-    // =========================================================================
-    std::array<dsp::FeedbackCombFilter, kMaxCombFilters> combBank_;
-    dsp::OnePoleSmooth combWetSmooth_;   // smooth wet amount transitions
-
-    // =========================================================================
-    // Phase 3: Elevation — pinna notch and high shelf (mono domain, before binaural split)
-    // =========================================================================
-    dsp::BiquadFilter pinnaNotch_;    // N1: elevation-shifted notch (6.5–10 kHz)
-    dsp::BiquadFilter pinnaNotch2_;   // N2: secondary notch (N1 + 3 kHz)
-    dsp::BiquadFilter pinnaP1_;       // P1: fixed +4 dB peak at 5 kHz
-    dsp::BiquadFilter presenceShelf_; // front-boosting high shelf at 3 kHz (Y-mapped)
-    dsp::BiquadFilter earCanalPeak_;  // ear canal resonance peak at 2.7 kHz (Y-mapped)
-    dsp::BiquadFilter pinnaShelf_;
-
-    // Expanded pinna EQ (P5) — 4 additional mono-path biquads
-    dsp::BiquadFilter shoulderPeak_;  // 1.5 kHz shoulder reflection
-    dsp::BiquadFilter conchaNotch_;   // 4 kHz concha notch
-    dsp::BiquadFilter upperPinna_;    // 12 kHz upper pinna peak
-    dsp::BiquadFilter tragusNotch_;   // 8.5 kHz tragus notch
 
     // =========================================================================
     // Phase 3: Elevation — chest bounce (post-binaural, parallel path)
@@ -165,8 +122,6 @@ private:
     // Phase 4: Distance Processing (DIST-01 through DIST-06)
     // =========================================================================
     DistancePipeline dist_;                    // L-channel distance pipeline
-    dsp::BiquadFilter nearFieldLF_L_;          // near-field ILD: ipsilateral LF boost, left
-    dsp::BiquadFilter nearFieldLF_R_;          // near-field ILD: ipsilateral LF boost, right
     float lastDistSmoothMs_ = kDistSmoothMs;   // track dev panel changes to re-prepare smoother
 
     // =========================================================================
@@ -235,27 +190,6 @@ private:
     float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
 
 
-    // Helper: run comb bank + mono EQ + binaural split for one source node
-    struct BinauralResult { float left; float right; };
-    BinauralResult processBinauralForSource(
-        float inputSample,
-        float nodeX, float nodeY, float nodeZ,
-        float sr, float binBlend,
-        // Pipeline state — references to either existing flat members (L) or srcR_ (R)
-        dsp::FractionalDelayLine& dl, dsp::FractionalDelayLine& dr,
-        dsp::SVFLowPass& shL, dsp::SVFLowPass& shR,
-        dsp::SVFLowPass& rSvfL, dsp::SVFLowPass& rSvfR,
-        dsp::OnePoleSmooth& itdSm, dsp::OnePoleSmooth& shCutSm,
-        dsp::OnePoleSmooth& ildSm, dsp::OnePoleSmooth& rearCutSm,
-        dsp::BiquadFilter& nfL, dsp::BiquadFilter& nfR,
-        std::array<dsp::FeedbackCombFilter, kMaxCombFilters>& combs,
-        dsp::OnePoleSmooth& combWetSm,
-        dsp::BiquadFilter& presShelf, dsp::BiquadFilter& earCanal,
-        dsp::BiquadFilter& pP1, dsp::BiquadFilter& pN1,
-        dsp::BiquadFilter& pN2, dsp::BiquadFilter& pShelf,
-        dsp::BiquadFilter& shoulder, dsp::BiquadFilter& concha,
-        dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
-    );
 
 
     // Last L/R node positions for position bridge
