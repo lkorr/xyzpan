@@ -216,8 +216,7 @@ private:
     // =========================================================================
     // Early Reflections (Image Source Method)
     // =========================================================================
-    std::array<EarlyReflection, kNumER> earlyReflections_;
-    dsp::FractionalDelayLine erSharedDelay_;     // Single shared propagation delay
+    ERPipeline er_;                              // L-channel ER pipeline
     dsp::OnePoleSmooth erLevelSmooth_;
     dsp::OnePoleSmooth erReverbSendSmooth_;
 
@@ -258,16 +257,6 @@ private:
         dsp::BiquadFilter& upperPin, dsp::BiquadFilter& tragus
     );
 
-
-    // Helper: per-node early reflections processing
-    struct ERResult { float directL, directR, reverbL, reverbR; };
-    ERResult processERForNode(
-        float input, float nodeX, float nodeY, float nodeZ,
-        float distGainTarget, float sr,
-        float dampCutoff, float roomHalf,
-        std::array<EarlyReflection, kNumER>& reflections,
-        dsp::FractionalDelayLine& sharedDelay,
-        bool rotated, float cosY, float sinY, float cosP, float sinP);
 
     // Last L/R node positions for position bridge
     StereoNodePositions lastStereoNodes_{};

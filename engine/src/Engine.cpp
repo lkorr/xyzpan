@@ -169,31 +169,7 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // Early Reflections (Image Source Method)
     // -------------------------------------------------------------------------
     {
-        int erDelayCap = static_cast<int>(kERMaxDelayMs * 0.001f * 192000.0f) + 8;
-        erSharedDelay_.prepare(erDelayCap);
-        erSharedDelay_.reset();
-
-        int itdCap = static_cast<int>(kMaxITDUpperBound_ms * 0.001f * sr) + 8;
-        for (auto& er : earlyReflections_) {
-            er.wallAbsorption.setCoefficients(kERDampingLPMaxHz, sr);
-            er.wallAbsorption.reset();
-            er.delaySmooth.prepare(kDefaultSmoothMs_ITD, sr);
-            er.delaySmooth.reset(2.0f);
-            er.gainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-            er.gainSmooth.reset(0.0f);
-            er.itdDelayL.prepare(itdCap);
-            er.itdDelayR.prepare(itdCap);
-            er.itdDelayL.reset();
-            er.itdDelayR.reset();
-            er.shadowL.setCoefficients(kHeadShadowFullOpenHz, sr);
-            er.shadowR.setCoefficients(kHeadShadowFullOpenHz, sr);
-            er.shadowL.reset();
-            er.shadowR.reset();
-            er.itdSmooth.prepare(kDefaultSmoothMs_ITD, sr);
-            er.itdSmooth.reset(0.0f);
-            er.ildSmooth.prepare(kDefaultSmoothMs_Gain, sr);
-            er.ildSmooth.reset(1.0f);
-        }
+        er_.prepare(sr);
         erLevelSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
         erLevelSmooth_.reset(0.0f);
         erReverbSendSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
@@ -379,104 +355,6 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
 
 
 
-// ============================================================================
-// processERForNode() — per-node early reflections (image source method)
-// ============================================================================
-
-XYZPanEngine::ERResult XYZPanEngine::processERForNode(
-    float input, float nodeX, float nodeY, float nodeZ,
-    float distGainTarget, float sr,
-    float dampCutoff, float roomHalf,
-    std::array<EarlyReflection, kNumER>& reflections,
-    dsp::FractionalDelayLine& sharedDelay,
-    bool rotated, float cY, float sY, float cP, float sP)
-{
-    sharedDelay.push(input);
-
-    float erDirectL = 0.0f, erDirectR = 0.0f;
-    float erRevL = 0.0f, erRevR = 0.0f;
-
-    constexpr int wallAxis[6]  = { 0, 0, 1, 1, 2, 2 };
-    constexpr float wallSign[6] = { 1.0f, -1.0f, 1.0f, -1.0f, 1.0f, -1.0f };
-
-    const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
-    const float directDist = std::max(rawDist, kMinDistance);
-
-    for (int w = 0; w < kNumER; ++w) {
-        auto& er = reflections[w];
-
-        // Image source position from this node's position
-        float imgX = nodeX, imgY = nodeY, imgZ = nodeZ;
-        const int axis = wallAxis[w];
-        const float sign = wallSign[w];
-        if (axis == 0)      imgX = 2.0f * sign - nodeX;
-        else if (axis == 1) imgY = 2.0f * sign - nodeY;
-        else                imgZ = 2.0f * sign - nodeZ;
-
-        const float pathNorm = std::sqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
-        const float pathMeters = pathNorm * roomHalf;
-        const float delaySamp = std::max(2.0f, pathMeters / kSpeedOfSound * sr);
-
-        er.wallAbsorption.setCoefficients(dampCutoff, sr);
-
-        const float reflDist = std::max(pathNorm, kMinDistance);
-        const float ratioPenalty = directDist / reflDist;
-        const float gainTarget = std::clamp(distGainTarget * ratioPenalty, 0.0f, currentParams.distGainMax);
-
-        const float smoothDelay = std::max(2.0f, er.delaySmooth.process(delaySamp));
-        const float smoothGain = er.gainSmooth.process(gainTarget);
-
-        float reflected = sharedDelay.read(smoothDelay);
-        reflected = er.wallAbsorption.process(reflected);
-        reflected *= smoothGain;
-
-        // Simplified binaural from image source azimuth (listener-relative)
-        float lrImgX = imgX, lrImgY = imgY;
-        if (rotated) {
-            const float rx = imgX * cY + imgY * sY;
-            const float ry = -imgX * sY + imgY * cY;
-            lrImgX = rx;
-            lrImgY = ry * cP + imgZ * sP;
-        }
-        const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
-        const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;
-
-        const float erItdTarget = currentParams.maxITD_ms * imgAzFactor * sr / 1000.0f;
-        const float erItdSamples = er.itdSmooth.process(erItdTarget);
-
-        const float absImgAz = std::abs(imgAzFactor);
-        const float erIldTarget = 1.0f - (1.0f - ildGainBase_) * absImgAz;
-        const float erIldGain = er.ildSmooth.process(erIldTarget);
-
-        const float erShadowRange = currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz;
-        er.shadowL.setCoefficients(
-            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f,  imgAzFactor), sr);
-        er.shadowR.setCoefficients(
-            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f, -imgAzFactor), sr);
-
-        er.itdDelayL.push(reflected);
-        er.itdDelayR.push(reflected);
-
-        constexpr float kERMinDelay = 2.0f;
-        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples));
-        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples));
-
-        const float erIldAtten = 1.0f - erIldGain;
-        const float erBlend = std::clamp(erItdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
-        erL *= 1.0f - erIldAtten * std::max(0.0f,  erBlend);
-        erR *= 1.0f - erIldAtten * std::max(0.0f, -erBlend);
-
-        erL = er.shadowL.process(erL);
-        erR = er.shadowR.process(erR);
-
-        erDirectL += erL;
-        erDirectR += erR;
-        erRevL += erL;
-        erRevR += erR;
-    }
-
-    return { erDirectL, erDirectR, erRevL, erRevR };
-}
 
 // ============================================================================
 // process()
@@ -1352,14 +1230,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float rDistRatio = distRef / rNodeDist;
                     const float rDistGainTarget = std::clamp(rDistRatio * rDistRatio, 0.0f, currentParams.distGainMax);
 
-                    auto erLResult = processERForNode(sampleL, lNodeX, lNodeY, lNodeZ,
+                    auto erLResult = er_.processSample(sampleL, lNodeX, lNodeY, lNodeZ,
                         lDistGainTarget, sr, dampCutoff, roomHalf,
-                        earlyReflections_, erSharedDelay_,
-                        listenerRotated, cosY, sinY, cosP, sinP);
-                    auto erRResult = processERForNode(sampleR, rNodeX, rNodeY, rNodeZ,
+                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP,
+                        currentParams);
+                    auto erRResult = erR_.processSample(sampleR, rNodeX, rNodeY, rNodeZ,
                         rDistGainTarget, sr, dampCutoff, roomHalf,
-                        erR_.reflections, erR_.sharedDelay,
-                        listenerRotated, cosY, sinY, cosP, sinP);
+                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP,
+                        currentParams);
 
                     dL += (erLResult.directL + erRResult.directL) * erLevelSm;
                     dR += (erLResult.directR + erRResult.directR) * erLevelSm;
@@ -1543,8 +1421,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Early Reflections (Image Source Method) — mono path
             // ER input = doppler'd mono input (carries pitch shift into reflections)
             {
-                erSharedDelay_.push(dopplerInputMono);
-
                 const float erLevelSm = erLevelSmooth_.process(
                     (currentParams.erEnabled && !currentParams.bypassER) ? currentParams.erLevel : 0.0f);
                 const float erSendSm = erReverbSendSmooth_.process(currentParams.erReverbSend);
@@ -1554,93 +1430,18 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float dampCutoff = kERDampingLPMaxHz
                         + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
 
-                    float erDirectL = 0.0f, erDirectR = 0.0f;
-                    float erRevL = 0.0f, erRevR = 0.0f;
+                    auto erResult = er_.processSample(dopplerInputMono,
+                        worldModX, worldModY, worldModZ,
+                        distGainTarget, sr, dampCutoff, roomHalf,
+                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP,
+                        currentParams);
 
-                    constexpr int wallAxis[6]  = { 0, 0, 1, 1, 2, 2 };
-                    constexpr float wallSign[6] = { 1.0f, -1.0f, 1.0f, -1.0f, 1.0f, -1.0f };
-
-                    const float directDist = std::max(rawModDist, kMinDistance);
-
-                    for (int w = 0; w < kNumER; ++w) {
-                        auto& er = earlyReflections_[w];
-
-                        // Image source in world space (mirror across room walls)
-                        float imgX = worldModX, imgY = worldModY, imgZ = worldModZ;
-                        const int axis = wallAxis[w];
-                        const float sign = wallSign[w];
-                        if (axis == 0)      imgX = 2.0f * sign - worldModX;
-                        else if (axis == 1) imgY = 2.0f * sign - worldModY;
-                        else                imgZ = 2.0f * sign - worldModZ;
-
-                        // Path distance is rotation-invariant
-                        const float pathNorm = std::sqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
-                        const float pathMeters = pathNorm * roomHalf;
-                        const float delaySamp = std::max(2.0f, pathMeters / kSpeedOfSound * sr);
-
-                        er.wallAbsorption.setCoefficients(dampCutoff, sr);
-
-                        const float reflDist = std::max(pathNorm, kMinDistance);
-                        const float ratioPenalty = directDist / reflDist;
-                        const float gainTarget = std::clamp(distGainTarget * ratioPenalty, 0.0f, currentParams.distGainMax);
-
-                        const float smoothDelay = std::max(2.0f, er.delaySmooth.process(delaySamp));
-                        const float smoothGain = er.gainSmooth.process(gainTarget);
-
-                        float reflected = erSharedDelay_.read(smoothDelay);
-                        reflected = er.wallAbsorption.process(reflected);
-                        reflected *= smoothGain;
-
-                        // Rotate image source into listener-relative frame for binaural cues
-                        float lrImgX = imgX, lrImgY = imgY;
-                        if (listenerRotated) {
-                            const float rx = imgX * cosY + imgY * sinY;
-                            const float ry = -imgX * sinY + imgY * cosY;
-                            lrImgX = rx;
-                            lrImgY = ry * cosP + imgZ * sinP;
-                        }
-                        const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
-                        const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;
-
-                        const float erItdTarget = currentParams.maxITD_ms * imgAzFactor * sr / 1000.0f;
-                        const float erItdSamples = er.itdSmooth.process(erItdTarget);
-
-                        const float absImgAz = std::abs(imgAzFactor);
-                        const float erIldTarget = 1.0f - (1.0f - ildGainBase_) * absImgAz;
-                        const float erIldGain = er.ildSmooth.process(erIldTarget);
-
-                        const float erShadowRange = currentParams.headShadowMinHz - currentParams.headShadowFullOpenHz;
-                        er.shadowL.setCoefficients(
-                            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f,  imgAzFactor), sr);
-                        er.shadowR.setCoefficients(
-                            currentParams.headShadowFullOpenHz + erShadowRange * std::max(0.0f, -imgAzFactor), sr);
-
-                        er.itdDelayL.push(reflected);
-                        er.itdDelayR.push(reflected);
-
-                        constexpr float kERMinDelay = 2.0f;
-                        float erL = er.itdDelayL.read(kERMinDelay + std::max(0.0f,  erItdSamples));
-                        float erR = er.itdDelayR.read(kERMinDelay + std::max(0.0f, -erItdSamples));
-
-                        const float erIldAtten = 1.0f - erIldGain;
-                        const float erBlend = std::clamp(erItdSamples / kILDCrossfadeWidth, -1.0f, 1.0f);
-                        erL *= 1.0f - erIldAtten * std::max(0.0f,  erBlend);
-                        erR *= 1.0f - erIldAtten * std::max(0.0f, -erBlend);
-
-                        erL = er.shadowL.process(erL);
-                        erR = er.shadowR.process(erR);
-
-                        erDirectL += erL;
-                        erDirectR += erR;
-                        erRevL += erL;
-                        erRevR += erR;
-                    }
-
-                    dL += erDirectL * erLevelSm;
-                    dR += erDirectR * erLevelSm;
-
-                    erReverbAccumL = erRevL * erLevelSm * erSendSm;
-                    erReverbAccumR = erRevR * erLevelSm * erSendSm;
+                    dL += erResult.directL * erLevelSm;
+                    dR += erResult.directR * erLevelSm;
+                    erReverbAccumL = erResult.reverbL * erLevelSm * erSendSm;
+                    erReverbAccumR = erResult.reverbR * erLevelSm * erSendSm;
+                } else {
+                    er_.sharedDelay.push(dopplerInputMono);
                 }
             }
         } // end !stereoActive
@@ -1791,18 +1592,7 @@ void XYZPanEngine::reset() {
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;
 
     // Early Reflections
-    erSharedDelay_.reset();
-    for (auto& er : earlyReflections_) {
-        er.wallAbsorption.reset();
-        er.delaySmooth.reset(2.0f);
-        er.gainSmooth.reset(0.0f);
-        er.itdDelayL.reset();
-        er.itdDelayR.reset();
-        er.shadowL.reset();
-        er.shadowR.reset();
-        er.itdSmooth.reset(0.0f);
-        er.ildSmooth.reset(1.0f);
-    }
+    er_.reset();
     erLevelSmooth_.reset(0.0f);
     erReverbSendSmooth_.reset(kERReverbSendDefault);
 
