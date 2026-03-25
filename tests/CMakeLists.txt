@@ -8,6 +8,7 @@ add_executable(XYZPanTests
     engine/TestPerformance.cpp
     engine/TestSineLUT.cpp
     engine/TestDelayInterpolation.cpp
+    engine/TestGoldenReference.cpp
 )
 
 target_link_libraries(XYZPanTests
