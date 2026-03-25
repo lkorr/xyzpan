@@ -98,35 +98,10 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     // -------------------------------------------------------------------------
     // Phase 4: Distance Processing
     // -------------------------------------------------------------------------
-    {
-        // Size delay line for kDistDelayMaxMs at 192kHz (worst case sample rate).
-        int distDelayCap = static_cast<int>(kDistDelayMaxMs * 0.001f * 192000.0f) + 8;
-        dopplerDelay_.prepare(distDelayCap);
-        dopplerDelay_.reset();
-    }
-    {
-        const float aaCutoff = std::min(kDopplerAAMaxHz, sr * 0.45f);
-        dopplerPostAA_.setCoefficients(aaCutoff, sr);
-        dopplerPostAA_.reset();
-        dopplerPreAA_.setCoefficients(aaCutoff, sr);
-        dopplerPreAA_.reset();
-    }
-    prevDistDelay_ = 2.0f;
-    airLPF_L_.setCoefficients(kAirAbsMaxHz, sr);
-    airLPF_R_.setCoefficients(kAirAbsMaxHz, sr);
-    airLPF_L_.reset();
-    airLPF_R_.reset();
-    airLPF2_L_.setCoefficients(kAirAbs2MaxHz, sr);
-    airLPF2_R_.setCoefficients(kAirAbs2MaxHz, sr);
-    airLPF2_L_.reset();
-    airLPF2_R_.reset();
+    dist_.prepare(sr);
     nearFieldLF_L_.reset();
     nearFieldLF_R_.reset();
-    distDelaySmooth_.prepare(kDistSmoothMs, sr);
-    distDelaySmooth_.reset(2.0f);
-    distGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    distGainSmooth_.reset(1.0f);
-    lastDistSmoothMs_    = kDistSmoothMs;
+    lastDistSmoothMs_ = kDistSmoothMs;
 
     // -------------------------------------------------------------------------
     // Phase 5: Reverb
@@ -402,75 +377,6 @@ XYZPanEngine::BinauralResult XYZPanEngine::processBinauralForSource(
     return { dL, dR };
 }
 
-// ============================================================================
-// processDopplerMono() — mono doppler delay (applied before comb/binaural)
-// ============================================================================
-
-float XYZPanEngine::processDopplerMono(
-    float input, float rawNodeDistFrac,
-    float sr, bool effectiveDoppler,
-    dsp::FractionalDelayLine& delay,
-    dsp::OnePoleLP& preAA, dsp::OnePoleLP& postAA,
-    dsp::OnePoleSmooth& delaySm, float& prevDelay)
-{
-    const float delayTargetSamples = std::max(2.0f,
-        rawNodeDistFrac * currentParams.distDelayMaxMs * 0.001f * sr);
-
-    float out;
-    if (effectiveDoppler) {
-        input = preAA.process(input);
-        delay.push(input);
-        float smoothed = delaySm.process(delayTargetSamples);
-        prevDelay = smoothed;
-        const float delaySamp = std::max(2.0f, smoothed);
-        out = delay.read(delaySamp);
-    } else {
-        delay.push(input);
-        delaySm.process(currentParams.dopplerEnabled ? delayTargetSamples : 2.0f);
-        prevDelay = 2.0f;
-        out = delay.read(2.0f);
-    }
-    out = postAA.process(out);
-    return out;
-}
-
-// ============================================================================
-// processDistanceForNode() — distance processing for a single source node
-// ============================================================================
-
-XYZPanEngine::DistanceResult XYZPanEngine::processDistanceForNode(
-    float dL, float dR,
-    float nodeX, float nodeY, float nodeZ,
-    float sr,
-    dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
-    dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
-    dsp::OnePoleSmooth& dgSmooth
-) {
-    const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
-    const float nodeDist = std::max(rawDist, kMinDistance);
-    const float maxRange = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
-    const float nodeDistFrac = std::clamp((nodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);
-
-    // Distance gain (inverse-square law) — smoother always runs
-    const float distRefScale = blkDistRefScale_;
-    const float distRef = currentParams.sphereRadius * distRefScale;
-    const float distRatio = distRef / nodeDist;
-    const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
-    const float distGain = dgSmooth.process(distGainTarget);
-
-    dL *= currentParams.bypassDistGain ? 1.0f : distGain;
-    dR *= currentParams.bypassDistGain ? 1.0f : distGain;
-
-    // Air absorption — coefficients pre-set per-block, only .process() here
-    if (!currentParams.bypassAirAbs) {
-        dL = aL1.process(dL);
-        dR = aR1.process(dR);
-        dL = aL2.process(dL);
-        dR = aR2.process(dR);
-    }
-
-    return { dL, dR, nodeDistFrac };
-}
 
 
 // ============================================================================
@@ -641,7 +547,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // Phase 4: per-block distance processing
     // -------------------------------------------------------------------------
     if (currentParams.distSmoothMs != lastDistSmoothMs_) {
-        distDelaySmooth_.prepare(currentParams.distSmoothMs, sr);
+        dist_.distDelaySmooth.prepare(currentParams.distSmoothMs, sr);
         distR_.distDelaySmooth.prepare(currentParams.distSmoothMs, sr);
         lastDistSmoothMs_ = currentParams.distSmoothMs;
     }
@@ -859,10 +765,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // Head shadow + rear shadow SVFs: coefficients updated per-sample in inner loop
 
     // Air absorption LPFs (mono path — OnePoleLP, smoothed to avoid block-boundary clicks)
-    airLPF_L_.setCoefficientsSmoothed(blkAirCutoff1, sr, numSamples);
-    airLPF_R_.setCoefficientsSmoothed(blkAirCutoff1, sr, numSamples);
-    airLPF2_L_.setCoefficientsSmoothed(blkAirCutoff2, sr, numSamples);
-    airLPF2_R_.setCoefficientsSmoothed(blkAirCutoff2, sr, numSamples);
+    dist_.airLPF_L.setCoefficientsSmoothed(blkAirCutoff1, sr, numSamples);
+    dist_.airLPF_R.setCoefficientsSmoothed(blkAirCutoff1, sr, numSamples);
+    dist_.airLPF2_L.setCoefficientsSmoothed(blkAirCutoff2, sr, numSamples);
+    dist_.airLPF2_R.setCoefficientsSmoothed(blkAirCutoff2, sr, numSamples);
 
     // Floor bounce HF absorption LPF — smoothed to avoid block-boundary clicks
     floor_.lpfL.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
@@ -1028,10 +934,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         nearFieldLF_R_.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainR, numSamples);
         nearFieldLF_L_.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, lNFGainL, numSamples);
         // Shadow + rear SVFs: coefficients updated per-sample in processBinauralForSource()
-        airLPF_L_.setCoefficientsSmoothed(lAirCut1, sr, numSamples);
-        airLPF_R_.setCoefficientsSmoothed(lAirCut1, sr, numSamples);
-        airLPF2_L_.setCoefficientsSmoothed(lAirCut2, sr, numSamples);
-        airLPF2_R_.setCoefficientsSmoothed(lAirCut2, sr, numSamples);
+        dist_.airLPF_L.setCoefficientsSmoothed(lAirCut1, sr, numSamples);
+        dist_.airLPF_R.setCoefficientsSmoothed(lAirCut1, sr, numSamples);
+        dist_.airLPF2_L.setCoefficientsSmoothed(lAirCut2, sr, numSamples);
+        dist_.airLPF2_R.setCoefficientsSmoothed(lAirCut2, sr, numSamples);
 
         // R pipeline (srcR_) EQ setCoefficients — smoothed
         srcR_.presenceShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
@@ -1229,7 +1135,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float distRatio = distRef / modDist;
         const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
 
-        // Air absorption coefficients — mono path only (stereo sets per-node in processDistanceForNode)
+        // Air absorption coefficients — mono path only (stereo sets per-node in processDistance)
         const float airCutoffMod = currentParams.airAbsMaxHz
             + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * modDistFrac;
 
@@ -1372,12 +1278,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             const float rRawDistFrac = std::clamp(
                 std::sqrt(rNodeX*rNodeX + rNodeY*rNodeY + rNodeZ*rNodeZ) / kSqrt3, 0.0f, 1.0f);
 
-            sampleL = processDopplerMono(sampleL, lRawDistFrac, sr, effectiveDoppler,
-                dopplerDelay_, dopplerPreAA_, dopplerPostAA_,
-                distDelaySmooth_, prevDistDelay_);
-            sampleR = processDopplerMono(sampleR, rRawDistFrac, sr, effectiveDoppler,
-                distR_.dopplerDelay, distR_.dopplerPreAA, distR_.dopplerPostAA,
-                distR_.distDelaySmooth, distR_.prevDelaySamp);
+            sampleL = dist_.processDoppler(sampleL, lRawDistFrac, sr, effectiveDoppler, currentParams);
+            sampleR = distR_.processDoppler(sampleR, rRawDistFrac, sr, effectiveDoppler, currentParams);
 
             // Per-node chest bounce — uses listener-relative Z for elevation perception
             float chestL = chest_.processSample(sampleL, dspLZ, sr, chestGainLin, currentParams);
@@ -1412,14 +1314,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             dL_R += chestROut; dR_R += chestROut;
 
             // Per-node distance processing (gain + air absorption only, no doppler)
-            auto distL_result = processDistanceForNode(dL_L, dR_L, lNodeX, lNodeY, lNodeZ, sr,
-                airLPF_L_, airLPF_R_, airLPF2_L_, airLPF2_R_,
-                distGainSmooth_);
+            auto distL_result = dist_.processDistance(dL_L, dR_L, lNodeX, lNodeY, lNodeZ, sr,
+                blkDistRefScale_, currentParams);
 
-            auto distR_result = processDistanceForNode(dL_R, dR_R, rNodeX, rNodeY, rNodeZ, sr,
-                distR_.airLPF_L, distR_.airLPF_R,
-                distR_.airLPF2_L, distR_.airLPF2_R,
-                distR_.distGainSmooth);
+            auto distR_result = distR_.processDistance(dL_R, dR_R, rNodeX, rNodeY, rNodeZ, sr,
+                blkDistRefScale_, currentParams);
 
             // Per-node floor bounce (on per-node distance output, before combine)
             float fL_L = distL_result.left, fR_L = distL_result.right;
@@ -1431,7 +1330,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             dL = (fL_L + fL_R) * kStereoNodeGain;
             dR = (fR_L + fR_R) * kStereoNodeGain;
             blendedDistFrac = 0.5f * (distL_result.distFrac + distR_result.distFrac);
-            effectiveDistGain = 0.5f * (distGainSmooth_.current() + distR_.distGainSmooth.current());
+            effectiveDistGain = 0.5f * (dist_.distGainSmooth.current() + distR_.distGainSmooth.current());
 
             // Per-node early reflections (6 reflections per node = 12 total)
             {
@@ -1483,9 +1382,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Doppler FIRST — mono doppler before comb/pinna/binaural
             const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
-            mono = processDopplerMono(mono, rawDistFrac, sr, effectiveDoppler,
-                dopplerDelay_, dopplerPreAA_, dopplerPostAA_,
-                distDelaySmooth_, prevDistDelay_);
+            mono = dist_.processDoppler(mono, rawDistFrac, sr, effectiveDoppler, currentParams);
             dopplerInputMono = mono;
 
             // Binaural targets from LFO-modulated position (per-sample)
@@ -1636,19 +1533,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Distance processing — mono path only (gain + air absorption; doppler already applied)
             {
-                const float distGain = distGainSmooth_.process(distGainTarget);
-                effectiveDistGain = distGainSmooth_.current();
-
-                dL *= currentParams.bypassDistGain ? 1.0f : distGain;
-                dR *= currentParams.bypassDistGain ? 1.0f : distGain;
-
-                // Air absorption
-                if (!currentParams.bypassAirAbs) {
-                    dL = airLPF_L_.process(dL);
-                    dR = airLPF_R_.process(dR);
-                    dL = airLPF2_L_.process(dL);
-                    dR = airLPF2_R_.process(dR);
-                }
+                auto distResult = dist_.processDistance(dL, dR, modX, modY, modZ, sr,
+                    blkDistRefScale_, currentParams);
+                dL = distResult.left;
+                dR = distResult.right;
+                effectiveDistGain = dist_.distGainSmooth.current();
             }
 
             // Early Reflections (Image Source Method) — mono path
@@ -1795,8 +1684,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // DSP state capture (shared fields)
         lastDSPState_.sampleRate     = static_cast<float>(sampleRate);
-        lastDSPState_.distDelaySamp  = distDelaySmooth_.current();
-        lastDSPState_.distGainLinear = stereoActive ? 0.0f : distGainSmooth_.current();
+        lastDSPState_.distDelaySamp  = dist_.distDelaySmooth.current();
+        lastDSPState_.distGainLinear = stereoActive ? 0.0f : dist_.distGainSmooth.current();
         lastDSPState_.airCutoffHz    = stereoActive ? 0.0f : airCutoffMod;
         lastDSPState_.modX           = modX;
 
@@ -1861,18 +1750,9 @@ void XYZPanEngine::reset() {
     floor_.reset();
 
     // Phase 4: distance processing
-    dopplerDelay_.reset();
-    dopplerPostAA_.reset();
-    dopplerPreAA_.reset();
-    prevDistDelay_ = 2.0f;
-    airLPF_L_.reset();
-    airLPF_R_.reset();
-    airLPF2_L_.reset();
-    airLPF2_R_.reset();
+    dist_.reset();
     nearFieldLF_L_.reset();
     nearFieldLF_R_.reset();
-    distDelaySmooth_.reset(2.0f);
-    distGainSmooth_.reset(1.0f);
 
     // Aux reverb send
     auxPreDelayL_.reset();

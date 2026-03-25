@@ -164,19 +164,10 @@ private:
     // =========================================================================
     // Phase 4: Distance Processing (DIST-01 through DIST-06)
     // =========================================================================
-    dsp::FractionalDelayLine dopplerDelay_;    // mono doppler delay line
-    dsp::OnePoleLP           dopplerPostAA_;  // post-delay anti-alias LP (mono)
-    dsp::OnePoleLP           dopplerPreAA_;   // pre-delay anti-alias LP (mono)
-    dsp::OnePoleLP           airLPF_L_;       // air absorption LPF stage 1, left
-    dsp::OnePoleLP           airLPF_R_;       // air absorption LPF stage 1, right
-    dsp::OnePoleLP           airLPF2_L_;      // air absorption LPF stage 2 (cascade → 12dB/oct), left
-    dsp::OnePoleLP           airLPF2_R_;      // air absorption LPF stage 2, right
-    dsp::BiquadFilter        nearFieldLF_L_;  // near-field ILD: ipsilateral LF boost, left
-    dsp::BiquadFilter        nearFieldLF_R_;  // near-field ILD: ipsilateral LF boost, right
-    dsp::OnePoleSmooth       distDelaySmooth_; // smooth delay target (produces doppler)
-    dsp::OnePoleSmooth       distGainSmooth_;  // smooth gain rolloff (DIST-01)
-    float prevDistDelay_ = 2.0f;              // rate limiter state for mono-path doppler
-    float lastDistSmoothMs_ = kDistSmoothMs;  // track dev panel changes to re-prepare smoother
+    DistancePipeline dist_;                    // L-channel distance pipeline
+    dsp::BiquadFilter nearFieldLF_L_;          // near-field ILD: ipsilateral LF boost, left
+    dsp::BiquadFilter nearFieldLF_R_;          // near-field ILD: ipsilateral LF boost, right
+    float lastDistSmoothMs_ = kDistSmoothMs;   // track dev panel changes to re-prepare smoother
 
     // =========================================================================
     // Phase 5: Reverb (VERB-01 through VERB-04)
@@ -244,24 +235,6 @@ private:
     float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
     float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
 
-    // Helper: mono doppler processing (applied before comb/pinna/binaural)
-    float processDopplerMono(
-        float input, float rawNodeDistFrac,
-        float sr, bool effectiveDoppler,
-        dsp::FractionalDelayLine& delay,
-        dsp::OnePoleLP& preAA, dsp::OnePoleLP& postAA,
-        dsp::OnePoleSmooth& delaySm, float& prevDelay);
-
-    // Helper: distance processing for a single source node (gain + air absorption only)
-    struct DistanceResult { float left; float right; float distFrac; };
-    DistanceResult processDistanceForNode(
-        float dL, float dR,
-        float nodeX, float nodeY, float nodeZ,
-        float sr,
-        dsp::OnePoleLP& aL1, dsp::OnePoleLP& aR1,
-        dsp::OnePoleLP& aL2, dsp::OnePoleLP& aR2,
-        dsp::OnePoleSmooth& dgSmooth
-    );
 
     // Helper: run comb bank + mono EQ + binaural split for one source node
     struct BinauralResult { float left; float right; };

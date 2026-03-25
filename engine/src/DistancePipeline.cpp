@@ -1,4 +1,5 @@
 #include "xyzpan/DistancePipeline.h"
+#include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
 #include <algorithm>
 #include <cmath>
@@ -39,6 +40,55 @@ void DistancePipeline::reset() {
     distDelaySmooth.reset(2.0f);
     distGainSmooth.reset(1.0f);
     prevDelaySamp = 2.0f;
+}
+
+float DistancePipeline::processDoppler(float input, float rawNodeDistFrac, float sr,
+                                       bool effectiveDoppler, const EngineParams& params) {
+    const float delayTargetSamples = std::max(2.0f,
+        rawNodeDistFrac * params.distDelayMaxMs * 0.001f * sr);
+
+    float out;
+    if (effectiveDoppler) {
+        input = dopplerPreAA.process(input);
+        dopplerDelay.push(input);
+        float smoothed = distDelaySmooth.process(delayTargetSamples);
+        prevDelaySamp = smoothed;
+        const float delaySamp = std::max(2.0f, smoothed);
+        out = dopplerDelay.read(delaySamp);
+    } else {
+        dopplerDelay.push(input);
+        distDelaySmooth.process(params.dopplerEnabled ? delayTargetSamples : 2.0f);
+        prevDelaySamp = 2.0f;
+        out = dopplerDelay.read(2.0f);
+    }
+    out = dopplerPostAA.process(out);
+    return out;
+}
+
+DistancePipeline::DistResult DistancePipeline::processDistance(
+    float dL, float dR, float nodeX, float nodeY, float nodeZ,
+    float sr, float distRefScale, const EngineParams& params) {
+    const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
+    const float nodeDist = std::max(rawDist, kMinDistance);
+    const float maxRange = std::max(params.sphereRadius - kMinDistance, 0.001f);
+    const float nodeDistFrac = std::clamp((nodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);
+
+    const float distRef = params.sphereRadius * distRefScale;
+    const float distRatio = distRef / nodeDist;
+    const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, params.distGainMax);
+    const float distGain = distGainSmooth.process(distGainTarget);
+
+    dL *= params.bypassDistGain ? 1.0f : distGain;
+    dR *= params.bypassDistGain ? 1.0f : distGain;
+
+    if (!params.bypassAirAbs) {
+        dL = airLPF_L.process(dL);
+        dR = airLPF_R.process(dR);
+        dL = airLPF2_L.process(dL);
+        dR = airLPF2_R.process(dR);
+    }
+
+    return { dL, dR, nodeDistFrac };
 }
 
 } // namespace xyzpan

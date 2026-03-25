@@ -8,6 +8,8 @@ namespace xyzpan {
 // Per-source distance DSP state. When stereo width > 0, L and R input channels
 // each get independent distance processing (gain attenuation, delay+doppler,
 // air absorption) based on their own node positions.
+struct EngineParams;
+
 struct DistancePipeline {
     dsp::FractionalDelayLine dopplerDelay;        // mono doppler delay line
     dsp::OnePoleLP airLPF_L, airLPF_R;            // air absorption stage 1 (stereo, post-binaural)
@@ -19,6 +21,16 @@ struct DistancePipeline {
     float prevDelaySamp = 2.0f;  // rate limiter state for doppler
     void prepare(float sr);
     void reset();
+
+    // Mono doppler delay (applied before comb/binaural).
+    float processDoppler(float input, float rawNodeDistFrac, float sr,
+                         bool effectiveDoppler, const EngineParams& params);
+
+    // Distance processing for a single source node (gain + air absorption).
+    // distRefScale = 10^(kDistGainFloorDb/40), pre-computed per block.
+    struct DistResult { float left; float right; float distFrac; };
+    DistResult processDistance(float dL, float dR, float nodeX, float nodeY, float nodeZ,
+                               float sr, float distRefScale, const EngineParams& params);
 };
 
 } // namespace xyzpan
