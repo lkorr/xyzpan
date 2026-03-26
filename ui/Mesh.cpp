@@ -59,6 +59,37 @@ SphereGeometry buildUnitSphere(int stacks, int slices)
 }
 
 // ---------------------------------------------------------------------------
+// buildSphereWireframe — lat/long GL_LINES index pairs for unit sphere
+// ---------------------------------------------------------------------------
+std::vector<unsigned> buildSphereWireframe(int stacks, int slices)
+{
+    std::vector<unsigned> idx;
+    // Same vertex layout as buildUnitSphere: vertex(s,sl) = s * (slices+1) + sl
+
+    // Latitude lines: for each stack row, connect consecutive vertices around the ring
+    for (int s = 0; s <= stacks; ++s) {
+        for (int sl = 0; sl < slices; ++sl) {
+            const unsigned a = static_cast<unsigned>(s * (slices + 1) + sl);
+            const unsigned b = static_cast<unsigned>(s * (slices + 1) + sl + 1);
+            idx.push_back(a);
+            idx.push_back(b);
+        }
+    }
+
+    // Longitude lines: for each slice, connect vertices down the meridian
+    for (int sl = 0; sl < slices; ++sl) {
+        for (int s = 0; s < stacks; ++s) {
+            const unsigned a = static_cast<unsigned>(s       * (slices + 1) + sl);
+            const unsigned b = static_cast<unsigned>((s + 1) * (slices + 1) + sl);
+            idx.push_back(a);
+            idx.push_back(b);
+        }
+    }
+
+    return idx;
+}
+
+// ---------------------------------------------------------------------------
 // buildCone — solid cone along +Y axis (base at Y=0, tip at Y=height)
 // ---------------------------------------------------------------------------
 SphereGeometry buildCone(float baseRadius, float height, int slices)

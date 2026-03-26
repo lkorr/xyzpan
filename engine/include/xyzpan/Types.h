@@ -222,6 +222,7 @@ struct EngineParams {
     // =========================================================================
     float listenerYaw   = 0.0f;  // radians
     float listenerPitch = 0.0f;  // radians
+    float listenerRoll  = 0.0f;  // radians
 
     // =========================================================================
     // Dev tool: Per-feature bypass toggles

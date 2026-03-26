@@ -207,6 +207,10 @@ namespace ParamID {
     // Listener head orientation
     constexpr const char* LISTENER_YAW   = "listener_yaw";
     constexpr const char* LISTENER_PITCH = "listener_pitch";
+    constexpr const char* LISTENER_ROLL  = "listener_roll";
+
+    // Head follows camera toggle
+    constexpr const char* HEAD_FOLLOWS_CAMERA = "head_follows_camera";
 
     // Binaural toggle (user-facing)
     constexpr const char* BINAURAL_ENABLED   = "binaural_enabled";

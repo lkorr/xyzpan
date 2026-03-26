@@ -181,8 +181,10 @@ private:
     std::atomic<float>* orbitSpeedMulParam    = nullptr;
 
     // Listener head orientation
-    std::atomic<float>* listenerYawParam   = nullptr;
-    std::atomic<float>* listenerPitchParam = nullptr;
+    std::atomic<float>* listenerYawParam          = nullptr;
+    std::atomic<float>* listenerPitchParam        = nullptr;
+    std::atomic<float>* listenerRollParam         = nullptr;
+    std::atomic<float>* headFollowsCameraParam    = nullptr;
 
     // Dev panel: Presence shelf
     std::atomic<float>* presenceShelfFreqParam = nullptr;

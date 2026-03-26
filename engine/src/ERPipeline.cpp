@@ -55,6 +55,7 @@ ERPipeline::ERResult ERPipeline::processSample(
     float dampCutoff, float roomHalf,
     float ildGainBase, bool rotated,
     float cY, float sY, float cP, float sP,
+    float cR, float sR,
     const EngineParams& params) {
     sharedDelay.push(input);
 
@@ -101,6 +102,10 @@ ERPipeline::ERResult ERPipeline::processSample(
             const float ry = -imgX * sY + imgY * cY;
             lrImgX = rx;
             lrImgY = ry * cP + imgZ * sP;
+            const float rrz = -ry * sP + imgZ * cP;  // Z after yaw+pitch
+            // Roll around forward axis (Y in engine coords)
+            lrImgX = lrImgX * cR + rrz * sR;
+            // lrImgY unchanged by roll (forward axis)
         }
         const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
         const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;

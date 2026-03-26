@@ -220,10 +220,14 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(orbitSpeedMulParam    != nullptr);
 
     // Listener head orientation
-    listenerYawParam   = apvts.getRawParameterValue(ParamID::LISTENER_YAW);
-    listenerPitchParam = apvts.getRawParameterValue(ParamID::LISTENER_PITCH);
-    jassert(listenerYawParam   != nullptr);
-    jassert(listenerPitchParam != nullptr);
+    listenerYawParam        = apvts.getRawParameterValue(ParamID::LISTENER_YAW);
+    listenerPitchParam      = apvts.getRawParameterValue(ParamID::LISTENER_PITCH);
+    listenerRollParam       = apvts.getRawParameterValue(ParamID::LISTENER_ROLL);
+    headFollowsCameraParam  = apvts.getRawParameterValue(ParamID::HEAD_FOLLOWS_CAMERA);
+    jassert(listenerYawParam        != nullptr);
+    jassert(listenerPitchParam      != nullptr);
+    jassert(listenerRollParam       != nullptr);
+    jassert(headFollowsCameraParam  != nullptr);
 
     // Dev panel: Presence shelf
     presenceShelfFreqParam  = apvts.getRawParameterValue(ParamID::PRESENCE_SHELF_FREQ_HZ);
@@ -657,6 +661,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
     params.listenerYaw   = listenerYawParam->load()   * kDegToRad;
     params.listenerPitch = listenerPitchParam->load() * kDegToRad;
+    params.listenerRoll  = listenerRollParam->load()  * kDegToRad;
 
     // Binaural toggle (user-facing)
     params.binauralEnabled = binauralEnabledParam->load() >= 0.5f;
@@ -716,6 +721,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     snap.listenerYaw   = params.listenerYaw;
     snap.listenerPitch = params.listenerPitch;
+    snap.listenerRoll  = params.listenerRoll;
 
     snap.sphereRadius = sphereRadiusParam->load();
 
@@ -763,7 +769,7 @@ static const std::unordered_set<juce::String> kUserParams = {
     // toggles
     "binaural_enabled", "er_enabled",
     // listener
-    "listener_yaw", "listener_pitch",
+    "listener_yaw", "listener_pitch", "listener_roll", "head_follows_camera",
 };
 
 void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {

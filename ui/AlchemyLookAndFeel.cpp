@@ -5,19 +5,26 @@ namespace xyzpan {
 // ---------------------------------------------------------------------------
 AlchemyLookAndFeel::AlchemyLookAndFeel()
 {
-    // Set JUCE standard colours to alchemy palette
-    setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(kBackground));
-    setColour(juce::Slider::rotarySliderFillColourId,    juce::Colour(kWarmGold));
-    setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(kDarkIron));
-    setColour(juce::Slider::thumbColourId,               juce::Colour(kParchment));
-    setColour(juce::Label::textColourId,                 juce::Colour(kParchment));
-    setColour(juce::TextButton::buttonColourId,          juce::Colour(kDarkIron));
-    setColour(juce::TextButton::textColourOffId,         juce::Colour(kParchment));
-    setColour(juce::TextButton::textColourOnId,          juce::Colour(kBrightGold));
-    setColour(juce::ComboBox::backgroundColourId,        juce::Colour(kDarkIron));
-    setColour(juce::ComboBox::textColourId,              juce::Colour(kParchment));
-    setColour(juce::PopupMenu::backgroundColourId,       juce::Colour(kDarkIron));
-    setColour(juce::PopupMenu::textColourId,             juce::Colour(kParchment));
+    applyTheme(ColorTheme{}); // default = Alchemy Gold
+}
+
+// ---------------------------------------------------------------------------
+void AlchemyLookAndFeel::applyTheme(const ColorTheme& theme)
+{
+    activeTheme_ = theme;
+
+    setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(theme.background));
+    setColour(juce::Slider::rotarySliderFillColourId,    juce::Colour(theme.lfoAccent));
+    setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(theme.darkIron));
+    setColour(juce::Slider::thumbColourId,               juce::Colour(theme.parchment));
+    setColour(juce::Label::textColourId,                 juce::Colour(theme.parchment));
+    setColour(juce::TextButton::buttonColourId,          juce::Colour(theme.darkIron));
+    setColour(juce::TextButton::textColourOffId,         juce::Colour(theme.parchment));
+    setColour(juce::TextButton::textColourOnId,          juce::Colour(theme.brightGold));
+    setColour(juce::ComboBox::backgroundColourId,        juce::Colour(theme.darkIron));
+    setColour(juce::ComboBox::textColourId,              juce::Colour(theme.parchment));
+    setColour(juce::PopupMenu::backgroundColourId,       juce::Colour(theme.darkIron));
+    setColour(juce::PopupMenu::textColourId,             juce::Colour(theme.parchment));
 }
 
 // ---------------------------------------------------------------------------
@@ -28,6 +35,8 @@ void AlchemyLookAndFeel::drawRotarySlider(
     float rotaryStartAngle, float rotaryEndAngle,
     juce::Slider& slider)
 {
+    const auto& t = activeTheme_;
+
     const float radius    = static_cast<float>(juce::jmin(width, height)) * 0.5f - 4.0f;
     const float centreX   = static_cast<float>(x) + static_cast<float>(width)  * 0.5f;
     const float centreY   = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
@@ -58,7 +67,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
         const float shadowAlpha = hovering ? 0.8f : 0.6f;
         const float shadowBlur  = radius * (hovering ? 0.2f : 0.15f);
         const float shadowOfsY  = radius * 0.06f;
-        juce::DropShadow shadow(juce::Colour(kObsidian).withAlpha(shadowAlpha * disabledAlpha),
+        juce::DropShadow shadow(juce::Colour(t.obsidian).withAlpha(shadowAlpha * disabledAlpha),
                                 static_cast<int>(shadowBlur),
                                 juce::Point<int>(0, static_cast<int>(shadowOfsY)));
         juce::Path shadowEllipse;
@@ -70,7 +79,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
     // --- Layer 3: Outer bevel ring ---
     {
         const float ringWidth = juce::jmax(1.5f, radius * 0.08f);
-        g.setColour(juce::Colour(kBronze).withAlpha(disabledAlpha));
+        g.setColour(juce::Colour(t.bronze).withAlpha(disabledAlpha));
         g.drawEllipse(centreX - radius, centreY - radius,
                       radius * 2.0f, radius * 2.0f, ringWidth);
     }
@@ -81,11 +90,11 @@ void AlchemyLookAndFeel::drawRotarySlider(
         const float lightOfsX = -bodyRadius * 0.3f;
         const float lightOfsY = -bodyRadius * 0.3f;
         juce::ColourGradient bodyGrad(
-            juce::Colour(kDarkParchmentMid).withAlpha(disabledAlpha),
+            juce::Colour(t.darkParchmentMid).withAlpha(disabledAlpha),
             centreX + lightOfsX, centreY + lightOfsY,
-            juce::Colour(kObsidianLight).withAlpha(disabledAlpha),
+            juce::Colour(t.obsidianLight).withAlpha(disabledAlpha),
             centreX + bodyRadius, centreY + bodyRadius, true);
-        bodyGrad.addColour(0.55, juce::Colour(kDarkParchment).withAlpha(disabledAlpha));
+        bodyGrad.addColour(0.55, juce::Colour(t.darkParchment).withAlpha(disabledAlpha));
         g.setGradientFill(bodyGrad);
         g.fillEllipse(centreX - bodyRadius, centreY - bodyRadius,
                       bodyRadius * 2.0f, bodyRadius * 2.0f);
@@ -94,7 +103,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
     // --- Layer 5: Inner edge shadow ---
     {
         const float edgeWidth = juce::jmax(1.0f, radius * 0.04f);
-        g.setColour(juce::Colour(kObsidian).withAlpha(0.4f * disabledAlpha));
+        g.setColour(juce::Colour(t.obsidian).withAlpha(0.4f * disabledAlpha));
         g.drawEllipse(centreX - bodyRadius, centreY - bodyRadius,
                       bodyRadius * 2.0f, bodyRadius * 2.0f, edgeWidth);
     }
@@ -105,9 +114,9 @@ void AlchemyLookAndFeel::drawRotarySlider(
         const float specOfsX = -bodyRadius * 0.25f;
         const float specOfsY = -bodyRadius * 0.3f;
         juce::ColourGradient specGrad(
-            juce::Colour(kAgedPapyrus).withAlpha(0.12f * disabledAlpha),
+            juce::Colour(t.agedPapyrus).withAlpha(0.12f * disabledAlpha),
             centreX + specOfsX, centreY + specOfsY,
-            juce::Colour(kAgedPapyrus).withAlpha(0.0f),
+            juce::Colour(t.agedPapyrus).withAlpha(0.0f),
             centreX + specOfsX + specR, centreY + specOfsY + specR, true);
         g.setGradientFill(specGrad);
         g.fillEllipse(centreX + specOfsX - specR, centreY + specOfsY - specR,
@@ -123,12 +132,12 @@ void AlchemyLookAndFeel::drawRotarySlider(
         g.reduceClipRegion(bodyClip);
 
         juce::ColourGradient sheenGrad(
-            juce::Colour(kAgedPapyrusDark).withAlpha(0.0f),
+            juce::Colour(t.agedPapyrusDark).withAlpha(0.0f),
             centreX - bodyRadius, centreY - bodyRadius * 0.5f,
-            juce::Colour(kAgedPapyrusDark).withAlpha(0.0f),
+            juce::Colour(t.agedPapyrusDark).withAlpha(0.0f),
             centreX + bodyRadius, centreY + bodyRadius * 0.5f, false);
-        sheenGrad.addColour(0.45, juce::Colour(kAgedPapyrusDark).withAlpha(0.07f * disabledAlpha));
-        sheenGrad.addColour(0.55, juce::Colour(kAgedPapyrusDark).withAlpha(0.07f * disabledAlpha));
+        sheenGrad.addColour(0.45, juce::Colour(t.agedPapyrusDark).withAlpha(0.07f * disabledAlpha));
+        sheenGrad.addColour(0.55, juce::Colour(t.agedPapyrusDark).withAlpha(0.07f * disabledAlpha));
         g.setGradientFill(sheenGrad);
         g.fillRect(centreX - bodyRadius, centreY - bodyRadius,
                    bodyRadius * 2.0f, bodyRadius * 2.0f);
@@ -141,7 +150,7 @@ void AlchemyLookAndFeel::drawRotarySlider(
         juce::Path trackArc;
         trackArc.addCentredArc(centreX, centreY, arcRadius, arcRadius,
                                0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(kObsidian).withAlpha(0.6f * disabledAlpha));
+        g.setColour(juce::Colour(t.obsidian).withAlpha(0.6f * disabledAlpha));
         g.strokePath(trackArc, juce::PathStrokeType(arcStroke,
                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
@@ -177,12 +186,12 @@ void AlchemyLookAndFeel::drawRotarySlider(
         indicator.lineTo(centreX + outerR * cosA, centreY + outerR * sinA);
 
         // Glow behind line
-        g.setColour(juce::Colour(kAgedPapyrus).withAlpha(0.15f * disabledAlpha));
+        g.setColour(juce::Colour(t.agedPapyrus).withAlpha(0.15f * disabledAlpha));
         g.strokePath(indicator, juce::PathStrokeType(lineWidth * 3.0f,
                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Solid indicator
-        g.setColour(juce::Colour(kAgedPapyrus).withAlpha(0.9f * disabledAlpha));
+        g.setColour(juce::Colour(t.agedPapyrus).withAlpha(0.9f * disabledAlpha));
         g.strokePath(indicator, juce::PathStrokeType(lineWidth,
                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
@@ -202,10 +211,12 @@ void AlchemyLookAndFeel::drawLinearSlider(
         return;
     }
 
+    const auto& t = activeTheme_;
+
     const bool enabled = slider.isEnabled();
     const float disabledAlpha = enabled ? 1.0f : 0.3f;
     const bool hero = slider.findColour(juce::Slider::rotarySliderFillColourId)
-                      == juce::Colour(kBrightGold);
+                      == juce::Colour(t.brightGold);
     const float trackH  = hero ? 6.0f : 3.0f;
     const float thumbR   = hero ? 5.0f : 3.5f;
     const float cy       = static_cast<float>(y) + static_cast<float>(height) * 0.5f;
@@ -214,34 +225,33 @@ void AlchemyLookAndFeel::drawLinearSlider(
     const float trackTop = cy - trackH * 0.5f;
 
     if (hero && enabled) {
-        // Outer glow — semi-transparent bright gold shadow behind track
-        g.setColour(juce::Colour(kBrightGold).withAlpha(0.15f));
+        // Outer glow
+        g.setColour(juce::Colour(t.brightGold).withAlpha(0.15f));
         g.fillRoundedRectangle(left - 2.0f, trackTop - 3.0f,
                                (right - left) + 4.0f, trackH + 6.0f, 4.0f);
     }
 
-    // Background track — dark iron with bronze outline
-    g.setColour(juce::Colour(kDarkIron).withAlpha(disabledAlpha));
+    // Background track
+    g.setColour(juce::Colour(t.darkIron).withAlpha(disabledAlpha));
     g.fillRoundedRectangle(left, trackTop, right - left, trackH, trackH * 0.5f);
-    g.setColour(juce::Colour(kBronze).withAlpha(0.5f * disabledAlpha));
+    g.setColour(juce::Colour(t.bronze).withAlpha(0.5f * disabledAlpha));
     g.drawRoundedRectangle(left, trackTop, right - left, trackH, trackH * 0.5f, 1.0f);
 
     // Value fill
     const float fillW = sliderPos - left;
     if (fillW > 0.5f) {
         if (hero) {
-            // Warm-gold → bright-gold horizontal gradient
             g.setGradientFill(juce::ColourGradient(
-                juce::Colour(kWarmGold).withAlpha(disabledAlpha), left, cy,
-                juce::Colour(kBrightGold).withAlpha(disabledAlpha), sliderPos, cy, false));
+                juce::Colour(t.warmGold).withAlpha(disabledAlpha), left, cy,
+                juce::Colour(t.brightGold).withAlpha(disabledAlpha), sliderPos, cy, false));
         } else {
-            g.setColour(juce::Colour(kWarmGold).withAlpha(disabledAlpha));
+            g.setColour(juce::Colour(t.warmGold).withAlpha(disabledAlpha));
         }
         g.fillRoundedRectangle(left, trackTop, fillW, trackH, trackH * 0.5f);
     }
 
     // Thumb
-    g.setColour(juce::Colour(kParchment).withAlpha(disabledAlpha));
+    g.setColour(juce::Colour(t.parchment).withAlpha(disabledAlpha));
     g.fillEllipse(sliderPos - thumbR, cy - thumbR, thumbR * 2.0f, thumbR * 2.0f);
 }
 
@@ -253,10 +263,10 @@ void AlchemyLookAndFeel::drawButtonBackground(
     bool shouldDrawButtonAsHighlighted,
     bool shouldDrawButtonAsDown)
 {
+    const auto& t = activeTheme_;
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
 
-    // Fill: dark iron; slightly brighter when pressed or highlighted
-    juce::Colour fill = juce::Colour(kDarkIron);
+    juce::Colour fill = juce::Colour(t.darkIron);
     if (shouldDrawButtonAsDown)
         fill = fill.brighter(0.2f);
     else if (shouldDrawButtonAsHighlighted)
@@ -265,10 +275,9 @@ void AlchemyLookAndFeel::drawButtonBackground(
     g.setColour(fill);
     g.fillRoundedRectangle(bounds, 3.0f);
 
-    // Border: bronze
     const juce::Colour border = button.getToggleState()
-        ? juce::Colour(kWarmGold)
-        : juce::Colour(kBronze);
+        ? juce::Colour(t.warmGold)
+        : juce::Colour(t.bronze);
     g.setColour(border);
     g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
 }
@@ -295,6 +304,8 @@ void AlchemyLookAndFeel::drawButtonText(
 // ---------------------------------------------------------------------------
 void AlchemyLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
 {
+    const auto& t = activeTheme_;
+
     g.fillAll(label.findColour(juce::Label::backgroundColourId));
 
     if (!label.isBeingEdited()) {
@@ -307,8 +318,8 @@ void AlchemyLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
         const int maxLines = juce::jmax(1, static_cast<int>(
             static_cast<float>(textArea.getHeight()) / font.getHeight()));
 
-        // Glow pass for XYZ hero labels (identified by kGoldLeafPale text colour)
-        if (textColour == juce::Colour(kGoldLeafPale)) {
+        // Glow pass for XYZ hero labels (identified by goldLeafPale text colour)
+        if (textColour == juce::Colour(t.goldLeafPale)) {
             g.setColour(textColour.withAlpha(0.20f * alpha));
             g.drawFittedText(label.getText(), textArea.translated(0, 1),
                              label.getJustificationType(), maxLines,
@@ -320,7 +331,7 @@ void AlchemyLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
                          maxLines, label.getMinimumHorizontalScale());
     }
     else if (label.isEnabled()) {
-        g.setColour(juce::Colour(kParchment));
+        g.setColour(juce::Colour(t.parchment));
         g.drawRect(label.getLocalBounds());
     }
 }
@@ -332,13 +343,14 @@ void AlchemyLookAndFeel::drawComboBox(
     int /*buttonX*/, int /*buttonY*/, int /*buttonW*/, int /*buttonH*/,
     juce::ComboBox& box)
 {
+    const auto& t = activeTheme_;
     const auto bounds = juce::Rectangle<float>(0.0f, 0.0f,
         static_cast<float>(width), static_cast<float>(height));
 
-    g.setColour(juce::Colour(kDarkIron));
+    g.setColour(juce::Colour(t.darkIron));
     g.fillRoundedRectangle(bounds, 3.0f);
 
-    g.setColour(isButtonDown ? juce::Colour(kWarmGold) : juce::Colour(kBronze));
+    g.setColour(isButtonDown ? juce::Colour(t.warmGold) : juce::Colour(t.bronze));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
 
     {
@@ -351,7 +363,7 @@ void AlchemyLookAndFeel::drawComboBox(
         arrow.addTriangle(arrowX, arrowY,
                           arrowX + arrowW, arrowY,
                           arrowX + arrowW * 0.5f, arrowY + arrowH);
-        g.setColour(juce::Colour(kWarmGold).withAlpha(box.isEnabled() ? 1.0f : 0.4f));
+        g.setColour(juce::Colour(t.warmGold).withAlpha(box.isEnabled() ? 1.0f : 0.4f));
         g.fillPath(arrow);
     }
 }
@@ -367,16 +379,18 @@ void AlchemyLookAndFeel::drawPopupMenuItem(
     const juce::Drawable* /*icon*/,
     const juce::Colour* /*textColour*/)
 {
+    const auto& t = activeTheme_;
+
     if (isSeparator)
     {
-        g.setColour(juce::Colour(kBronze).withAlpha(0.4f));
+        g.setColour(juce::Colour(t.bronze).withAlpha(0.4f));
         g.fillRect(area.reduced(5, 0).removeFromTop(1));
         return;
     }
 
     if (isHighlighted && isActive)
     {
-        g.setColour(juce::Colour(kBronze).withAlpha(0.25f));
+        g.setColour(juce::Colour(t.bronze).withAlpha(0.25f));
         g.fillRect(area);
     }
 
@@ -384,9 +398,9 @@ void AlchemyLookAndFeel::drawPopupMenuItem(
         juce::jmin(14.0f, static_cast<float>(area.getHeight()) * 0.7f))));
 
     juce::Colour textCol = isActive
-        ? juce::Colour(kParchment) : juce::Colour(kParchment).withAlpha(0.4f);
-    if (isHighlighted && isActive) textCol = juce::Colour(kBrightGold);
-    if (isTicked) textCol = juce::Colour(kWarmGold);
+        ? juce::Colour(t.parchment) : juce::Colour(t.parchment).withAlpha(0.4f);
+    if (isHighlighted && isActive) textCol = juce::Colour(t.brightGold);
+    if (isTicked) textCol = juce::Colour(t.warmGold);
 
     g.setColour(textCol);
     g.drawText(text, area.reduced(12, 0), juce::Justification::centredLeft, true);
@@ -396,7 +410,7 @@ void AlchemyLookAndFeel::drawPopupMenuItem(
         const float dotR = 3.0f;
         const float dotX = static_cast<float>(area.getX()) + 5.0f;
         const float dotY = static_cast<float>(area.getCentreY());
-        g.setColour(juce::Colour(kWarmGold));
+        g.setColour(juce::Colour(t.warmGold));
         g.fillEllipse(dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
     }
 }
@@ -407,9 +421,11 @@ void AlchemyLookAndFeel::drawToggleButton(
     bool shouldDrawButtonAsHighlighted,
     bool shouldDrawButtonAsDown)
 {
+    const auto& t = activeTheme_;
+
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
 
-    juce::Colour fill = juce::Colour(kDarkIron);
+    juce::Colour fill = juce::Colour(t.darkIron);
     if (shouldDrawButtonAsDown)
         fill = fill.brighter(0.2f);
     else if (shouldDrawButtonAsHighlighted)
@@ -418,8 +434,8 @@ void AlchemyLookAndFeel::drawToggleButton(
     g.fillRoundedRectangle(bounds, 3.0f);
 
     const juce::Colour border = button.getToggleState()
-        ? juce::Colour(kWarmGold)
-        : juce::Colour(kBronze);
+        ? juce::Colour(t.warmGold)
+        : juce::Colour(t.bronze);
     g.setColour(border);
     g.drawRoundedRectangle(bounds, 3.0f, 1.5f);
 
@@ -428,19 +444,17 @@ void AlchemyLookAndFeel::drawToggleButton(
         if (button.getToggleState()) {
             auto inner = bounds.reduced(4.0f);
 
-            // 1. Soft radial glow — warm gold emanating from center
             auto cx = inner.getCentreX();
             auto cy = inner.getCentreY();
             auto radius = juce::jmax(inner.getWidth(), inner.getHeight()) * 0.55f;
             juce::ColourGradient glow(
-                juce::Colour(kWarmGold).withAlpha(0.25f), cx, cy,
-                juce::Colour(kWarmGold).withAlpha(0.0f), cx + radius, cy + radius,
-                true); // radial
+                juce::Colour(t.warmGold).withAlpha(0.25f), cx, cy,
+                juce::Colour(t.warmGold).withAlpha(0.0f), cx + radius, cy + radius,
+                true);
             g.setGradientFill(glow);
             g.fillRoundedRectangle(inner, 2.0f);
 
-            // 2. Faint warm tint over entire inner area
-            g.setColour(juce::Colour(kWarmGold).withAlpha(0.06f));
+            g.setColour(juce::Colour(t.warmGold).withAlpha(0.06f));
             g.fillRoundedRectangle(inner, 2.0f);
         }
     } else {
@@ -448,8 +462,8 @@ void AlchemyLookAndFeel::drawToggleButton(
             static_cast<float>(button.getHeight()) * 0.5f);
         g.setFont(juce::Font(juce::FontOptions(fontSize)));
         g.setColour(button.getToggleState()
-            ? juce::Colour(kBrightGold)
-            : juce::Colour(kParchment).withMultipliedAlpha(
+            ? juce::Colour(t.brightGold)
+            : juce::Colour(t.parchment).withMultipliedAlpha(
                 button.isEnabled() ? 1.0f : 0.5f));
         g.drawText(button.getButtonText(), button.getLocalBounds(),
                    juce::Justification::centred, true);

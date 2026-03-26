@@ -183,6 +183,11 @@ private:
     float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
     float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
 
+    // Circular (angular) smoothers for listener yaw/pitch — prevents clicks at 360°↔0° wrap.
+    float yawSmCos_ = 1.0f, yawSmSin_ = 0.0f;
+    float pitchSmCos_ = 1.0f, pitchSmSin_ = 0.0f;
+    float rollSmCos_ = 1.0f, rollSmSin_ = 0.0f;
+
     // Last L/R node positions for position bridge
     StereoNodePositions lastStereoNodes_{};
 

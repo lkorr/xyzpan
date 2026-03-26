@@ -38,6 +38,7 @@ struct ERPipeline {
                            float dampCutoff, float roomHalf,
                            float ildGainBase, bool rotated,
                            float cosY, float sinY, float cosP, float sinP,
+                           float cosR, float sinR,
                            const EngineParams& params);
 };
 

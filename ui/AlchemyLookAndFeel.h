@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "ColorTheme.h"
 
 namespace xyzpan {
 
@@ -18,6 +19,10 @@ class AlchemyLookAndFeel : public juce::LookAndFeel_V4 {
 public:
     AlchemyLookAndFeel();
     ~AlchemyLookAndFeel() override = default;
+
+    // Apply a runtime color theme — re-sets all JUCE color IDs and internal palette.
+    void applyTheme(const ColorTheme& theme);
+    const ColorTheme& currentTheme() const { return activeTheme_; }
 
     void drawRotarySlider(juce::Graphics& g,
                           int x, int y, int width, int height,
@@ -118,6 +123,8 @@ public:
     static constexpr uint32_t kHoverGold   = kGoldLeafPale;
 
 private:
+    ColorTheme activeTheme_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AlchemyLookAndFeel)
 };
 

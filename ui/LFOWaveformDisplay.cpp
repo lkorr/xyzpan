@@ -35,12 +35,17 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
     const float h = bounds.getHeight();
     if (w < 2.0f || h < 2.0f) return;
 
+    // Resolve theme colors from LookAndFeel (falls back to Alchemy defaults)
+    xyzpan::ColorTheme theme;
+    if (auto* alf = dynamic_cast<xyzpan::AlchemyLookAndFeel*>(&getLookAndFeel()))
+        theme = alf->currentTheme();
+
     // Background fill
-    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBackground));
+    g.setColour(juce::Colour(theme.background));
     g.fillRoundedRectangle(bounds, 3.0f);
 
     // Border
-    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze));
+    g.setColour(juce::Colour(theme.bronze));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
 
     if (historyCount_ == 0) return;
@@ -79,16 +84,16 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
 
     // Waveform line
     const float alpha = isEnabled() ? 1.0f : 0.4f;
-    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold).withAlpha(alpha));
+    g.setColour(juce::Colour(theme.lfoAccent).withAlpha(alpha));
     g.strokePath(path, juce::PathStrokeType(1.5f));
 
-    // Bright gold dot at right edge marking current value
+    // Bright dot at right edge marking current value
     {
         float dotX = bounds.getX() + pad + drawW;
         float dotY = lastPy;
         float dotR = 3.0f;
 
-        g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold).withAlpha(alpha));
+        g.setColour(juce::Colour(theme.lfoAccentBright).withAlpha(alpha));
         g.fillEllipse(dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
     }
 }

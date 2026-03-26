@@ -2,7 +2,7 @@ juce_add_plugin(XYZPan
     COMPANY_NAME "XYZAudio"
     PLUGIN_MANUFACTURER_CODE Xyza
     PLUGIN_CODE Xzpn
-    FORMATS VST3 Standalone
+    FORMATS VST3 AU Standalone
     PRODUCT_NAME "XYZPan"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -30,8 +30,12 @@ target_compile_definitions(XYZPan
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_DIRECT2D=0     # Phase 6: prevent D2D/OpenGL conflict on Windows NVIDIA
 )
+
+# Prevent D2D/OpenGL conflict on Windows NVIDIA (Phase 6)
+if(WIN32)
+    target_compile_definitions(XYZPan PUBLIC JUCE_DIRECT2D=0)
+endif()
 
 target_link_libraries(XYZPan
     PRIVATE
@@ -40,6 +44,7 @@ target_link_libraries(XYZPan
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_opengl   # Phase 6: OpenGL context and shader program
+        juce::juce_gui_extra  # ColourSelector + CallOutBox for avatar color swatches
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags

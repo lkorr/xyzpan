@@ -107,16 +107,21 @@ void LFOShapeSelector::ShapeButton::paint(juce::Graphics& g) {
     const float h = bounds.getHeight();
     const bool selected = (index_ == owner_.selected_);
 
+    // Resolve theme colors from LookAndFeel (falls back to Alchemy defaults)
+    xyzpan::ColorTheme theme;
+    if (auto* alf = dynamic_cast<xyzpan::AlchemyLookAndFeel*>(&getLookAndFeel()))
+        theme = alf->currentTheme();
+
     // Background
-    g.setColour(juce::Colour(xyzpan::AlchemyLookAndFeel::kBackground));
+    g.setColour(juce::Colour(theme.background));
     g.fillRoundedRectangle(bounds, 2.0f);
 
-    // Border: warm gold if selected, bronze if not
+    // Border: accent if selected, bronze if not
     const float alpha = isEnabled() ? 1.0f : 0.4f;
     const auto borderColour = (selected
-        ? juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold)
-        : (hovered_ ? juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold).withAlpha(0.6f)
-                     : juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze)))
+        ? juce::Colour(theme.lfoAccent)
+        : (hovered_ ? juce::Colour(theme.lfoAccent).withAlpha(0.6f)
+                     : juce::Colour(theme.bronze)))
         .withMultipliedAlpha(alpha);
     g.setColour(borderColour);
     g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
@@ -145,9 +150,9 @@ void LFOShapeSelector::ShapeButton::paint(juce::Graphics& g) {
     }
 
     const auto lineColour = (selected
-        ? juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold)
-        : (hovered_ ? juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold)
-                     : juce::Colour(xyzpan::AlchemyLookAndFeel::kBronze).brighter(0.3f)))
+        ? juce::Colour(theme.lfoAccentBright)
+        : (hovered_ ? juce::Colour(theme.lfoAccent)
+                     : juce::Colour(theme.bronze).brighter(0.3f)))
         .withMultipliedAlpha(alpha);
     g.setColour(lineColour);
     g.strokePath(path, juce::PathStrokeType(1.2f));

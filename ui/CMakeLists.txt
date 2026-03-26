@@ -5,6 +5,8 @@ add_library(xyzpan_ui STATIC
     Camera.cpp
     Mesh.cpp
     AlchemyLookAndFeel.cpp
+    ColorTheme.cpp
+    UserPreferences.cpp
     XYZPanGLView.cpp
     LFOShapeSelector.cpp    # LFO shape selector row (replaces LFOWaveformButton)
     LFOWaveformDisplay.cpp  # Live waveform display in LFO strips
@@ -25,3 +27,8 @@ target_link_libraries(xyzpan_ui
         juce::juce_gui_basics
         glm::glm
 )
+
+# Suppress Apple's OpenGL deprecation warnings (deprecated in 10.14, still functional)
+if(APPLE)
+    target_compile_definitions(xyzpan_ui PRIVATE GL_SILENCE_DEPRECATION)
+endif()

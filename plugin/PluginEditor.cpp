@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
+#include "xyzpan/Constants.h"
 #include <random>
 
 // ---------------------------------------------------------------------------
@@ -117,23 +118,41 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(faceListenerToggle_);
     faceListenerAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
 
-    // ----- Listener head orientation knobs -----
-    for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_}) {
+    // ----- Listener head orientation knobs (continuous / wrapping) -----
+    for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 55, 14);
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                         juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold));
+        knob->setRotaryParameters(0.0f, juce::MathConstants<float>::twoPi, false);
         addAndMakeVisible(knob);
     }
     listenerYawAtt_   = std::make_unique<SA>(p.apvts, ParamID::LISTENER_YAW,   listenerYawKnob_);
     listenerPitchAtt_ = std::make_unique<SA>(p.apvts, ParamID::LISTENER_PITCH, listenerPitchKnob_);
+    listenerRollAtt_  = std::make_unique<SA>(p.apvts, ParamID::LISTENER_ROLL,  listenerRollKnob_);
     listenerYawLabel_.setText("Yaw", juce::dontSendNotification);
     listenerPitchLabel_.setText("Pitch", juce::dontSendNotification);
-    for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_}) {
+    listenerRollLabel_.setText("Roll", juce::dontSendNotification);
+    for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_}) {
         lbl->setJustificationType(juce::Justification::centred);
         lbl->setFont(juce::Font(juce::FontOptions(10.0f)));
         addAndMakeVisible(lbl);
     }
+
+    // Head-follows-camera toggle
+    headFollowsToggle_.setButtonText("Head Follows Camera");
+    headFollowsToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(headFollowsToggle_);
+    headFollowsAtt_ = std::make_unique<BA>(p.apvts, ParamID::HEAD_FOLLOWS_CAMERA, headFollowsToggle_);
+
+    // Perspective tab components initially hidden (Options tab is default)
+    listenerYawKnob_.setVisible(false);
+    listenerYawLabel_.setVisible(false);
+    listenerPitchKnob_.setVisible(false);
+    listenerPitchLabel_.setVisible(false);
+    listenerRollKnob_.setVisible(false);
+    listenerRollLabel_.setVisible(false);
+    headFollowsToggle_.setVisible(false);
 
     binauralToggle_.setButtonText("");
     binauralToggle_.setClickingTogglesState(true);
@@ -142,7 +161,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     binauralLabel_.setText("Binaural", juce::dontSendNotification);
     binauralLabel_.setJustificationType(juce::Justification::centredLeft);
-    binauralLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    binauralLabel_.setFont(juce::Font(juce::FontOptions(8.0f)));
     addAndMakeVisible(binauralLabel_);
 
     earlyReflToggle_.setButtonText("");
@@ -152,7 +171,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     earlyReflLabel_.setText("Early Reflections", juce::dontSendNotification);
     earlyReflLabel_.setJustificationType(juce::Justification::centredLeft);
-    earlyReflLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    earlyReflLabel_.setFont(juce::Font(juce::FontOptions(8.0f)));
     addAndMakeVisible(earlyReflLabel_);
 
     // ----- Reset Orbit LFO Phases button -----
@@ -316,8 +335,297 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
             });
     };
 
+    // ----- User preferences (theme + avatar persistence) -----
+    userPrefs_ = std::make_unique<xyzpan::UserPreferences>();
+    lookAndFeel_.applyTheme(userPrefs_->activeTheme());
+    glView_.setColorTheme(userPrefs_->activeTheme());
+    glView_.setAvatarParams(userPrefs_->avatarParams());
+
+    // ----- Customize tab: theme combo -----
+    themeLabel_.setText("Theme", juce::dontSendNotification);
+    themeLabel_.setJustificationType(juce::Justification::centredLeft);
+    themeLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    customizeContent_.addAndMakeVisible(themeLabel_);
+
+    for (int i = 0; i < xyzpan::kNumThemes; ++i)
+        themeCombo_.addItem(xyzpan::getThemeEntry(i).name, i + 1);
+    themeCombo_.setSelectedId(userPrefs_->themeIndex() + 1, juce::dontSendNotification);
+    themeCombo_.onChange = [this] {
+        int idx = themeCombo_.getSelectedId() - 1;
+        if (idx >= 0 && idx < xyzpan::kNumThemes) {
+            userPrefs_->setThemeIndex(idx);
+            applyCurrentTheme();
+        }
+    };
+    customizeContent_.addAndMakeVisible(themeCombo_);
+
+    // ----- Customize tab: color swatches -----
+    {
+        auto initLabel = [this](juce::Label& label, const juce::String& name) {
+            label.setText(name, juce::dontSendNotification);
+            label.setJustificationType(juce::Justification::centredLeft);
+            label.setFont(juce::Font(juce::FontOptions(10.0f)));
+            customizeContent_.addAndMakeVisible(label);
+        };
+        initLabel(headColorLabel_,  "Head");
+        initLabel(noseColorLabel_,  "Nose");
+        initLabel(hatColorLabel_,   "Hat");
+        initLabel(eyeColorLabel_,   "Eyes");
+
+        auto toJuceCol = [](const glm::vec3& v) {
+            return juce::Colour::fromFloatRGBA(v.r, v.g, v.b, 1.0f);
+        };
+
+        const auto& avp = userPrefs_->avatarParams();
+        const auto& thm = userPrefs_->activeTheme();
+
+        headColorSwatch_.setColour(avp.headColor ? juce::Colour(avp.headColor) : toJuceCol(thm.glListenerHead));
+        headColorSwatch_.onChange = [this](juce::Colour c) {
+            auto a = userPrefs_->avatarParams(); a.headColor = c.getARGB(); userPrefs_->setAvatarParams(a);
+            pushAvatarToGL();
+        };
+        headColorSwatch_.onReset = [this]() {
+            auto a = userPrefs_->avatarParams(); a.headColor = 0; userPrefs_->setAvatarParams(a);
+            headColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+                userPrefs_->activeTheme().glListenerHead.r,
+                userPrefs_->activeTheme().glListenerHead.g,
+                userPrefs_->activeTheme().glListenerHead.b, 1.0f));
+            pushAvatarToGL();
+        };
+        customizeContent_.addAndMakeVisible(headColorSwatch_);
+
+        noseColorSwatch_.setColour(avp.noseColor ? juce::Colour(avp.noseColor) : toJuceCol(thm.glNose));
+        noseColorSwatch_.onChange = [this](juce::Colour c) {
+            auto a = userPrefs_->avatarParams(); a.noseColor = c.getARGB(); userPrefs_->setAvatarParams(a);
+            pushAvatarToGL();
+        };
+        noseColorSwatch_.onReset = [this]() {
+            auto a = userPrefs_->avatarParams(); a.noseColor = 0; userPrefs_->setAvatarParams(a);
+            noseColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+                userPrefs_->activeTheme().glNose.r,
+                userPrefs_->activeTheme().glNose.g,
+                userPrefs_->activeTheme().glNose.b, 1.0f));
+            pushAvatarToGL();
+        };
+        customizeContent_.addAndMakeVisible(noseColorSwatch_);
+
+        hatColorSwatch_.setColour(avp.hatColor ? juce::Colour(avp.hatColor) : toJuceCol(thm.glHat));
+        hatColorSwatch_.onChange = [this](juce::Colour c) {
+            auto a = userPrefs_->avatarParams(); a.hatColor = c.getARGB(); userPrefs_->setAvatarParams(a);
+            pushAvatarToGL();
+        };
+        hatColorSwatch_.onReset = [this]() {
+            auto a = userPrefs_->avatarParams(); a.hatColor = 0; userPrefs_->setAvatarParams(a);
+            hatColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+                userPrefs_->activeTheme().glHat.r,
+                userPrefs_->activeTheme().glHat.g,
+                userPrefs_->activeTheme().glHat.b, 1.0f));
+            pushAvatarToGL();
+        };
+        customizeContent_.addAndMakeVisible(hatColorSwatch_);
+
+        eyeColorSwatch_.setColour(avp.eyeColor ? juce::Colour(avp.eyeColor) : toJuceCol(thm.glEyeWhite));
+        eyeColorSwatch_.onChange = [this](juce::Colour c) {
+            auto a = userPrefs_->avatarParams(); a.eyeColor = c.getARGB(); userPrefs_->setAvatarParams(a);
+            pushAvatarToGL();
+        };
+        eyeColorSwatch_.onReset = [this]() {
+            auto a = userPrefs_->avatarParams(); a.eyeColor = 0; userPrefs_->setAvatarParams(a);
+            eyeColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+                userPrefs_->activeTheme().glEyeWhite.r,
+                userPrefs_->activeTheme().glEyeWhite.g,
+                userPrefs_->activeTheme().glEyeWhite.b, 1.0f));
+            pushAvatarToGL();
+        };
+        customizeContent_.addAndMakeVisible(eyeColorSwatch_);
+    }
+
+    // ----- Customize tab: eye type combo -----
+    eyeTypeLabel_.setText("Eye Type", juce::dontSendNotification);
+    eyeTypeLabel_.setJustificationType(juce::Justification::centredLeft);
+    eyeTypeLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    customizeContent_.addAndMakeVisible(eyeTypeLabel_);
+
+    eyeTypeCombo_.addItem("None",    1);
+    eyeTypeCombo_.addItem("Normal",  2);
+    eyeTypeCombo_.addItem("Googly",  3);
+    eyeTypeCombo_.addItem("X-Eyes",  4);
+    eyeTypeCombo_.addItem("Cyclops", 5);
+    eyeTypeCombo_.setSelectedId(userPrefs_->avatarParams().eyeType + 1, juce::dontSendNotification);
+    eyeTypeCombo_.onChange = [this] {
+        int idx = eyeTypeCombo_.getSelectedId() - 1;
+        if (idx >= 0 && idx <= 4) {
+            auto ap = userPrefs_->avatarParams();
+            ap.eyeType = idx;
+            userPrefs_->setAvatarParams(ap);
+            pushAvatarToGL();
+            // Disable eyeSpacing slider when Cyclops is selected
+            eyeSpacingSlider_.setEnabled(idx != xyzpan::kEyeCyclops);
+            // Gravity/spring sliders only make sense for Googly eyes
+            googlyGravitySlider_.setEnabled(idx == xyzpan::kEyeGoogly);
+            googlySpringSlider_.setEnabled(idx == xyzpan::kEyeGoogly);
+        }
+    };
+    customizeContent_.addAndMakeVisible(eyeTypeCombo_);
+
+    // ----- Customize tab: ear type combo -----
+    earTypeLabel_.setText("Ear Type", juce::dontSendNotification);
+    earTypeLabel_.setJustificationType(juce::Justification::centredLeft);
+    earTypeLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    customizeContent_.addAndMakeVisible(earTypeLabel_);
+
+    earTypeCombo_.addItem("Default", 1);
+    earTypeCombo_.addItem("Pointy",  2);
+    earTypeCombo_.addItem("Round",   3);
+    earTypeCombo_.addItem("Cat",     4);
+    earTypeCombo_.setSelectedId(userPrefs_->avatarParams().earType + 1, juce::dontSendNotification);
+    earTypeCombo_.onChange = [this] {
+        int idx = earTypeCombo_.getSelectedId() - 1;
+        if (idx >= 0 && idx <= 3) {
+            auto ap = userPrefs_->avatarParams();
+            ap.earType = idx;
+            userPrefs_->setAvatarParams(ap);
+            pushAvatarToGL();
+        }
+    };
+    customizeContent_.addAndMakeVisible(earTypeCombo_);
+
+    // ----- Customize tab: hat type combo -----
+    hatTypeLabel_.setText("Hat Type", juce::dontSendNotification);
+    hatTypeLabel_.setJustificationType(juce::Justification::centredLeft);
+    hatTypeLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    customizeContent_.addAndMakeVisible(hatTypeLabel_);
+
+    hatTypeCombo_.addItem("None",        1);
+    hatTypeCombo_.addItem("Party Hat",   2);
+    hatTypeCombo_.addItem("Top Hat",     3);
+    hatTypeCombo_.addItem("Halo",        4);
+    hatTypeCombo_.addItem("Beanie",      5);
+    hatTypeCombo_.addItem("Devil Horns", 6);
+    hatTypeCombo_.addItem("Ponytail",    7);
+    hatTypeCombo_.setSelectedId(userPrefs_->avatarParams().hatType + 1, juce::dontSendNotification);
+    hatTypeCombo_.onChange = [this] {
+        int idx = hatTypeCombo_.getSelectedId() - 1;
+        if (idx >= 0 && idx <= 6) {
+            auto ap = userPrefs_->avatarParams();
+            ap.hatType = idx;
+            userPrefs_->setAvatarParams(ap);
+            pushAvatarToGL();
+        }
+    };
+    customizeContent_.addAndMakeVisible(hatTypeCombo_);
+
+    // ----- Customize tab: nose type combo -----
+    noseTypeLabel_.setText("Nose Type", juce::dontSendNotification);
+    noseTypeLabel_.setJustificationType(juce::Justification::centredLeft);
+    noseTypeLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    customizeContent_.addAndMakeVisible(noseTypeLabel_);
+
+    noseTypeCombo_.addItem("Cone",    1);
+    noseTypeCombo_.addItem("Button",  2);
+    noseTypeCombo_.addItem("Snout",   3);
+    noseTypeCombo_.addItem("Clown",   4);
+    noseTypeCombo_.addItem("Pointed", 5);
+    noseTypeCombo_.addItem("None",    6);
+    noseTypeCombo_.setSelectedId(userPrefs_->avatarParams().noseType + 1, juce::dontSendNotification);
+    noseTypeCombo_.onChange = [this] {
+        int idx = noseTypeCombo_.getSelectedId() - 1;
+        if (idx >= 0 && idx <= 5) {
+            auto ap = userPrefs_->avatarParams();
+            ap.noseType = idx;
+            userPrefs_->setAvatarParams(ap);
+            pushAvatarToGL();
+        }
+    };
+    customizeContent_.addAndMakeVisible(noseTypeCombo_);
+
+    // Apply initial Cyclops state for eyeSpacing
+    eyeSpacingSlider_.setEnabled(userPrefs_->avatarParams().eyeType != xyzpan::kEyeCyclops);
+    // Gravity/spring sliders only active for Googly eyes
+    googlyGravitySlider_.setEnabled(userPrefs_->avatarParams().eyeType == xyzpan::kEyeGoogly);
+    googlySpringSlider_.setEnabled(userPrefs_->avatarParams().eyeType == xyzpan::kEyeGoogly);
+
+    // ----- Customize tab: avatar sliders -----
+    auto configAvatarSlider = [this](juce::Slider& s, juce::Label& l, const juce::String& name,
+                                      float min, float max, float def) {
+        s.setSliderStyle(juce::Slider::LinearHorizontal);
+        s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 16);
+        s.setRange(static_cast<double>(min), static_cast<double>(max), 0.01);
+        s.setValue(static_cast<double>(def), juce::dontSendNotification);
+        l.setText(name, juce::dontSendNotification);
+        l.setJustificationType(juce::Justification::centredLeft);
+        l.setFont(juce::Font(juce::FontOptions(10.0f)));
+        customizeContent_.addAndMakeVisible(&s);
+        customizeContent_.addAndMakeVisible(&l);
+    };
+
+    const auto& ap = userPrefs_->avatarParams();
+    configAvatarSlider(headElongationSlider_, headElongationLabel_, "Elongation", 0.3f, 2.5f, ap.headElongation);
+    configAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_,        "Eye Size",   0.2f, 3.0f, ap.eyeSize);
+    configAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_,     "Eye Space",  0.2f, 3.0f, ap.eyeSpacing);
+    configAvatarSlider(earSizeSlider_,        earSizeLabel_,        "Ear Size",   0.2f, 3.0f, ap.earSize);
+    configAvatarSlider(headSizeSlider_,       headSizeLabel_,       "Head Size",  0.7f, 1.5f, ap.headSize);
+    configAvatarSlider(pupilSizeSlider_,     pupilSizeLabel_,     "Pupil Size", 0.0f, 1.0f, ap.pupilSize);
+    configAvatarSlider(googlyGravitySlider_, googlyGravityLabel_, "Eye Gravity", 0.0f, 1.0f, ap.googlyGravity);
+    configAvatarSlider(googlySpringSlider_,  googlySpringLabel_,  "Eye Return", 0.0f, 1.0f, ap.googlySpring);
+    configAvatarSlider(earRotationSlider_,   earRotationLabel_,   "Ear Rot",    -180.0f, 180.0f, ap.earRotation);
+    configAvatarSlider(hatSizeSlider_,       hatSizeLabel_,       "Hat Size",   0.2f, 2.0f, ap.hatSize);
+    configAvatarSlider(noseSizeSlider_,      noseSizeLabel_,      "Nose Size",  0.2f, 3.0f, ap.noseSize);
+
+    auto onAvatarChange = [this] {
+        auto a = userPrefs_->avatarParams();
+        a.headElongation = static_cast<float>(headElongationSlider_.getValue());
+        a.eyeSize        = static_cast<float>(eyeSizeSlider_.getValue());
+        a.eyeSpacing     = static_cast<float>(eyeSpacingSlider_.getValue());
+        a.earSize        = static_cast<float>(earSizeSlider_.getValue());
+        a.headSize       = static_cast<float>(headSizeSlider_.getValue());
+        a.pupilSize      = static_cast<float>(pupilSizeSlider_.getValue());
+        a.googlyGravity  = static_cast<float>(googlyGravitySlider_.getValue());
+        a.googlySpring   = static_cast<float>(googlySpringSlider_.getValue());
+        a.earRotation    = static_cast<float>(earRotationSlider_.getValue());
+        a.hatSize        = static_cast<float>(hatSizeSlider_.getValue());
+        a.noseSize       = static_cast<float>(noseSizeSlider_.getValue());
+        userPrefs_->setAvatarParams(a);
+        pushAvatarToGL();
+    };
+    headElongationSlider_.onValueChange = onAvatarChange;
+    eyeSizeSlider_.onValueChange        = onAvatarChange;
+    eyeSpacingSlider_.onValueChange     = onAvatarChange;
+    earSizeSlider_.onValueChange        = onAvatarChange;
+    headSizeSlider_.onValueChange       = onAvatarChange;
+    pupilSizeSlider_.onValueChange      = onAvatarChange;
+    googlyGravitySlider_.onValueChange  = onAvatarChange;
+    googlySpringSlider_.onValueChange   = onAvatarChange;
+    earRotationSlider_.onValueChange    = onAvatarChange;
+    hatSizeSlider_.onValueChange        = onAvatarChange;
+    noseSizeSlider_.onValueChange       = onAvatarChange;
+
+    // Section header paint callback
+    customizeContent_.onPaint = [this](juce::Graphics& g) {
+        g.setColour(juce::Colour(0xFFC9A84C).withAlpha(0.7f));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText("EYES", 4, eyesSectionHeaderY_, 60, 16, juce::Justification::centredLeft);
+        g.drawText("EARS", 4, earsSectionHeaderY_, 60, 16, juce::Justification::centredLeft);
+        g.drawText("NOSE", 4, noseSectionHeaderY_, 60, 16, juce::Justification::centredLeft);
+        g.drawText("HATS", 4, hatsSectionHeaderY_, 60, 16, juce::Justification::centredLeft);
+    };
+
+    // Set up scrollable viewport for customize tab
+    customizeViewport_.setViewedComponent(&customizeContent_, false);
+    customizeViewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(customizeViewport_);
+
+    // Customize tab starts hidden
+    customizeViewport_.setVisible(false);
+
     // Generate noise texture for panel overlay
     noiseTexture_ = generateNoiseTexture(256);
+
+    // Keyboard shortcut listener (captures Alt+R for module randomization)
+    addKeyListener(this);
+
+    // Listen to mouse clicks on all child components for last-clicked zone tracking
+    addMouseListener(this, true);
 
     // Window sizing
     setResizable(true, true);
@@ -330,6 +638,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 // ---------------------------------------------------------------------------
 XYZPanEditor::~XYZPanEditor()
 {
+    removeMouseListener(this);
+    removeKeyListener(this);
     setLookAndFeel(nullptr);
 }
 
@@ -357,20 +667,20 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::paint(juce::Graphics& g)
 {
-    using ALF = xyzpan::AlchemyLookAndFeel;
+    const auto& ct = lookAndFeel_.currentTheme();
     const auto lo = Layout::compute(getWidth(), getHeight());
     const int bx = 0;
     const int bw = getWidth() - kMeterW;
 
     // ===== BACKGROUNDS =====
-    g.fillAll(juce::Colour(ALF::kBackground));
+    g.fillAll(juce::Colour(ct.background));
 
     // Left column background (below preset bar)
-    g.setColour(juce::Colour(ALF::kDarkIron));
+    g.setColour(juce::Colour(ct.darkIron));
     g.fillRect(0, lo.contentY, kLeftColW, lo.leftColH);
 
     // Bottom row background
-    g.setColour(juce::Colour(ALF::kDarkIron));
+    g.setColour(juce::Colour(ct.darkIron));
     g.fillRect(0, lo.bottomY, bw, kBottomH);
 
     // ===== SECTION HEADERS =====
@@ -379,28 +689,58 @@ void XYZPanEditor::paint(juce::Graphics& g)
     auto drawHeader = [&](int x, int y, int w, const juce::String& text) {
         auto hdrRect = juce::Rectangle<int>(x, y, w, kSectionHdrH);
         g.setGradientFill(juce::ColourGradient(
-            juce::Colour(ALF::kBronze).withAlpha(0.25f), static_cast<float>(x), static_cast<float>(y),
-            juce::Colour(ALF::kDarkIron), static_cast<float>(x + w), static_cast<float>(y), false));
+            juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(x), static_cast<float>(y),
+            juce::Colour(ct.darkIron), static_cast<float>(x + w), static_cast<float>(y), false));
         g.fillRect(hdrRect);
-        g.setColour(juce::Colour(ALF::kBrightGold));
+        g.setColour(juce::Colour(ct.brightGold));
         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
         g.drawText(text, hdrRect.reduced(10, 0), juce::Justification::centredLeft);
-        g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.6f));
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
     // "POSITION" header — top of left column (below preset bar)
     drawHeader(0, lo.contentY, kLeftColW, "POSITION");
 
-    // "OPTIONS" header — bottom row, orbit portion (controls + LFO strips only)
-    drawHeader(bx, lo.bottomY, kOrbitCtrlW + lo.lfoTotalW, "OPTIONS");
-
-    // Orbit LFO plane labels (XY / XZ / YZ) in the header bar
+    // Tabbed header — bottom row, orbit portion: "Options" | "Perspective" tabs + LFO plane labels
     {
+        const int hdrY = lo.bottomY;
+        const int fullW = kOrbitCtrlW + lo.lfoTotalW;
+
+        // Background gradient for full header width (same as drawHeader)
+        auto hdrRect = juce::Rectangle<int>(bx, hdrY, fullW, kSectionHdrH);
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(bx), static_cast<float>(hdrY),
+            juce::Colour(ct.darkIron), static_cast<float>(bx + fullW), static_cast<float>(hdrY), false));
+        g.fillRect(hdrRect);
+
+        // Bottom line
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
+        g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(bx), static_cast<float>(bx + fullW));
+
+        // Tab labels in the 240px controls area — three thirds
+        const int thirdTab = kOrbitCtrlW / 3;
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+
+        auto tabColor = [&](OptionsTab t) {
+            return activeTab_ == t
+                ? juce::Colour(lookAndFeel_.currentTheme().brightGold)
+                : juce::Colour(lookAndFeel_.currentTheme().bronze);
+        };
+
+        g.setColour(tabColor(OptionsTab::Options));
+        g.drawText("Options", bx, hdrY, thirdTab, kSectionHdrH, juce::Justification::centred);
+
+        g.setColour(tabColor(OptionsTab::Perspective));
+        g.drawText("Persp.", bx + thirdTab, hdrY, thirdTab, kSectionHdrH, juce::Justification::centred);
+
+        g.setColour(tabColor(OptionsTab::Customize));
+        g.drawText("Custom", bx + thirdTab * 2, hdrY, kOrbitCtrlW - thirdTab * 2, kSectionHdrH, juce::Justification::centred);
+
+        // Orbit LFO plane labels (XY / XZ / YZ) in the right portion
         const int lfoX = lo.lfoX;
         const int stripW = lo.lfoTotalW / 3;
-        const int hdrY = lo.bottomY;
-        g.setColour(juce::Colour(ALF::kBrightGold));
+        g.setColour(juce::Colour(ct.brightGold));
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         g.drawText("XY", lfoX,              hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
         g.drawText("XZ", lfoX + stripW,     hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
@@ -415,7 +755,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
     {
         const int lfoSpeedRowH = 32;
         const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
-        g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.4f));
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
         g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
     }
 
@@ -425,14 +765,14 @@ void XYZPanEditor::paint(juce::Graphics& g)
         const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
         const int lfoSpeedRowH = 32;
         const float divBot = static_cast<float>(lo.bottomY - lfoSpeedRowH);
-        g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
         g.drawVerticalLine(subColW * 2, divTop, divBot);
     }
 
     // ===== DIVIDERS — BOTTOM ROW =====
     // Vertical divider between orbit controls and orbit LFO strips
-    g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
+    g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
     g.drawVerticalLine(lo.lfoX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
 
     // Vertical dividers between orbit LFO strips (XY | XZ | YZ)
@@ -446,24 +786,24 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawVerticalLine(lfoX + stripW,     static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
         g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
         // Thin bronze separator above orbit speed slider row
-        g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.4f));
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
         g.drawHorizontalLine(speedSepY, static_cast<float>(lfoX), static_cast<float>(lfoX + lfoTotalW));
     }
 
     // Vertical divider between orbit section and reverb section
-    g.setColour(juce::Colour(ALF::kBronze));
+    g.setColour(juce::Colour(ct.bronze));
     g.fillRect(lo.reverbX - 1, lo.bottomY, 2, kBottomH);
 
     // ===== MAIN STRUCTURAL DIVIDERS =====
     // Vertical separator (left column | GL view), from below preset bar
-    g.setColour(juce::Colour(ALF::kBronze));
+    g.setColour(juce::Colour(ct.bronze));
     g.fillRect(kLeftColW - 1, lo.contentY, 2, lo.leftColH);
 
     // Horizontal separator (above bottom row)
     g.fillRect(0, lo.bottomY, bw, 2);
 
     // Thin separator below preset bar
-    g.setColour(juce::Colour(ALF::kBronze).withAlpha(0.5f));
+    g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
     g.drawHorizontalLine(kPresetBarH - 1, 0.0f, static_cast<float>(bw));
 
     // ===== NOISE TEXTURE OVERLAY =====
@@ -601,20 +941,20 @@ void XYZPanEditor::resized()
         const int contentTop = lo.contentTop;
         const int reverbX    = lo.reverbX;
 
-        // --- ORBIT CONTROLS (fixed 240px left portion of orbit section) ---
-        // Top row: Sphere Radius + Doppler knobs side by side
-        // Below: Width/Offset/Phase sliders + Face/Sync buttons
+        // --- ORBIT CONTROLS (fixed 240px left portion) ---
+        // Three tab pages share this space; all get bounds, visibility managed by setActiveTab().
         {
             const int ox = bx;
             const int ow = kOrbitCtrlW;
             const int pad = 4;
+            const int knobSz = 58;
+            const int labelH_b = 14;
 
-            // Top row: Sphere | Doppler | Yaw | Pitch — four 58px rotary knobs
+            // === OPTIONS TAB layout ===
+            // Top row: Sphere | Doppler — two knobs, centered in 120px halves
             {
-                const int knobSz = 58;
-                const int labelH_b = 14;
+                const int colW = ow / 2;
                 const int doppSubLabelH = 12;
-                const int colW = ow / 4;
 
                 int sKnobX = ox + (colW - knobSz) / 2;
                 sphereRadiusKnob_.setBounds(sKnobX, contentTop + 2, knobSz, knobSz);
@@ -624,24 +964,16 @@ void XYZPanEditor::resized()
                 dopplerKnob_.setBounds(dKnobX, contentTop + 2, knobSz, knobSz);
                 dopplerLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
                 dopplerSubLabel_.setBounds(ox + colW, contentTop + 74, colW, doppSubLabelH);
-
-                int yawKX = ox + colW * 2 + (colW - knobSz) / 2;
-                listenerYawKnob_.setBounds(yawKX, contentTop + 2, knobSz, knobSz);
-                listenerYawLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
-
-                int pitchKX = ox + colW * 3 + (colW - knobSz) / 2;
-                listenerPitchKnob_.setBounds(pitchKX, contentTop + 2, knobSz, knobSz);
-                listenerPitchLabel_.setBounds(ox + colW * 3, contentTop + 60, colW, labelH_b);
             }
 
             // Checkbox row: Binaural | Early Reflections
             {
                 const int cbY = contentTop + 87;
-                const int boxSz = 27;
-                const int cbLabelW = 70;
+                const int boxSz = 22;
+                const int cbLabelW = 90;
                 const int cbGap = 4;
-                const int pairW = boxSz + cbGap + cbLabelW;  // 101px per pair
-                const int halfW = ow / 2;                     // 120px per half
+                const int pairW = boxSz + cbGap + cbLabelW;
+                const int halfW = ow / 2;
 
                 int binPairX = ox + (halfW - pairW) / 2;
                 binauralToggle_.setBounds(binPairX, cbY, boxSz, boxSz);
@@ -653,24 +985,144 @@ void XYZPanEditor::resized()
             }
 
             // Orbit sliders below checkbox row
-            const int labelW = 46;
-            const int sliderH = 22;
-            const int gap = 4;
-            const int btnH = 22;
+            {
+                const int labelW = 46;
+                const int sliderH = 22;
+                const int gap = 4;
+                const int btnH = 22;
 
-            int sy = contentTop + 118;
-            auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
-                label.setBounds(ox + pad, sy, labelW, sliderH);
-                slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
-                sy += sliderH + gap;
-            };
+                int sy = contentTop + 118;
+                auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
+                    label.setBounds(ox + pad, sy, labelW, sliderH);
+                    slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
+                    sy += sliderH + gap;
+                };
 
-            placeOrbitSlider(stereoWidthKnob_, stereoWidthLabel_);
-            placeOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_);
-            placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
+                placeOrbitSlider(stereoWidthKnob_, stereoWidthLabel_);
+                placeOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_);
+                placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
 
-            sy += 2;
-            faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
+                sy -= 4;
+                faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
+            }
+
+            // === PERSPECTIVE TAB layout ===
+            // Top row: Yaw | Pitch | Roll — three 80px columns
+            {
+                const int colW = ow / 3;
+
+                int yawKX = ox + (colW - knobSz) / 2;
+                listenerYawKnob_.setBounds(yawKX, contentTop + 2, knobSz, knobSz);
+                listenerYawLabel_.setBounds(ox, contentTop + 60, colW, labelH_b);
+
+                int pitchKX = ox + colW + (colW - knobSz) / 2;
+                listenerPitchKnob_.setBounds(pitchKX, contentTop + 2, knobSz, knobSz);
+                listenerPitchLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
+
+                int rollKX = ox + colW * 2 + (colW - knobSz) / 2;
+                listenerRollKnob_.setBounds(rollKX, contentTop + 2, knobSz, knobSz);
+                listenerRollLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
+
+                // Head-follows-camera toggle below knobs
+                headFollowsToggle_.setBounds(ox + pad, contentTop + 82, ow - pad * 2, 22);
+            }
+
+            // === CUSTOMIZE TAB layout (scrollable viewport) ===
+            {
+                const int sliderH  = 20;
+                const int comboH   = 22;
+                const int labelW   = 68;
+                const int gap      = 4;
+                const int headerH  = 16;
+
+                // Viewport fills the tab content area
+                customizeViewport_.setBounds(ox, contentTop, ow, contentH);
+
+                // All coordinates are LOCAL to customizeContent_ (start at 0)
+                int cy = 2;
+
+                // --- General section ---
+                // Theme label + combo
+                themeLabel_.setBounds(pad, cy, labelW, comboH);
+                themeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+                cy += comboH + gap;
+
+                auto placeAvatarSlider = [&](juce::Slider& slider, juce::Label& label) {
+                    label.setBounds(pad, cy, labelW, sliderH);
+                    slider.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
+                    cy += sliderH + gap;
+                };
+
+                auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
+                    label.setBounds(pad, cy, labelW, sliderH);
+                    swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
+                    cy += sliderH + gap;
+                };
+
+                // --- General head controls ---
+                placeColorSwatch(headColorSwatch_,  headColorLabel_);
+                placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
+                placeAvatarSlider(headElongationSlider_, headElongationLabel_);
+
+                // --- EYES section header ---
+                eyesSectionHeaderY_ = cy;
+                cy += headerH + gap;
+
+                // Eye Type combo (includes "None" option)
+                eyeTypeLabel_.setBounds(pad, cy, labelW, comboH);
+                eyeTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+                cy += comboH + gap;
+
+                // Eye Size, Eye Space, Pupil Size sliders
+                placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
+                placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
+                placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
+                placeAvatarSlider(googlyGravitySlider_,  googlyGravityLabel_);
+                placeAvatarSlider(googlySpringSlider_,   googlySpringLabel_);
+                placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
+
+                // --- EARS section header ---
+                earsSectionHeaderY_ = cy;
+                cy += headerH + gap;
+
+                // Ear Type combo
+                earTypeLabel_.setBounds(pad, cy, labelW, comboH);
+                earTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+                cy += comboH + gap;
+
+                // Ear Size, Ear Rot sliders
+                placeAvatarSlider(earSizeSlider_,        earSizeLabel_);
+                placeAvatarSlider(earRotationSlider_,    earRotationLabel_);
+
+                // --- NOSE section header ---
+                noseSectionHeaderY_ = cy;
+                cy += headerH + gap;
+
+                // Nose Type combo
+                noseTypeLabel_.setBounds(pad, cy, labelW, comboH);
+                noseTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+                cy += comboH + gap;
+
+                // Nose Size slider
+                placeAvatarSlider(noseSizeSlider_, noseSizeLabel_);
+                placeColorSwatch(noseColorSwatch_,  noseColorLabel_);
+
+                // --- HATS section header ---
+                hatsSectionHeaderY_ = cy;
+                cy += headerH + gap;
+
+                // Hat Type combo
+                hatTypeLabel_.setBounds(pad, cy, labelW, comboH);
+                hatTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+                cy += comboH + gap;
+
+                // Hat Size slider
+                placeAvatarSlider(hatSizeSlider_, hatSizeLabel_);
+                placeColorSwatch(hatColorSwatch_,   hatColorLabel_);
+
+                // Set content size (width matches viewport, height = total content)
+                customizeContent_.setSize(ow, cy + 2);
+            }
         }
 
         // --- ORBIT LFO STRIPS + SPEED/RESET ROW (capped width, right-aligned against reverb) ---
@@ -758,6 +1210,133 @@ void XYZPanEditor::updateOrbitEnabled()
 }
 
 // ---------------------------------------------------------------------------
+// applyCurrentTheme — push current theme to LookAndFeel + GL view + repaint
+// ---------------------------------------------------------------------------
+void XYZPanEditor::applyCurrentTheme()
+{
+    const auto& theme = userPrefs_->activeTheme();
+    lookAndFeel_.applyTheme(theme);
+    glView_.setColorTheme(theme);
+
+    // Re-apply per-axis knob colors that are set explicitly (not from theme)
+    xKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    yKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    zKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
+
+    // Re-apply hero slider styling (brightened LFO accent)
+    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitOffsetKnob_,
+                        &orbitPhaseKnob_, &lfoSpeedMulKnob_})
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                         juce::Colour(theme.lfoAccentBright));
+
+    // Re-apply listener / reverb / orbit knobs to LFO accent
+    for (auto* knob : {&sphereRadiusKnob_, &dopplerKnob_,
+                        &listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_,
+                        &verbSize_, &verbDecay_, &verbDamping_, &verbWet_})
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                         juce::Colour(theme.lfoAccent));
+
+    // Update hero label colors to match theme
+    for (auto* lbl : {&xLabel_, &yLabel_, &zLabel_})
+        lbl->setColour(juce::Label::textColourId, juce::Colour(theme.goldLeafPale));
+
+    dopplerSubLabel_.setColour(juce::Label::textColourId,
+                               juce::Colour(theme.agedPapyrusDark).withAlpha(0.6f));
+
+    // Update color swatches that use theme defaults (avatar color == 0)
+    const auto& avp = userPrefs_->avatarParams();
+    auto toJuceCol = [](const glm::vec3& v) {
+        return juce::Colour::fromFloatRGBA(v.r, v.g, v.b, 1.0f);
+    };
+    if (!avp.headColor)  headColorSwatch_.setColour(toJuceCol(theme.glListenerHead));
+    if (!avp.noseColor)  noseColorSwatch_.setColour(toJuceCol(theme.glNose));
+    if (!avp.hatColor)   hatColorSwatch_.setColour(toJuceCol(theme.glHat));
+    if (!avp.eyeColor)   eyeColorSwatch_.setColour(toJuceCol(theme.glEyeWhite));
+
+    repaint();
+}
+
+// ---------------------------------------------------------------------------
+// pushAvatarToGL — send current avatar params to GL view
+// ---------------------------------------------------------------------------
+void XYZPanEditor::pushAvatarToGL()
+{
+    glView_.setAvatarParams(userPrefs_->avatarParams());
+}
+
+// ---------------------------------------------------------------------------
+// setActiveTab — show/hide components for Options vs Perspective vs Customize tab
+// ---------------------------------------------------------------------------
+void XYZPanEditor::setActiveTab(OptionsTab tab)
+{
+    activeTab_ = tab;
+    const bool options     = (tab == OptionsTab::Options);
+    const bool perspective = (tab == OptionsTab::Perspective);
+    const bool customize   = (tab == OptionsTab::Customize);
+
+    // Options-only components
+    sphereRadiusKnob_.setVisible(options);
+    sphereRadiusLabel_.setVisible(options);
+    dopplerKnob_.setVisible(options);
+    dopplerLabel_.setVisible(options);
+    dopplerSubLabel_.setVisible(options);
+    binauralToggle_.setVisible(options);
+    binauralLabel_.setVisible(options);
+    earlyReflToggle_.setVisible(options);
+    earlyReflLabel_.setVisible(options);
+    stereoWidthKnob_.setVisible(options);
+    stereoWidthLabel_.setVisible(options);
+    orbitOffsetKnob_.setVisible(options);
+    orbitOffsetLabel_.setVisible(options);
+    orbitPhaseKnob_.setVisible(options);
+    orbitPhaseLabel_.setVisible(options);
+    faceListenerToggle_.setVisible(options);
+
+    // Perspective-only components
+    listenerYawKnob_.setVisible(perspective);
+    listenerYawLabel_.setVisible(perspective);
+    listenerPitchKnob_.setVisible(perspective);
+    listenerPitchLabel_.setVisible(perspective);
+    listenerRollKnob_.setVisible(perspective);
+    listenerRollLabel_.setVisible(perspective);
+    headFollowsToggle_.setVisible(perspective);
+
+    // Customize-only components (all children of viewport content)
+    customizeViewport_.setVisible(customize);
+
+    repaint();
+}
+
+// ---------------------------------------------------------------------------
+// mouseDown — tab header click detection + last-clicked zone tracking
+// ---------------------------------------------------------------------------
+void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
+{
+    // Convert to editor-local coords (child components report relative to themselves)
+    const auto pos = e.getEventRelativeTo(this).getPosition();
+
+    // Track last-clicked zone for Alt+R randomization
+    auto zone = classifyRandZone(pos);
+    if (zone != RandZone::None)
+        lastClickedZone_ = zone;
+
+    // Hit-test tab header area (the 240px orbit-controls header) — three thirds
+    const auto lo = Layout::compute(getWidth(), getHeight());
+    if (pos.y >= lo.bottomY && pos.y < lo.bottomY + kSectionHdrH && pos.x < kOrbitCtrlW) {
+        const int thirdTab = kOrbitCtrlW / 3;
+        if (pos.x < thirdTab)
+            setActiveTab(OptionsTab::Options);
+        else if (pos.x < thirdTab * 2)
+            setActiveTab(OptionsTab::Perspective);
+        else
+            setActiveTab(OptionsTab::Customize);
+        return;
+    }
+
+    AudioProcessorEditor::mouseDown(e);
+}
+
+// ---------------------------------------------------------------------------
 // generateNoiseTexture — static 256x256 greyscale procedural noise
 // ---------------------------------------------------------------------------
 juce::Image XYZPanEditor::generateNoiseTexture(int size)
@@ -777,4 +1356,337 @@ juce::Image XYZPanEditor::generateNoiseTexture(int size)
                 255));
 
     return img;
+}
+
+// ---------------------------------------------------------------------------
+// keyPressed — Alt+R randomizes the last-clicked UI panel group
+// ---------------------------------------------------------------------------
+bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
+{
+    if (key.getModifiers().isAltDown() && key.getKeyCode() == 'R') {
+        // Use last-clicked zone; fall back to hover if nothing was clicked yet
+        auto zone = lastClickedZone_;
+        if (zone == RandZone::None)
+            zone = classifyRandZone(getMouseXYRelative());
+        switch (zone) {
+            case RandZone::Position:     randomizePosition();            break;
+            case RandZone::StereoOrbit:  randomizeStereoOrbit();         break;
+            case RandZone::Reverb:       randomizeReverb();              break;
+            case RandZone::Perspective:  randomizePerspective();         break;
+            case RandZone::CustColors:   randomizeCustColors();          break;
+            case RandZone::CustEyes:     randomizeCustEyes();            break;
+            case RandZone::CustEars:     randomizeCustEars();            break;
+            case RandZone::CustNose:     randomizeCustNose();            break;
+            case RandZone::CustHats:     randomizeCustHats();            break;
+            case RandZone::LfoX:         randomizeLFOStrip("lfo_x");    break;
+            case RandZone::LfoY:         randomizeLFOStrip("lfo_y");    break;
+            case RandZone::LfoZ:         randomizeLFOStrip("lfo_z");    break;
+            case RandZone::OrbitLfoXY:   randomizeLFOStrip("stereo_orbit_xy"); break;
+            case RandZone::OrbitLfoXZ:   randomizeLFOStrip("stereo_orbit_xz"); break;
+            case RandZone::OrbitLfoYZ:   randomizeLFOStrip("stereo_orbit_yz"); break;
+            case RandZone::None:         break;
+        }
+        return zone != RandZone::None;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// classifyRandZone — determine which UI module a point falls in
+// ---------------------------------------------------------------------------
+XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) const
+{
+    const auto lo = Layout::compute(getWidth(), getHeight());
+    const int x = pos.x;
+    const int y = pos.y;
+
+    // Position column: left column, below preset bar, above bottom row
+    if (x >= 0 && x < kLeftColW && y >= kPresetBarH && y < lo.bottomY) {
+        // Check individual LFO strips by testing component bounds
+        auto inBounds = [&](const LFOStrip& strip) {
+            auto b = strip.getBounds();
+            return b.contains(x, y);
+        };
+        if (inBounds(xLFO_)) return RandZone::LfoX;
+        if (inBounds(yLFO_)) return RandZone::LfoY;
+        if (inBounds(zLFO_)) return RandZone::LfoZ;
+        return RandZone::Position;
+    }
+
+    // Bottom row zones (below bottomY)
+    if (y >= lo.bottomY) {
+        // Reverb column (right side of bottom row)
+        if (x >= lo.reverbX && x < lo.reverbX + kReverbSectionW)
+            return RandZone::Reverb;
+
+        // Orbit LFO strips (between orbit controls and reverb)
+        {
+            auto inBounds = [&](const LFOStrip& strip) {
+                auto b = strip.getBounds();
+                return b.contains(x, y);
+            };
+            if (inBounds(orbitXYLFO_)) return RandZone::OrbitLfoXY;
+            if (inBounds(orbitXZLFO_)) return RandZone::OrbitLfoXZ;
+            if (inBounds(orbitYZLFO_)) return RandZone::OrbitLfoYZ;
+        }
+
+        // Left 240px of bottom row — depends on active tab
+        if (x >= 0 && x < kOrbitCtrlW && y >= lo.contentTop) {
+            if (activeTab_ == OptionsTab::Options)
+                return RandZone::StereoOrbit;
+
+            if (activeTab_ == OptionsTab::Perspective)
+                return RandZone::Perspective;
+
+            if (activeTab_ == OptionsTab::Customize) {
+                // Convert mouse Y to customizeContent_ local coords
+                int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
+
+                if (localY < eyesSectionHeaderY_)
+                    return RandZone::CustColors;
+                if (localY < earsSectionHeaderY_)
+                    return RandZone::CustEyes;
+                if (localY < noseSectionHeaderY_)
+                    return RandZone::CustEars;
+                if (localY < hatsSectionHeaderY_)
+                    return RandZone::CustNose;
+                return RandZone::CustHats;
+            }
+        }
+    }
+
+    return RandZone::None;
+}
+
+// ---------------------------------------------------------------------------
+// randomizeAPVTSParam — set a single APVTS parameter to a random value
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeAPVTSParam(const char* paramID, float min, float max)
+{
+    auto* param = proc_.apvts.getParameter(paramID);
+    if (!param) return;
+
+    std::uniform_real_distribution<float> dist(min, max);
+    float value = dist(rng_);
+    float norm = param->convertTo0to1(value);
+
+    param->beginChangeGesture();
+    param->setValueNotifyingHost(norm);
+    param->endChangeGesture();
+}
+
+// ---------------------------------------------------------------------------
+// randomizeLFOStrip — randomize all params for one LFO strip (rate, depth,
+//                     phase, smooth, waveform, beat_div, tempo_sync)
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeLFOStrip(const juce::String& prefix)
+{
+    randomizeAPVTSParam((prefix + "_rate").toRawUTF8(),   xyzpan::kLFOMinRate, xyzpan::kLFOMaxRate);
+    randomizeAPVTSParam((prefix + "_depth").toRawUTF8(),  0.0f, 1.0f);
+    randomizeAPVTSParam((prefix + "_phase").toRawUTF8(),  0.0f, 1.0f);
+    randomizeAPVTSParam((prefix + "_smooth").toRawUTF8(), 0.0f, 1.0f);
+
+    // Waveform: integer 0..5
+    randomizeAPVTSParam((prefix + "_waveform").toRawUTF8(), 0.0f, 5.0f);
+
+    // Beat division: integer 0..kBeatDivCount-1
+    randomizeAPVTSParam((prefix + "_beat_div").toRawUTF8(),
+                        0.0f, static_cast<float>(xyzpan::kBeatDivCount - 1));
+
+    // Tempo sync: coin flip
+    auto syncID = prefix + "_tempo_sync";
+    auto* syncParam = proc_.apvts.getParameter(syncID);
+    if (syncParam) {
+        std::uniform_int_distribution<int> coin(0, 1);
+        syncParam->beginChangeGesture();
+        syncParam->setValueNotifyingHost(coin(rng_) ? 1.0f : 0.0f);
+        syncParam->endChangeGesture();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// randomizePosition — X, Y, Z knobs only
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizePosition()
+{
+    randomizeAPVTSParam(ParamID::X, -1.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::Y, -1.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::Z, -1.0f, 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// randomizeStereoOrbit — Width, Offset, Phase + Face Listener toggle
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeStereoOrbit()
+{
+    randomizeAPVTSParam(ParamID::STEREO_WIDTH,        0.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::STEREO_ORBIT_OFFSET, 0.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::STEREO_ORBIT_PHASE,  0.0f, 1.0f);
+
+    // Randomize Face Listener bool
+    auto* flParam = proc_.apvts.getParameter(ParamID::STEREO_FACE_LISTENER);
+    if (flParam) {
+        std::uniform_int_distribution<int> coin(0, 1);
+        flParam->beginChangeGesture();
+        flParam->setValueNotifyingHost(coin(rng_) ? 1.0f : 0.0f);
+        flParam->endChangeGesture();
+    }
+
+    updateOrbitEnabled();
+}
+
+// ---------------------------------------------------------------------------
+// randomizeReverb — Size, Decay, Damping, Wet
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeReverb()
+{
+    randomizeAPVTSParam(ParamID::VERB_SIZE,    0.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::VERB_DECAY,   0.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::VERB_DAMPING, 0.0f, 1.0f);
+    randomizeAPVTSParam(ParamID::VERB_WET,     0.0f, 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// randomizePerspective — Yaw, Pitch, Roll
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizePerspective()
+{
+    randomizeAPVTSParam(ParamID::LISTENER_YAW,   0.0f, 360.0f);
+    randomizeAPVTSParam(ParamID::LISTENER_PITCH,  0.0f, 360.0f);
+    randomizeAPVTSParam(ParamID::LISTENER_ROLL,   0.0f, 360.0f);
+}
+
+// ---------------------------------------------------------------------------
+// randomizeCustColors — Head color + Head Size + Elongation
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeCustColors()
+{
+    auto ap = userPrefs_->avatarParams();
+    std::uniform_int_distribution<uint32_t> colorDist(0x00000000u, 0x00FFFFFFu);
+
+    ap.headColor = 0xFF000000u | colorDist(rng_);
+
+    std::uniform_real_distribution<float> headSizeDist(0.7f, 1.5f);
+    std::uniform_real_distribution<float> elongDist(0.3f, 2.5f);
+    ap.headSize       = headSizeDist(rng_);
+    ap.headElongation = elongDist(rng_);
+
+    userPrefs_->setAvatarParams(ap);
+    pushAvatarToGL();
+
+    // Sync UI controls
+    headColorSwatch_.setColour(juce::Colour(ap.headColor));
+    headSizeSlider_.setValue(static_cast<double>(ap.headSize), juce::dontSendNotification);
+    headElongationSlider_.setValue(static_cast<double>(ap.headElongation), juce::dontSendNotification);
+}
+
+// ---------------------------------------------------------------------------
+// randomizeCustEyes — eyeColor, eyeType, eyeSize, eyeSpacing,
+//                     pupilSize, googlyGravity, googlySpring
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeCustEyes()
+{
+    auto ap = userPrefs_->avatarParams();
+
+    std::uniform_int_distribution<uint32_t> colorDist(0x00000000u, 0x00FFFFFFu);
+    std::uniform_int_distribution<int> eyeTypeDist(0, 4);
+    std::uniform_real_distribution<float> sizeDist(0.2f, 3.0f);
+    std::uniform_real_distribution<float> unit01(0.0f, 1.0f);
+
+    ap.eyeColor      = 0xFF000000u | colorDist(rng_);
+    ap.eyeType       = eyeTypeDist(rng_);
+    ap.eyeSize       = sizeDist(rng_);
+    ap.eyeSpacing    = sizeDist(rng_);
+    ap.pupilSize     = unit01(rng_);
+    ap.googlyGravity = unit01(rng_);
+    ap.googlySpring  = unit01(rng_);
+
+    userPrefs_->setAvatarParams(ap);
+    pushAvatarToGL();
+
+    // Sync UI controls
+    eyeColorSwatch_.setColour(juce::Colour(ap.eyeColor));
+    eyeTypeCombo_.setSelectedId(ap.eyeType + 1, juce::dontSendNotification);
+    eyeSizeSlider_.setValue(static_cast<double>(ap.eyeSize), juce::dontSendNotification);
+    eyeSpacingSlider_.setValue(static_cast<double>(ap.eyeSpacing), juce::dontSendNotification);
+    pupilSizeSlider_.setValue(static_cast<double>(ap.pupilSize), juce::dontSendNotification);
+    googlyGravitySlider_.setValue(static_cast<double>(ap.googlyGravity), juce::dontSendNotification);
+    googlySpringSlider_.setValue(static_cast<double>(ap.googlySpring), juce::dontSendNotification);
+
+    // Update enabled states based on new eye type
+    eyeSpacingSlider_.setEnabled(ap.eyeType != xyzpan::kEyeCyclops);
+    googlyGravitySlider_.setEnabled(ap.eyeType == xyzpan::kEyeGoogly);
+    googlySpringSlider_.setEnabled(ap.eyeType == xyzpan::kEyeGoogly);
+}
+
+// ---------------------------------------------------------------------------
+// randomizeCustEars — earType, earSize, earRotation
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeCustEars()
+{
+    auto ap = userPrefs_->avatarParams();
+
+    std::uniform_int_distribution<int> earTypeDist(0, 3);
+    std::uniform_real_distribution<float> sizeDist(0.2f, 3.0f);
+    std::uniform_real_distribution<float> rotDist(-180.0f, 180.0f);
+
+    ap.earType     = earTypeDist(rng_);
+    ap.earSize     = sizeDist(rng_);
+    ap.earRotation = rotDist(rng_);
+
+    userPrefs_->setAvatarParams(ap);
+    pushAvatarToGL();
+
+    // Sync UI controls
+    earTypeCombo_.setSelectedId(ap.earType + 1, juce::dontSendNotification);
+    earSizeSlider_.setValue(static_cast<double>(ap.earSize), juce::dontSendNotification);
+    earRotationSlider_.setValue(static_cast<double>(ap.earRotation), juce::dontSendNotification);
+}
+
+// ---------------------------------------------------------------------------
+// randomizeCustNose — noseColor, noseType, noseSize
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeCustNose()
+{
+    auto ap = userPrefs_->avatarParams();
+
+    std::uniform_int_distribution<uint32_t> colorDist(0x00000000u, 0x00FFFFFFu);
+    std::uniform_int_distribution<int> noseTypeDist(0, 5);
+    std::uniform_real_distribution<float> sizeDist(0.2f, 3.0f);
+
+    ap.noseColor = 0xFF000000u | colorDist(rng_);
+    ap.noseType  = noseTypeDist(rng_);
+    ap.noseSize  = sizeDist(rng_);
+
+    userPrefs_->setAvatarParams(ap);
+    pushAvatarToGL();
+
+    // Sync UI controls
+    noseColorSwatch_.setColour(juce::Colour(ap.noseColor));
+    noseTypeCombo_.setSelectedId(ap.noseType + 1, juce::dontSendNotification);
+    noseSizeSlider_.setValue(static_cast<double>(ap.noseSize), juce::dontSendNotification);
+}
+
+// ---------------------------------------------------------------------------
+// randomizeCustHats — hatColor, hatType, hatSize
+// ---------------------------------------------------------------------------
+void XYZPanEditor::randomizeCustHats()
+{
+    auto ap = userPrefs_->avatarParams();
+
+    std::uniform_int_distribution<uint32_t> colorDist(0x00000000u, 0x00FFFFFFu);
+    std::uniform_int_distribution<int> hatTypeDist(0, 8);
+    std::uniform_real_distribution<float> sizeDist(0.2f, 2.0f);
+
+    ap.hatColor = 0xFF000000u | colorDist(rng_);
+    ap.hatType  = hatTypeDist(rng_);
+    ap.hatSize  = sizeDist(rng_);
+
+    userPrefs_->setAvatarParams(ap);
+    pushAvatarToGL();
+
+    // Sync UI controls
+    hatColorSwatch_.setColour(juce::Colour(ap.hatColor));
+    hatTypeCombo_.setSelectedId(ap.hatType + 1, juce::dontSendNotification);
+    hatSizeSlider_.setValue(static_cast<double>(ap.hatSize), juce::dontSendNotification);
 }

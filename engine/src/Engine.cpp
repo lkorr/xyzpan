@@ -107,6 +107,11 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;   // angle = 0
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;  // angle = 0
 
+    // Angular smoothers for listener yaw/pitch/roll (continuous knobs, 5ms)
+    yawSmCos_ = 1.0f; yawSmSin_ = 0.0f;
+    pitchSmCos_ = 1.0f; pitchSmSin_ = 0.0f;
+    rollSmCos_ = 1.0f; rollSmSin_ = 0.0f;
+
     // -------------------------------------------------------------------------
     // Early Reflections (Image Source Method)
     // -------------------------------------------------------------------------
@@ -333,23 +338,40 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     float blkY = currentParams.y + lfoY_.peek() * lfoDepthYSmooth_.current();
     float blkZ = currentParams.z + lfoZ_.peek() * lfoDepthZSmooth_.current();
 
-    // Listener head rotation — cache trig at block start (not LFO-modulated)
-    const float listYaw   = currentParams.listenerYaw;
-    const float listPitch = currentParams.listenerPitch;
-    const bool listenerRotated = (std::abs(listYaw) > 1e-7f || std::abs(listPitch) > 1e-7f);
+    // Listener head rotation — angular-smooth yaw/pitch/roll to handle 360°↔0° wrap
+    {
+        const float b = 1.0f - angularSmA_;
+        yawSmCos_   = std::cos(currentParams.listenerYaw)   * b + yawSmCos_   * angularSmA_;
+        yawSmSin_   = std::sin(currentParams.listenerYaw)   * b + yawSmSin_   * angularSmA_;
+        pitchSmCos_ = std::cos(currentParams.listenerPitch) * b + pitchSmCos_ * angularSmA_;
+        pitchSmSin_ = std::sin(currentParams.listenerPitch) * b + pitchSmSin_ * angularSmA_;
+        rollSmCos_  = std::cos(currentParams.listenerRoll)  * b + rollSmCos_  * angularSmA_;
+        rollSmSin_  = std::sin(currentParams.listenerRoll)  * b + rollSmSin_  * angularSmA_;
+    }
+    const float listYaw   = std::atan2(yawSmSin_,   yawSmCos_);
+    const float listPitch = std::atan2(pitchSmSin_, pitchSmCos_);
+    const float listRoll  = std::atan2(rollSmSin_,  rollSmCos_);
+    const bool listenerRotated = (std::abs(listYaw) > 1e-7f || std::abs(listPitch) > 1e-7f || std::abs(listRoll) > 1e-7f);
     const float cosY = std::cos(listYaw);
     const float sinY = std::sin(listYaw);
     const float cosP = std::cos(listPitch);
     const float sinP = std::sin(listPitch);
+    const float cosR = std::cos(listRoll);
+    const float sinR = std::sin(listRoll);
 
     // Rotate block-start position into listener-relative frame for EQ targets.
-    // Inverse yaw around Z, then inverse pitch around X.
+    // Inverse yaw around Z, then inverse pitch around X, then roll around Y-forward.
     if (listenerRotated) {
         const float rx = blkX * cosY + blkY * sinY;
         const float ry = -blkX * sinY + blkY * cosY;
         blkX = rx;
         blkY = ry * cosP + blkZ * sinP;
         blkZ = -ry * sinP + blkZ * cosP;
+        // Roll around forward axis (Y in engine coords)
+        const float rrx =  blkX * cosR + blkZ * sinR;
+        const float rrz = -blkX * sinR + blkZ * cosR;
+        blkX = rrx;
+        blkZ = rrz;
     }
 
     const float blkHorizMag  = std::sqrt(blkX * blkX + blkY * blkY);
@@ -767,6 +789,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             modX = rx;
             modY = ry * cosP + modZ * sinP;
             modZ = -ry * sinP + modZ * cosP;
+            // Roll around forward axis (Y in engine coords)
+            const float rrx =  modX * cosR + modZ * sinR;
+            const float rrz = -modX * sinR + modZ * cosR;
+            modX = rrx;
+            modZ = rrz;
         }
 
         // Position-dependent targets from object center position
@@ -916,12 +943,22 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 dspLX = rx;
                 dspLY = ry * cosP + lNodeZ * sinP;
                 dspLZ = -ry * sinP + lNodeZ * cosP;
+                // Roll around forward axis (Y in engine coords)
+                float rrx =  dspLX * cosR + dspLZ * sinR;
+                float rrz = -dspLX * sinR + dspLZ * cosR;
+                dspLX = rrx;
+                dspLZ = rrz;
 
                 rx = rNodeX * cosY + rNodeY * sinY;
                 ry = -rNodeX * sinY + rNodeY * cosY;
                 dspRX = rx;
                 dspRY = ry * cosP + rNodeZ * sinP;
                 dspRZ = -ry * sinP + rNodeZ * cosP;
+                // Roll around forward axis (Y in engine coords)
+                rrx =  dspRX * cosR + dspRZ * sinR;
+                rrz = -dspRX * sinR + dspRZ * cosR;
+                dspRX = rrx;
+                dspRZ = rrz;
             }
 
             // Get input samples — test tone overrides both channels
@@ -998,11 +1035,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
                     auto erLResult = er_.processSample(sampleL, lNodeX, lNodeY, lNodeZ,
                         lDistGainTarget, sr, dampCutoff, roomHalf,
-                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP,
+                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
                         currentParams);
                     auto erRResult = erR_.processSample(sampleR, rNodeX, rNodeY, rNodeZ,
                         rDistGainTarget, sr, dampCutoff, roomHalf,
-                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP,
+                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
                         currentParams);
 
                     dL += (erLResult.directL + erRResult.directL) * erLevelSm;
@@ -1093,7 +1130,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     auto erResult = er_.processSample(dopplerInputMono,
                         worldModX, worldModY, worldModZ,
                         distGainTarget, sr, dampCutoff, roomHalf,
-                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP,
+                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
                         currentParams);
 
                     dL += erResult.directL * erLevelSm;

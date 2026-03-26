@@ -22,6 +22,10 @@ struct SphereGeometry {
 // Typical: stacks=16, slices=16 for smooth appearance at small sizes.
 SphereGeometry buildUnitSphere(int stacks, int slices);
 
+// Build index pairs (GL_LINES) for a latitude/longitude wireframe grid
+// on the unit sphere.  Uses the same vertex indexing as buildUnitSphere.
+std::vector<unsigned> buildSphereWireframe(int stacks, int slices);
+
 // Build a cone (for forward direction indicator) along +Y axis.
 // baseRadius = radius at Y=0, height = extent along +Y.
 // Returns same format as SphereGeometry (interleaved pos+normal, indexed).

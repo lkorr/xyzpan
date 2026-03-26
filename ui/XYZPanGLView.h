@@ -12,6 +12,8 @@
 
 #include "Camera.h"
 #include "PositionBridge.h"
+#include "ColorTheme.h"
+#include "AvatarParams.h"
 
 namespace xyzpan {
 
@@ -99,7 +101,8 @@ private:
 // between xyzpan_ui (compiled first) and plugin/ targets.
 // ---------------------------------------------------------------------------
 class XYZPanGLView : public juce::Component,
-                     public juce::OpenGLRenderer
+                     public juce::OpenGLRenderer,
+                     public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     // apvts:  the processor's APVTS (for reading R and writing X/Y/Z)
@@ -130,6 +133,11 @@ public:
     // Fired when a camera drag exits snap mode back to orbit
     std::function<void()> onSnapExited;
 
+    // Runtime theme + avatar customization (thread-safe: called from message thread,
+    // read on GL thread under SpinLock).
+    void setColorTheme(const ColorTheme& theme);
+    void setAvatarParams(const AvatarParams& params);
+
 private:
     // ------------------------------------------------------------------
     // GL helper: compile a shader program from vertex+fragment source
@@ -159,6 +167,9 @@ private:
 
     void drawSphere(const glm::vec3& position, float radius,
                     const glm::vec3& color, float opacity);
+
+    // Draw sphere wireframe grid (lat/long GL_LINES) at origin with given radius
+    void drawSphereWireframe(float radius, const glm::vec3& color, float opacity);
 
     // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
     void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
@@ -195,6 +206,8 @@ private:
     GLuint vaoRoom_   = 0, vboRoom_   = 0;
     GLuint vaoGrid_   = 0, vboGrid_   = 0;
     GLuint vaoSphere_ = 0, vboSphere_ = 0, iboSphere_ = 0;
+    GLuint vaoSphereWire_ = 0, iboSphereWire_ = 0;
+    int    sphereWireIndexCount_ = 0;
 
     GLuint vaoCone_ = 0, vboCone_ = 0, iboCone_ = 0;
 
@@ -241,6 +254,82 @@ private:
     juce::AudioProcessorValueTreeState& apvts_;
     juce::AudioProcessor*               proc_;   // kept for future WeakReference use
     xyzpan::PositionBridge&             bridge_;
+
+    // AudioProcessorValueTreeState::Listener override
+    void parameterChanged(const juce::String& id, float newValue) override;
+
+    // Runtime theme + avatar (written from message thread, read on GL thread)
+    juce::SpinLock     customizeLock_;
+    ColorTheme         glTheme_;
+    AvatarParams       avatarParams_;
+
+    // Ear/eye type draw dispatchers
+    // Nose type draw dispatchers
+    void drawNoseCone(const glm::mat4& headRot, const AvatarParams& avatar,
+                      const glm::vec3& noseCol, float hs, float alpha);
+    void drawNoseButton(const glm::mat4& headRot, const AvatarParams& avatar,
+                        const glm::vec3& noseCol, float hs, float alpha);
+    void drawNoseSnout(const glm::mat4& headRot, const AvatarParams& avatar,
+                       const glm::vec3& noseCol, float hs, float alpha);
+    void drawNoseClown(const glm::mat4& headRot, const AvatarParams& avatar,
+                       const glm::vec3& noseCol, float hs, float alpha);
+    void drawNosePointed(const glm::mat4& headRot, const AvatarParams& avatar,
+                         const glm::vec3& noseCol, float hs, float alpha);
+
+    void drawEarsDefault(const glm::mat4& headRot, const AvatarParams& avatar,
+                         const glm::vec3& earCol, float hs, float alpha);
+    void drawEarsPointy(const glm::mat4& headRot, const AvatarParams& avatar,
+                        const glm::vec3& earCol, float hs, float alpha);
+    void drawEarsRound(const glm::mat4& headRot, const AvatarParams& avatar,
+                       const glm::vec3& earCol, float hs, float alpha);
+    void drawEarsCat(const glm::mat4& headRot, const AvatarParams& avatar,
+                     const glm::vec3& earCol, float hs, float alpha);
+
+    void drawHatParty(const glm::mat4& headRot, const AvatarParams& avatar,
+                      const glm::vec3& hatCol, float hs, float alpha);
+    void drawHatTopHat(const glm::mat4& headRot, const AvatarParams& avatar,
+                       const glm::vec3& hatCol, float hs, float alpha);
+    void drawHatHalo(const glm::mat4& headRot, const AvatarParams& avatar,
+                     const glm::vec3& hatCol, float hs, float alpha);
+    void drawHatBeanie(const glm::mat4& headRot, const AvatarParams& avatar,
+                       const glm::vec3& hatCol, float hs, float alpha);
+    void drawHatDevilHorns(const glm::mat4& headRot, const AvatarParams& avatar,
+                           const glm::vec3& hatCol, float hs, float alpha);
+    void drawHatPonytail(const glm::mat4& headRot, const AvatarParams& avatar,
+                         const glm::vec3& hatCol, float hs, float alpha);
+
+    void drawEyesNormal(const glm::mat4& headRot, const AvatarParams& avatar,
+                        float hs, float headAlpha);
+    void drawEyesGoogly(const glm::mat4& headRot, const AvatarParams& avatar,
+                        float hs, float headAlpha);
+    void drawEyesXEyes(const glm::mat4& headRot, const AvatarParams& avatar,
+                       float hs, float headAlpha);
+    void drawEyesCyclops(const glm::mat4& headRot, const AvatarParams& avatar,
+                         float hs, float headAlpha);
+
+    void updateGooglyPhysics(const SourcePositionSnapshot& snap, double now,
+                             const glm::vec3& sourcePos,
+                             const glm::vec3& lNodePos,
+                             const glm::vec3& rNodePos,
+                             bool stereoActive,
+                             const AvatarParams& avatar);
+
+    // Googly physics state (runtime-only, not persisted)
+    struct GooglyEyeState {
+        glm::vec2 pupilOffset{0.0f};
+        glm::vec2 velocity{0.0f};
+    };
+    GooglyEyeState googlyLeft_, googlyRight_;
+    float  prevListenerYaw_   = 0.0f;
+    float  prevListenerPitch_ = 0.0f;
+    double prevFrameTime_     = -1.0;
+
+    // Head-follows-camera state
+    bool  headFollowsActive_ = false;
+    bool  drivingParamsFromCamera_ = false;
+    float savedYawDeg_   = 0.0f;
+    float savedPitchDeg_ = 0.0f;
+    float savedRollDeg_  = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanGLView)
 };

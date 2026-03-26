@@ -16,11 +16,16 @@ target_include_directories(xyzpan_engine
 
 target_compile_features(xyzpan_engine PUBLIC cxx_std_20)
 
-# Release optimization: full optimization, AVX2 SIMD, relaxed float for auto-vectorization
+# Release optimization: full optimization, SIMD, relaxed float for auto-vectorization
 if(MSVC)
     target_compile_options(xyzpan_engine PRIVATE
         $<$<CONFIG:Release>:/O2 /arch:AVX2 /fp:fast>
     )
+elseif(APPLE)
+    target_compile_options(xyzpan_engine PRIVATE
+        $<$<CONFIG:Release>:-O3 -ffast-math>
+    )
+    # No -mavx2: Apple Silicon uses ARM NEON; Clang auto-vectorizes with -O3.
 endif()
 
 # NO juce:: link here — intentional architectural invariant.
