@@ -431,6 +431,11 @@ XYZPanProcessor::XYZPanProcessor()
 }
 
 XYZPanProcessor::~XYZPanProcessor() {
+    // FIRST: atomically mark dead + remove from hub. This must happen before
+    // any other teardown so no concurrent hub iteration can call virtual
+    // methods on this partially-destroyed object.
+    listenerHub_->detachInstance(this);
+
     stopTimer();
     apvts.removeParameterListener(ParamID::LISTENER_YAW,        this);
     apvts.removeParameterListener(ParamID::LISTENER_PITCH,      this);
@@ -440,10 +445,6 @@ XYZPanProcessor::~XYZPanProcessor() {
     apvts.removeParameterListener(ParamID::WALKER_X,            this);
     apvts.removeParameterListener(ParamID::WALKER_Y,            this);
     apvts.removeParameterListener(ParamID::WALKER_Z,            this);
-
-    // Always remove — conditional check was unreliable when APVTS state
-    // was replaced, leaving a dangling pointer in the linked_ vector.
-    listenerHub_->removeLinkedInstance(this);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -852,7 +853,7 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
             float yaw, pitch, roll;
             bool headFollows;
             if (listenerHub_->getCachedOrientation(yaw, pitch, roll, headFollows)) {
-                receivingBroadcast_.store(true, std::memory_order_relaxed);
+                receivingBroadcast_->store(true, std::memory_order_relaxed);
                 if (auto* p = apvts.getParameter(ParamID::LISTENER_YAW))
                     p->setValueNotifyingHost(p->convertTo0to1(yaw));
                 if (auto* p = apvts.getParameter(ParamID::LISTENER_PITCH))
@@ -861,19 +862,19 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
                     p->setValueNotifyingHost(p->convertTo0to1(roll));
                 if (auto* p = apvts.getParameter(ParamID::HEAD_FOLLOWS_CAMERA))
                     p->setValueNotifyingHost(headFollows ? 1.0f : 0.0f);
-                receivingBroadcast_.store(false, std::memory_order_relaxed);
+                receivingBroadcast_->store(false, std::memory_order_relaxed);
             }
             // Adopt group walker position
             float wx, wy, wz;
             if (listenerHub_->getCachedPosition(wx, wy, wz)) {
-                receivingBroadcast_.store(true, std::memory_order_relaxed);
+                receivingBroadcast_->store(true, std::memory_order_relaxed);
                 if (auto* p = apvts.getParameter(ParamID::WALKER_X))
                     p->setValueNotifyingHost(p->convertTo0to1(wx));
                 if (auto* p = apvts.getParameter(ParamID::WALKER_Y))
                     p->setValueNotifyingHost(p->convertTo0to1(wy));
                 if (auto* p = apvts.getParameter(ParamID::WALKER_Z))
                     p->setValueNotifyingHost(p->convertTo0to1(wz));
-                receivingBroadcast_.store(false, std::memory_order_relaxed);
+                receivingBroadcast_->store(false, std::memory_order_relaxed);
             }
         } else {
             listenerHub_->removeLinkedInstance(this);
@@ -882,7 +883,7 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
     }
 
     // For orientation params: broadcast if linked and not receiving
-    if (receivingBroadcast_.load(std::memory_order_relaxed))
+    if (receivingBroadcast_->load(std::memory_order_relaxed))
         return;
     if (listenerLinkParam->load() < 0.5f)
         return;
@@ -911,7 +912,7 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
 
 void XYZPanProcessor::listenerOrientationChanged(float yaw, float pitch, float roll,
                                                    bool headFollows) {
-    receivingBroadcast_.store(true, std::memory_order_relaxed);
+    receivingBroadcast_->store(true, std::memory_order_relaxed);
     if (auto* p = apvts.getParameter(ParamID::LISTENER_YAW))
         p->setValueNotifyingHost(p->convertTo0to1(yaw));
     if (auto* p = apvts.getParameter(ParamID::LISTENER_PITCH))
@@ -920,18 +921,18 @@ void XYZPanProcessor::listenerOrientationChanged(float yaw, float pitch, float r
         p->setValueNotifyingHost(p->convertTo0to1(roll));
     if (auto* p = apvts.getParameter(ParamID::HEAD_FOLLOWS_CAMERA))
         p->setValueNotifyingHost(headFollows ? 1.0f : 0.0f);
-    receivingBroadcast_.store(false, std::memory_order_relaxed);
+    receivingBroadcast_->store(false, std::memory_order_relaxed);
 }
 
 void XYZPanProcessor::listenerPositionChanged(float x, float y, float z) {
-    receivingBroadcast_.store(true, std::memory_order_relaxed);
+    receivingBroadcast_->store(true, std::memory_order_relaxed);
     if (auto* p = apvts.getParameter(ParamID::WALKER_X))
         p->setValueNotifyingHost(p->convertTo0to1(x));
     if (auto* p = apvts.getParameter(ParamID::WALKER_Y))
         p->setValueNotifyingHost(p->convertTo0to1(y));
     if (auto* p = apvts.getParameter(ParamID::WALKER_Z))
         p->setValueNotifyingHost(p->convertTo0to1(z));
-    receivingBroadcast_.store(false, std::memory_order_relaxed);
+    receivingBroadcast_->store(false, std::memory_order_relaxed);
 }
 
 // User-facing params saved in DAW state / user presets.

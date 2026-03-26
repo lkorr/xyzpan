@@ -3,11 +3,16 @@
 #include "PositionBridge.h"
 #include <vector>
 #include <algorithm>
+#include <atomic>
 
 // Process-wide singleton shared across all XYZPan plugin instances in the same
 // DAW host process via juce::SharedResourcePointer<SharedListenerHub>.
 // Manages linked listener orientation synchronization.
-// All methods are called on the message thread only.
+//
+// Thread safety: all methods acquire spinLock_. Each Listener carries an atomic
+// alive flag that is cleared *before* removeLinkedInstance() so that any
+// concurrent iteration that already holds the lock will skip the dying instance
+// rather than calling a virtual method on a partially-destroyed object.
 class SharedListenerHub {
 public:
     struct Listener {
@@ -16,19 +21,36 @@ public:
                                                  bool headFollows) = 0;
         virtual void listenerPositionChanged(float /*x*/, float /*y*/, float /*z*/) {}
         virtual xyzpan::SourceExportBuffer* getSourceExportBuffer() { return nullptr; }
+
+        // Safety flag — cleared by the instance before destruction begins.
+        // The hub checks this under the spinlock before dispatching to skip
+        // any instance whose destructor is in progress on another thread.
+        std::atomic<bool> hubAlive_{true};
     };
 
     SharedListenerHub() = default;
 
     void addLinkedInstance(Listener* l) {
+        l->hubAlive_.store(true, std::memory_order_release);
         const juce::SpinLock::ScopedLockType lock(spinLock_);
         if (std::find(linked_.begin(), linked_.end(), l) == linked_.end())
             linked_.push_back(l);
     }
 
+    // Two-phase removal: the caller must set l->hubAlive_ = false BEFORE calling
+    // this (see prepareToRemove). The flag prevents any concurrent broadcast/
+    // getLinkedSources from calling virtual methods on a dying object. The
+    // removal itself then erases the pointer under the lock.
     void removeLinkedInstance(Listener* l) {
         const juce::SpinLock::ScopedLockType lock(spinLock_);
         linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
+    }
+
+    // Convenience: atomically mark dead + remove in one call.
+    // This is the preferred API — call as the VERY FIRST line of the destructor.
+    void detachInstance(Listener* l) {
+        l->hubAlive_.store(false, std::memory_order_release);
+        removeLinkedInstance(l);
     }
 
     void broadcastOrientation(Listener* sender, float yaw, float pitch, float roll,
@@ -41,7 +63,7 @@ public:
         hasCache_ = true;
 
         for (auto* l : linked_) {
-            if (l != sender)
+            if (l != sender && l->hubAlive_.load(std::memory_order_acquire))
                 l->listenerOrientationChanged(yaw, pitch, roll, headFollows);
         }
     }
@@ -66,7 +88,7 @@ public:
         hasPosCache_ = true;
 
         for (auto* l : linked_) {
-            if (l != sender)
+            if (l != sender && l->hubAlive_.load(std::memory_order_acquire))
                 l->listenerPositionChanged(x, y, z);
         }
     }
@@ -87,7 +109,7 @@ public:
     }
 
     // Collect source positions from all linked instances except caller.
-    // Called on message thread only. Returns number of sources written.
+    // Returns number of sources written.
     int getLinkedSources(const Listener* caller,
                          xyzpan::ForeignSourceSnapshot* out, int maxOut) {
         const juce::SpinLock::ScopedLockType lock(spinLock_);
@@ -95,6 +117,7 @@ public:
         int colorIdx = 0;
         for (auto* l : linked_) {
             if (l == caller) continue;
+            if (!l->hubAlive_.load(std::memory_order_acquire)) continue;
             auto* buf = l->getSourceExportBuffer();
             if (buf == nullptr) continue;
             if (count >= maxOut) break;
