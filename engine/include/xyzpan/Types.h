@@ -225,6 +225,13 @@ struct EngineParams {
     float listenerRoll  = 0.0f;  // radians
 
     // =========================================================================
+    // Walker mode — movable listener position (scaled by R in processor)
+    // =========================================================================
+    float listenerX = 0.0f;
+    float listenerY = 0.0f;
+    float listenerZ = 0.0f;
+
+    // =========================================================================
     // Dev tool: Per-feature bypass toggles
     // =========================================================================
     bool bypassER         = false;

@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "xyzpan/Constants.h"
+#include <cmath>
 #include <random>
 
 // ---------------------------------------------------------------------------
@@ -9,7 +10,7 @@
 XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     : AudioProcessorEditor(p),
       proc_(p),
-      glView_(p.apvts, &p, p.positionBridge),
+      glView_(p.apvts, &p, p.positionBridge, p.foreignSourceBridge),
       xLFO_('X', p.apvts),
       yLFO_('Y', p.apvts),
       zLFO_('Z', p.apvts),
@@ -145,14 +146,44 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(headFollowsToggle_);
     headFollowsAtt_ = std::make_unique<BA>(p.apvts, ParamID::HEAD_FOLLOWS_CAMERA, headFollowsToggle_);
 
-    // Perspective tab components initially hidden (Options tab is default)
-    listenerYawKnob_.setVisible(false);
-    listenerYawLabel_.setVisible(false);
-    listenerPitchKnob_.setVisible(false);
-    listenerPitchLabel_.setVisible(false);
-    listenerRollKnob_.setVisible(false);
-    listenerRollLabel_.setVisible(false);
-    headFollowsToggle_.setVisible(false);
+    // Link Listener toggle
+    listenerLinkToggle_.setButtonText("Link Listener");
+    listenerLinkToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(listenerLinkToggle_);
+    listenerLinkAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_LINK, listenerLinkToggle_);
+
+    // ----- Walker mode knobs (Listener tab in left column) -----
+    for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_}) {
+        knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 63, 16);
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                        juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+        addAndMakeVisible(knob);
+    }
+    walkerXAtt_ = std::make_unique<SA>(p.apvts, ParamID::WALKER_X, walkerXKnob_);
+    walkerYAtt_ = std::make_unique<SA>(p.apvts, ParamID::WALKER_Y, walkerYKnob_);
+    walkerZAtt_ = std::make_unique<SA>(p.apvts, ParamID::WALKER_Z, walkerZKnob_);
+
+    walkerXLabel_.setText("Walk X", juce::dontSendNotification);
+    walkerYLabel_.setText("Walk Y", juce::dontSendNotification);
+    walkerZLabel_.setText("Walk Z", juce::dontSendNotification);
+    for (auto* lbl : {&walkerXLabel_, &walkerYLabel_, &walkerZLabel_}) {
+        lbl->setJustificationType(juce::Justification::centred);
+        lbl->setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+        lbl->setColour(juce::Label::textColourId,
+                       juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeafPale));
+        addAndMakeVisible(lbl);
+    }
+
+    wasdToggle_.setButtonText("WASD Control");
+    wasdToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(wasdToggle_);
+    wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
+
+    // Listener tab components initially hidden (Source tab is default)
+    // This also hides perspective controls (yaw/pitch/roll, head follows, link)
+    // which now live in the Listener tab instead of the bottom row Perspective tab.
+    setActiveLeftTab(LeftTab::Source);
 
     binauralToggle_.setButtonText("");
     binauralToggle_.setClickingTogglesState(true);
@@ -235,6 +266,16 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     dopplerSubLabel_.setColour(juce::Label::textColourId,
                                juce::Colour(xyzpan::AlchemyLookAndFeel::kAgedPapyrusDark).withAlpha(0.6f));
     addAndMakeVisible(dopplerSubLabel_);
+
+    // ----- Input Gain knob (0–12 dB) -----
+    inputGainKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    inputGainKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 55, 14);
+    inputGainKnob_.setTextValueSuffix(" dB");
+    addAndMakeVisible(inputGainKnob_);
+    inputGainAtt_ = std::make_unique<SA>(p.apvts, ParamID::INPUT_GAIN_DB, inputGainKnob_);
+    inputGainLabel_.setText("In Gain", juce::dontSendNotification);
+    inputGainLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(inputGainLabel_);
 
     // ----- Snap buttons -----
     snapXY_.setButtonText("XY");
@@ -459,11 +500,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
             ap.eyeType = idx;
             userPrefs_->setAvatarParams(ap);
             pushAvatarToGL();
-            // Disable eyeSpacing slider when Cyclops is selected
-            eyeSpacingSlider_.setEnabled(idx != xyzpan::kEyeCyclops);
-            // Gravity/spring sliders only make sense for Googly eyes
-            googlyGravitySlider_.setEnabled(idx == xyzpan::kEyeGoogly);
-            googlySpringSlider_.setEnabled(idx == xyzpan::kEyeGoogly);
+            // Repurpose eyeSpacing slider as Eye Height for Cyclops
+            syncEyeSpacingSliderMode(idx == xyzpan::kEyeCyclops);
+            // Googly slider only makes sense for Googly eyes
+            googlySlider_.setEnabled(idx == xyzpan::kEyeGoogly);
         }
     };
     customizeContent_.addAndMakeVisible(eyeTypeCombo_);
@@ -539,11 +579,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
     customizeContent_.addAndMakeVisible(noseTypeCombo_);
 
-    // Apply initial Cyclops state for eyeSpacing
-    eyeSpacingSlider_.setEnabled(userPrefs_->avatarParams().eyeType != xyzpan::kEyeCyclops);
-    // Gravity/spring sliders only active for Googly eyes
-    googlyGravitySlider_.setEnabled(userPrefs_->avatarParams().eyeType == xyzpan::kEyeGoogly);
-    googlySpringSlider_.setEnabled(userPrefs_->avatarParams().eyeType == xyzpan::kEyeGoogly);
+    // Apply initial Cyclops state for eyeSpacing/eyeHeight mode
+    syncEyeSpacingSliderMode(userPrefs_->avatarParams().eyeType == xyzpan::kEyeCyclops);
+    // Googly slider only active for Googly eyes
+    googlySlider_.setEnabled(userPrefs_->avatarParams().eyeType == xyzpan::kEyeGoogly);
 
     // ----- Customize tab: avatar sliders -----
     auto configAvatarSlider = [this](juce::Slider& s, juce::Label& l, const juce::String& name,
@@ -566,8 +605,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     configAvatarSlider(earSizeSlider_,        earSizeLabel_,        "Ear Size",   0.2f, 3.0f, ap.earSize);
     configAvatarSlider(headSizeSlider_,       headSizeLabel_,       "Head Size",  0.7f, 1.5f, ap.headSize);
     configAvatarSlider(pupilSizeSlider_,     pupilSizeLabel_,     "Pupil Size", 0.0f, 1.0f, ap.pupilSize);
-    configAvatarSlider(googlyGravitySlider_, googlyGravityLabel_, "Eye Gravity", 0.0f, 1.0f, ap.googlyGravity);
-    configAvatarSlider(googlySpringSlider_,  googlySpringLabel_,  "Eye Return", 0.0f, 1.0f, ap.googlySpring);
+    // Single "Googly" slider drives both gravity (0→1) and spring (1→0) via exponential curves.
+    // Curve: gravity = t^0.322, spring = (1-t)^0.322  — concentrates resolution around 0.8.
+    // Invert to find initial slider position from stored gravity: t = gravity^(1/0.322)
+    {
+        float initT = std::pow(std::clamp(ap.googlyGravity, 0.0f, 1.0f), 1.0f / 0.322f);
+        configAvatarSlider(googlySlider_, googlyLabel_, "Googly", 0.0f, 1.0f, initT);
+    }
     configAvatarSlider(earRotationSlider_,   earRotationLabel_,   "Ear Rot",    -180.0f, 180.0f, ap.earRotation);
     configAvatarSlider(hatSizeSlider_,       hatSizeLabel_,       "Hat Size",   0.2f, 2.0f, ap.hatSize);
     configAvatarSlider(noseSizeSlider_,      noseSizeLabel_,      "Nose Size",  0.2f, 3.0f, ap.noseSize);
@@ -576,12 +620,18 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto a = userPrefs_->avatarParams();
         a.headElongation = static_cast<float>(headElongationSlider_.getValue());
         a.eyeSize        = static_cast<float>(eyeSizeSlider_.getValue());
-        a.eyeSpacing     = static_cast<float>(eyeSpacingSlider_.getValue());
+        if (a.eyeType == xyzpan::kEyeCyclops)
+            a.eyeHeight  = static_cast<float>(eyeSpacingSlider_.getValue());
+        else
+            a.eyeSpacing = static_cast<float>(eyeSpacingSlider_.getValue());
         a.earSize        = static_cast<float>(earSizeSlider_.getValue());
         a.headSize       = static_cast<float>(headSizeSlider_.getValue());
         a.pupilSize      = static_cast<float>(pupilSizeSlider_.getValue());
-        a.googlyGravity  = static_cast<float>(googlyGravitySlider_.getValue());
-        a.googlySpring   = static_cast<float>(googlySpringSlider_.getValue());
+        {
+            float t = static_cast<float>(googlySlider_.getValue());
+            a.googlyGravity = std::pow(t, 0.322f);
+            a.googlySpring  = std::pow(1.0f - t, 0.322f);
+        }
         a.earRotation    = static_cast<float>(earRotationSlider_.getValue());
         a.hatSize        = static_cast<float>(hatSizeSlider_.getValue());
         a.noseSize       = static_cast<float>(noseSizeSlider_.getValue());
@@ -594,8 +644,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     earSizeSlider_.onValueChange        = onAvatarChange;
     headSizeSlider_.onValueChange       = onAvatarChange;
     pupilSizeSlider_.onValueChange      = onAvatarChange;
-    googlyGravitySlider_.onValueChange  = onAvatarChange;
-    googlySpringSlider_.onValueChange   = onAvatarChange;
+    googlySlider_.onValueChange          = onAvatarChange;
     earRotationSlider_.onValueChange    = onAvatarChange;
     hatSizeSlider_.onValueChange        = onAvatarChange;
     noseSizeSlider_.onValueChange       = onAvatarChange;
@@ -621,8 +670,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Generate noise texture for panel overlay
     noiseTexture_ = generateNoiseTexture(256);
 
-    // Keyboard shortcut listener (captures Alt+R for module randomization)
+    // Keyboard shortcut listener (captures Alt+R for module randomization, WASD for movement)
     addKeyListener(this);
+    startTimerHz(60);  // 60 Hz poll for WASD movement
 
     // Listen to mouse clicks on all child components for last-clicked zone tracking
     addMouseListener(this, true);
@@ -638,6 +688,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 // ---------------------------------------------------------------------------
 XYZPanEditor::~XYZPanEditor()
 {
+    stopTimer();
     removeMouseListener(this);
     removeKeyListener(this);
     setLookAndFeel(nullptr);
@@ -699,8 +750,30 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
-    // "POSITION" header — top of left column (below preset bar)
-    drawHeader(0, lo.contentY, kLeftColW, "POSITION");
+    // Left column tabbed header — "Source" | "Listener" (replaces static "POSITION")
+    {
+        const int hdrY = lo.contentY;
+        auto hdrRect = juce::Rectangle<int>(0, hdrY, kLeftColW, kSectionHdrH);
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(hdrY),
+            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(hdrY), false));
+        g.fillRect(hdrRect);
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
+        g.drawHorizontalLine(hdrY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
+
+        const int halfW = kLeftColW / 2;
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+
+        g.setColour(activeLeftTab_ == LeftTab::Source
+            ? juce::Colour(ct.brightGold)
+            : juce::Colour(ct.bronze));
+        g.drawText("Source", 0, hdrY, halfW, kSectionHdrH, juce::Justification::centred);
+
+        g.setColour(activeLeftTab_ == LeftTab::Listener
+            ? juce::Colour(ct.brightGold)
+            : juce::Colour(ct.bronze));
+        g.drawText("Listener", halfW, hdrY, kLeftColW - halfW, kSectionHdrH, juce::Justification::centred);
+    }
 
     // Tabbed header — bottom row, orbit portion: "Options" | "Perspective" tabs + LFO plane labels
     {
@@ -718,8 +791,8 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
         g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(bx), static_cast<float>(bx + fullW));
 
-        // Tab labels in the 240px controls area — three thirds
-        const int thirdTab = kOrbitCtrlW / 3;
+        // Tab labels in the 240px controls area — two halves (Perspective moved to left column)
+        const int halfTab = kOrbitCtrlW / 2;
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
 
         auto tabColor = [&](OptionsTab t) {
@@ -729,13 +802,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
         };
 
         g.setColour(tabColor(OptionsTab::Options));
-        g.drawText("Options", bx, hdrY, thirdTab, kSectionHdrH, juce::Justification::centred);
-
-        g.setColour(tabColor(OptionsTab::Perspective));
-        g.drawText("Persp.", bx + thirdTab, hdrY, thirdTab, kSectionHdrH, juce::Justification::centred);
+        g.drawText("Options", bx, hdrY, halfTab, kSectionHdrH, juce::Justification::centred);
 
         g.setColour(tabColor(OptionsTab::Customize));
-        g.drawText("Custom", bx + thirdTab * 2, hdrY, kOrbitCtrlW - thirdTab * 2, kSectionHdrH, juce::Justification::centred);
+        g.drawText("Custom", bx + halfTab, hdrY, kOrbitCtrlW - halfTab, kSectionHdrH, juce::Justification::centred);
 
         // Orbit LFO plane labels (XY / XZ / YZ) in the right portion
         const int lfoX = lo.lfoX;
@@ -750,24 +820,26 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // "REVERB" header — bottom row, reverb portion
     drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW, "REVERB");
 
-    // ===== DIVIDERS — POSITION SECTION =====
-    // Thin bronze separator above LFO Speed slider row
-    {
-        const int lfoSpeedRowH = 32;
-        const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
-    }
+    // ===== DIVIDERS — POSITION SECTION (Source tab only) =====
+    if (activeLeftTab_ == LeftTab::Source) {
+        // Thin bronze separator above LFO Speed slider row
+        {
+            const int lfoSpeedRowH = 32;
+            const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+            g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
+        }
 
-    // Vertical dividers between X | Y | Z sub-columns (extend to bottom of left column)
-    {
-        const int subColW = kLeftColW / 3;
-        const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
-        const int lfoSpeedRowH = 32;
-        const float divBot = static_cast<float>(lo.bottomY - lfoSpeedRowH);
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-        g.drawVerticalLine(subColW,     divTop, divBot);
-        g.drawVerticalLine(subColW * 2, divTop, divBot);
+        // Vertical dividers between X | Y | Z sub-columns (extend to bottom of left column)
+        {
+            const int subColW = kLeftColW / 3;
+            const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
+            const int lfoSpeedRowH = 32;
+            const float divBot = static_cast<float>(lo.bottomY - lfoSpeedRowH);
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
+            g.drawVerticalLine(subColW,     divTop, divBot);
+            g.drawVerticalLine(subColW * 2, divTop, divBot);
+        }
     }
 
     // ===== DIVIDERS — BOTTOM ROW =====
@@ -932,6 +1004,49 @@ void XYZPanEditor::resized()
                                      resetBtnW, lfoSpeedRowH - 8);
     }
 
+    // --- LISTENER TAB layout (walker knobs + perspective knobs, same left column area) ---
+    {
+        const int colTop = leftColTop + kSectionHdrH;
+        const int bigLabelH = 22;
+        const int walkerKnobH = 108;
+
+        // Walker X/Y/Z knobs — 3 columns, same sizing as source X/Y/Z
+        auto layoutWalkerCol = [&](juce::Slider& knob, juce::Label& label,
+                                   int colX, int colW, int top) {
+            label.setBounds(colX, top, colW, bigLabelH);
+            int knobW = juce::jmin(walkerKnobH, colW - posPad * 2);
+            int knobX = colX + (colW - knobW) / 2;
+            knob.setBounds(knobX, top + bigLabelH, knobW, walkerKnobH);
+        };
+
+        layoutWalkerCol(walkerXKnob_, walkerXLabel_, 0,            posColW, colTop);
+        layoutWalkerCol(walkerYKnob_, walkerYLabel_, posColW,      posColW, colTop);
+        layoutWalkerCol(walkerZKnob_, walkerZLabel_, posColW * 2,  kLeftColW - posColW * 2, colTop);
+
+        // Yaw / Pitch / Roll knobs — row of 3, below walker knobs
+        const int perspY = colTop + bigLabelH + walkerKnobH + 8;
+        const int perspKnobSz = 58;
+        const int perspLabelH = 14;
+        const int perspColW = kLeftColW / 3;
+
+        auto layoutPerspCol = [&](juce::Slider& knob, juce::Label& label, int cx, int cw) {
+            int kx = cx + (cw - perspKnobSz) / 2;
+            knob.setBounds(kx, perspY, perspKnobSz, perspKnobSz);
+            label.setBounds(cx, perspY + perspKnobSz, cw, perspLabelH);
+        };
+
+        layoutPerspCol(listenerYawKnob_,   listenerYawLabel_,   0, perspColW);
+        layoutPerspCol(listenerPitchKnob_, listenerPitchLabel_, perspColW, perspColW);
+        layoutPerspCol(listenerRollKnob_,  listenerRollLabel_,  perspColW * 2, kLeftColW - perspColW * 2);
+
+        // Toggles below perspective knobs
+        const int toggleY = perspY + perspKnobSz + perspLabelH + 4;
+        const int toggleH = 22;
+        wasdToggle_.setBounds(kPadding, toggleY, kLeftColW - kPadding * 2, toggleH);
+        headFollowsToggle_.setBounds(kPadding, toggleY + toggleH + 2, kLeftColW - kPadding * 2, toggleH);
+        listenerLinkToggle_.setBounds(kPadding, toggleY + (toggleH + 2) * 2, kLeftColW - kPadding * 2, toggleH);
+    }
+
     // ===== BOTTOM ROW =====
     {
         const int bx = bottomRow.getX();
@@ -951,9 +1066,9 @@ void XYZPanEditor::resized()
             const int labelH_b = 14;
 
             // === OPTIONS TAB layout ===
-            // Top row: Sphere | Doppler — two knobs, centered in 120px halves
+            // Top row: Sphere | Doppler | In Gain — three knobs in equal columns
             {
-                const int colW = ow / 2;
+                const int colW = ow / 3;
                 const int doppSubLabelH = 12;
 
                 int sKnobX = ox + (colW - knobSz) / 2;
@@ -964,6 +1079,10 @@ void XYZPanEditor::resized()
                 dopplerKnob_.setBounds(dKnobX, contentTop + 2, knobSz, knobSz);
                 dopplerLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
                 dopplerSubLabel_.setBounds(ox + colW, contentTop + 74, colW, doppSubLabelH);
+
+                int gKnobX = ox + colW * 2 + (colW - knobSz) / 2;
+                inputGainKnob_.setBounds(gKnobX, contentTop + 2, knobSz, knobSz);
+                inputGainLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
             }
 
             // Checkbox row: Binaural | Early Reflections
@@ -1006,26 +1125,7 @@ void XYZPanEditor::resized()
                 faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
             }
 
-            // === PERSPECTIVE TAB layout ===
-            // Top row: Yaw | Pitch | Roll — three 80px columns
-            {
-                const int colW = ow / 3;
-
-                int yawKX = ox + (colW - knobSz) / 2;
-                listenerYawKnob_.setBounds(yawKX, contentTop + 2, knobSz, knobSz);
-                listenerYawLabel_.setBounds(ox, contentTop + 60, colW, labelH_b);
-
-                int pitchKX = ox + colW + (colW - knobSz) / 2;
-                listenerPitchKnob_.setBounds(pitchKX, contentTop + 2, knobSz, knobSz);
-                listenerPitchLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
-
-                int rollKX = ox + colW * 2 + (colW - knobSz) / 2;
-                listenerRollKnob_.setBounds(rollKX, contentTop + 2, knobSz, knobSz);
-                listenerRollLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
-
-                // Head-follows-camera toggle below knobs
-                headFollowsToggle_.setBounds(ox + pad, contentTop + 82, ow - pad * 2, 22);
-            }
+            // Perspective controls now in left column Listener tab (layout handled above).
 
             // === CUSTOMIZE TAB layout (scrollable viewport) ===
             {
@@ -1077,8 +1177,7 @@ void XYZPanEditor::resized()
                 placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
                 placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
                 placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
-                placeAvatarSlider(googlyGravitySlider_,  googlyGravityLabel_);
-                placeAvatarSlider(googlySpringSlider_,   googlySpringLabel_);
+                placeAvatarSlider(googlySlider_,          googlyLabel_);
                 placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
 
                 // --- EARS section header ---
@@ -1230,11 +1329,16 @@ void XYZPanEditor::applyCurrentTheme()
                          juce::Colour(theme.lfoAccentBright));
 
     // Re-apply listener / reverb / orbit knobs to LFO accent
-    for (auto* knob : {&sphereRadiusKnob_, &dopplerKnob_,
+    for (auto* knob : {&sphereRadiusKnob_, &dopplerKnob_, &inputGainKnob_,
                         &listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_,
                         &verbSize_, &verbDecay_, &verbDamping_, &verbWet_})
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(theme.lfoAccent));
+
+    // Walker knobs — aqua accent
+    for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_})
+        knob->setColour(juce::Slider::rotarySliderFillColourId,
+                         juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
 
     // Update hero label colors to match theme
     for (auto* lbl : {&xLabel_, &yLabel_, &zLabel_})
@@ -1264,15 +1368,76 @@ void XYZPanEditor::pushAvatarToGL()
     glView_.setAvatarParams(userPrefs_->avatarParams());
 }
 
+void XYZPanEditor::syncEyeSpacingSliderMode(bool isCyclops)
+{
+    const auto& ap = userPrefs_->avatarParams();
+    if (isCyclops)
+    {
+        eyeSpacingLabel_.setText("Eye Height", juce::dontSendNotification);
+        eyeSpacingSlider_.setRange(0.0, 1.0, 0.0);
+        eyeSpacingSlider_.setValue(static_cast<double>(ap.eyeHeight), juce::dontSendNotification);
+        eyeSpacingSlider_.setEnabled(true);
+    }
+    else
+    {
+        eyeSpacingLabel_.setText("Eye Space", juce::dontSendNotification);
+        eyeSpacingSlider_.setRange(0.2, 3.0, 0.0);
+        eyeSpacingSlider_.setValue(static_cast<double>(ap.eyeSpacing), juce::dontSendNotification);
+        eyeSpacingSlider_.setEnabled(true);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// setActiveLeftTab — show/hide Source vs Listener components in left column
+// ---------------------------------------------------------------------------
+void XYZPanEditor::setActiveLeftTab(LeftTab tab)
+{
+    activeLeftTab_ = tab;
+    const bool source   = (tab == LeftTab::Source);
+    const bool listener = (tab == LeftTab::Listener);
+
+    // Source tab components
+    xKnob_.setVisible(source);
+    xLabel_.setVisible(source);
+    yKnob_.setVisible(source);
+    yLabel_.setVisible(source);
+    zKnob_.setVisible(source);
+    zLabel_.setVisible(source);
+    xLFO_.setVisible(source);
+    yLFO_.setVisible(source);
+    zLFO_.setVisible(source);
+    lfoSpeedMulKnob_.setVisible(source);
+    lfoSpeedMulLabel_.setVisible(source);
+    resetXYZPhasesBtn_.setVisible(source);
+
+    // Listener tab components: walker knobs + perspective controls
+    walkerXKnob_.setVisible(listener);
+    walkerXLabel_.setVisible(listener);
+    walkerYKnob_.setVisible(listener);
+    walkerYLabel_.setVisible(listener);
+    walkerZKnob_.setVisible(listener);
+    walkerZLabel_.setVisible(listener);
+    wasdToggle_.setVisible(listener);
+    listenerYawKnob_.setVisible(listener);
+    listenerYawLabel_.setVisible(listener);
+    listenerPitchKnob_.setVisible(listener);
+    listenerPitchLabel_.setVisible(listener);
+    listenerRollKnob_.setVisible(listener);
+    listenerRollLabel_.setVisible(listener);
+    headFollowsToggle_.setVisible(listener);
+    listenerLinkToggle_.setVisible(listener);
+
+    repaint();
+}
+
 // ---------------------------------------------------------------------------
 // setActiveTab — show/hide components for Options vs Perspective vs Customize tab
 // ---------------------------------------------------------------------------
 void XYZPanEditor::setActiveTab(OptionsTab tab)
 {
     activeTab_ = tab;
-    const bool options     = (tab == OptionsTab::Options);
-    const bool perspective = (tab == OptionsTab::Perspective);
-    const bool customize   = (tab == OptionsTab::Customize);
+    const bool options   = (tab == OptionsTab::Options);
+    const bool customize = (tab == OptionsTab::Customize);
 
     // Options-only components
     sphereRadiusKnob_.setVisible(options);
@@ -1280,6 +1445,8 @@ void XYZPanEditor::setActiveTab(OptionsTab tab)
     dopplerKnob_.setVisible(options);
     dopplerLabel_.setVisible(options);
     dopplerSubLabel_.setVisible(options);
+    inputGainKnob_.setVisible(options);
+    inputGainLabel_.setVisible(options);
     binauralToggle_.setVisible(options);
     binauralLabel_.setVisible(options);
     earlyReflToggle_.setVisible(options);
@@ -1292,14 +1459,7 @@ void XYZPanEditor::setActiveTab(OptionsTab tab)
     orbitPhaseLabel_.setVisible(options);
     faceListenerToggle_.setVisible(options);
 
-    // Perspective-only components
-    listenerYawKnob_.setVisible(perspective);
-    listenerYawLabel_.setVisible(perspective);
-    listenerPitchKnob_.setVisible(perspective);
-    listenerPitchLabel_.setVisible(perspective);
-    listenerRollKnob_.setVisible(perspective);
-    listenerRollLabel_.setVisible(perspective);
-    headFollowsToggle_.setVisible(perspective);
+    // Perspective controls now live in left column Listener tab (managed by setActiveLeftTab)
 
     // Customize-only components (all children of viewport content)
     customizeViewport_.setVisible(customize);
@@ -1320,14 +1480,23 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
     if (zone != RandZone::None)
         lastClickedZone_ = zone;
 
-    // Hit-test tab header area (the 240px orbit-controls header) — three thirds
     const auto lo = Layout::compute(getWidth(), getHeight());
+
+    // Hit-test left column header area — "Source" | "Listener" tabs
+    if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
+        const int halfW = kLeftColW / 2;
+        if (pos.x < halfW)
+            setActiveLeftTab(LeftTab::Source);
+        else
+            setActiveLeftTab(LeftTab::Listener);
+        return;
+    }
+
+    // Hit-test bottom tab header area (the 240px orbit-controls header) — two halves
     if (pos.y >= lo.bottomY && pos.y < lo.bottomY + kSectionHdrH && pos.x < kOrbitCtrlW) {
-        const int thirdTab = kOrbitCtrlW / 3;
-        if (pos.x < thirdTab)
+        const int halfTab = kOrbitCtrlW / 2;
+        if (pos.x < halfTab)
             setActiveTab(OptionsTab::Options);
-        else if (pos.x < thirdTab * 2)
-            setActiveTab(OptionsTab::Perspective);
         else
             setActiveTab(OptionsTab::Customize);
         return;
@@ -1359,10 +1528,18 @@ juce::Image XYZPanEditor::generateNoiseTexture(int size)
 }
 
 // ---------------------------------------------------------------------------
-// keyPressed — Alt+R randomizes the last-clicked UI panel group
+// keyPressed — WASD movement + Alt+R randomization
 // ---------------------------------------------------------------------------
 bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 {
+    // Consume WASD keys when WASD control is active (actual movement in timerCallback)
+    if (wasdToggle_.getToggleState()) {
+        const int k = key.getKeyCode();
+        if (k == 'W' || k == 'w' || k == 'A' || k == 'a' ||
+            k == 'S' || k == 's' || k == 'D' || k == 'd')
+            return true;
+    }
+
     if (key.getModifiers().isAltDown() && key.getKeyCode() == 'R') {
         // Use last-clicked zone; fall back to hover if nothing was clicked yet
         auto zone = lastClickedZone_;
@@ -1389,6 +1566,74 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
         return zone != RandZone::None;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// timerCallback — WASD movement: move walker in the direction the head is looking
+// ---------------------------------------------------------------------------
+void XYZPanEditor::timerCallback()
+{
+    if (!wasdToggle_.getToggleState())
+        return;
+
+    // Check which WASD keys are currently held
+    const bool w = juce::KeyPress::isKeyCurrentlyDown('W') || juce::KeyPress::isKeyCurrentlyDown('w');
+    const bool a = juce::KeyPress::isKeyCurrentlyDown('A') || juce::KeyPress::isKeyCurrentlyDown('a');
+    const bool s = juce::KeyPress::isKeyCurrentlyDown('S') || juce::KeyPress::isKeyCurrentlyDown('s');
+    const bool d = juce::KeyPress::isKeyCurrentlyDown('D') || juce::KeyPress::isKeyCurrentlyDown('d');
+
+    if (!w && !a && !s && !d)
+        return;
+
+    // Build local-space input: fwd = forward/back, strafe = left/right
+    float fwd = 0.0f, strafe = 0.0f;
+    if (w) fwd    += 1.0f;
+    if (s) fwd    -= 1.0f;
+    if (d) strafe += 1.0f;
+    if (a) strafe -= 1.0f;
+
+    // Read head orientation (degrees → radians)
+    // Engine coordinate system: yaw rotates in X/Y plane, pitch tilts into Z
+    constexpr float kDeg2Rad = 3.14159265358979323846f / 180.0f;
+    const float yaw   = proc_.apvts.getRawParameterValue(ParamID::LISTENER_YAW)->load()   * kDeg2Rad;
+    const float pitch = proc_.apvts.getRawParameterValue(ParamID::LISTENER_PITCH)->load() * kDeg2Rad;
+
+    // Forward vector from yaw + pitch (engine: yaw in XY plane, pitch tilts Z)
+    const float cosY = std::cos(yaw);
+    const float sinY = std::sin(yaw);
+    const float cosP = std::cos(pitch);
+    const float sinP = std::sin(pitch);
+
+    // Forward direction the head is looking
+    const float fwdX = -sinY * cosP;
+    const float fwdY =  cosY * cosP;
+    const float fwdZ =  sinP;
+
+    // Right vector: perpendicular to forward in the horizontal (XY) plane
+    const float rightX =  cosY;
+    const float rightY =  sinY;
+    // rightZ = 0 (strafe stays horizontal)
+
+    // Combine into world-space delta
+    const float dx = fwd * fwdX + strafe * rightX;
+    const float dy = fwd * fwdY + strafe * rightY;
+    const float dz = fwd * fwdZ;
+
+    // Movement speed: ~0.5 units/sec at 60 Hz → 0.008 per tick
+    constexpr float speed = 0.008f;
+
+    auto* px = proc_.apvts.getParameter(ParamID::WALKER_X);
+    auto* py = proc_.apvts.getParameter(ParamID::WALKER_Y);
+    auto* pz = proc_.apvts.getParameter(ParamID::WALKER_Z);
+    if (px == nullptr || py == nullptr || pz == nullptr) return;
+
+    const float newX = juce::jlimit(-1.0f, 1.0f, px->convertFrom0to1(px->getValue()) + dx * speed);
+    const float newY = juce::jlimit(-1.0f, 1.0f, py->convertFrom0to1(py->getValue()) + dy * speed);
+    const float newZ = juce::jlimit(-1.0f, 1.0f, pz->convertFrom0to1(pz->getValue()) + dz * speed);
+
+    px->setValueNotifyingHost(px->convertTo0to1(newX));
+    py->setValueNotifyingHost(py->convertTo0to1(newY));
+    pz->setValueNotifyingHost(pz->convertTo0to1(newZ));
 }
 
 // ---------------------------------------------------------------------------
@@ -1582,7 +1827,7 @@ void XYZPanEditor::randomizeCustColors()
 
 // ---------------------------------------------------------------------------
 // randomizeCustEyes — eyeColor, eyeType, eyeSize, eyeSpacing,
-//                     pupilSize, googlyGravity, googlySpring
+//                     pupilSize, googly
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeCustEyes()
 {
@@ -1597,9 +1842,13 @@ void XYZPanEditor::randomizeCustEyes()
     ap.eyeType       = eyeTypeDist(rng_);
     ap.eyeSize       = sizeDist(rng_);
     ap.eyeSpacing    = sizeDist(rng_);
+    ap.eyeHeight     = unit01(rng_);
     ap.pupilSize     = unit01(rng_);
-    ap.googlyGravity = unit01(rng_);
-    ap.googlySpring  = unit01(rng_);
+
+    // Randomize googly via the combined slider curve
+    float t = unit01(rng_);
+    ap.googlyGravity = std::pow(t, 0.322f);
+    ap.googlySpring  = std::pow(1.0f - t, 0.322f);
 
     userPrefs_->setAvatarParams(ap);
     pushAvatarToGL();
@@ -1608,15 +1857,12 @@ void XYZPanEditor::randomizeCustEyes()
     eyeColorSwatch_.setColour(juce::Colour(ap.eyeColor));
     eyeTypeCombo_.setSelectedId(ap.eyeType + 1, juce::dontSendNotification);
     eyeSizeSlider_.setValue(static_cast<double>(ap.eyeSize), juce::dontSendNotification);
-    eyeSpacingSlider_.setValue(static_cast<double>(ap.eyeSpacing), juce::dontSendNotification);
+    syncEyeSpacingSliderMode(ap.eyeType == xyzpan::kEyeCyclops);
     pupilSizeSlider_.setValue(static_cast<double>(ap.pupilSize), juce::dontSendNotification);
-    googlyGravitySlider_.setValue(static_cast<double>(ap.googlyGravity), juce::dontSendNotification);
-    googlySpringSlider_.setValue(static_cast<double>(ap.googlySpring), juce::dontSendNotification);
+    googlySlider_.setValue(static_cast<double>(t), juce::dontSendNotification);
 
     // Update enabled states based on new eye type
-    eyeSpacingSlider_.setEnabled(ap.eyeType != xyzpan::kEyeCyclops);
-    googlyGravitySlider_.setEnabled(ap.eyeType == xyzpan::kEyeGoogly);
-    googlySpringSlider_.setEnabled(ap.eyeType == xyzpan::kEyeGoogly);
+    googlySlider_.setEnabled(ap.eyeType == xyzpan::kEyeGoogly);
 }
 
 // ---------------------------------------------------------------------------

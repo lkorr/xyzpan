@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_opengl/juce_opengl.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <atomic>
+#include <memory>
 #include <vector>
 #include <array>
 #include <functional>
@@ -110,7 +112,8 @@ public:
     // bridge: the lock-free bridge written by processBlock
     XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
                  juce::AudioProcessor* proc,
-                 xyzpan::PositionBridge& bridge);
+                 xyzpan::PositionBridge& bridge,
+                 xyzpan::ForeignSourceBridge& foreignBridge);
     ~XYZPanGLView() override;
 
     // OpenGLRenderer overrides
@@ -125,7 +128,6 @@ public:
     void mouseMove(const juce::MouseEvent& e)  override;
     void mouseWheelMove(const juce::MouseEvent& e,
                         const juce::MouseWheelDetails& wheel) override;
-
     // Called by snap buttons in XYZPanEditor
     using SnapView = Camera::SnapView;
     void setSnapView(SnapView v);
@@ -155,6 +157,12 @@ private:
 
     // Upload cone geometry (interleaved pos+normal) with index buffer
     void uploadConeVAO();
+
+    // Upload flat 2D arrow geometry (position-only triangles) for direction indicator
+    void uploadArrow2DVAO();
+
+    // Draw flat 2D arrow with the line shader (unlit flat color)
+    void drawArrow2D(const glm::mat4& model, const glm::vec3& color, float opacity);
 
     // Draw call helpers
     void drawLines(GLuint vao, int vertexCount,
@@ -210,10 +218,13 @@ private:
     int    sphereWireIndexCount_ = 0;
 
     GLuint vaoCone_ = 0, vboCone_ = 0, iboCone_ = 0;
+    GLuint vaoArrow2D_ = 0, vboArrow2D_ = 0;
+    int    arrow2DVertexCount_ = 0;
 
-    GLuint vaoTrailSource_ = 0, vboTrailSource_ = 0;
-    GLuint vaoTrailL_      = 0, vboTrailL_      = 0;
-    GLuint vaoTrailR_      = 0, vboTrailR_      = 0;
+    GLuint vaoTrailSource_   = 0, vboTrailSource_   = 0;
+    GLuint vaoTrailL_        = 0, vboTrailL_        = 0;
+    GLuint vaoTrailR_        = 0, vboTrailR_        = 0;
+    GLuint vaoTrailListener_ = 0, vboTrailListener_ = 0;
 
     int roomVertexCount_   = 0;
     int gridVertexCount_   = 0;
@@ -227,7 +238,7 @@ private:
     std::vector<unsigned> coneIdx_;
 
     // Trail buffers and CPU staging
-    TrailBuffer trailSource_, trailL_, trailR_;
+    TrailBuffer trailSource_, trailL_, trailR_, trailListener_;
     std::array<float, TrailBuffer::kCapacity * 4> trailVertexStaging_{};
 
     // ------------------------------------------------------------------
@@ -254,6 +265,7 @@ private:
     juce::AudioProcessorValueTreeState& apvts_;
     juce::AudioProcessor*               proc_;   // kept for future WeakReference use
     xyzpan::PositionBridge&             bridge_;
+    xyzpan::ForeignSourceBridge&        foreignBridge_;
 
     // AudioProcessorValueTreeState::Listener override
     void parameterChanged(const juce::String& id, float newValue) override;
@@ -326,7 +338,7 @@ private:
 
     // Head-follows-camera state
     bool  headFollowsActive_ = false;
-    bool  drivingParamsFromCamera_ = false;
+    std::shared_ptr<std::atomic<bool>> drivingParamsFromCamera_ = std::make_shared<std::atomic<bool>>(false);
     float savedYawDeg_   = 0.0f;
     float savedPitchDeg_ = 0.0f;
     float savedRollDeg_  = 0.0f;

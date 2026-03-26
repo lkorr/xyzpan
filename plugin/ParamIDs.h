@@ -168,6 +168,9 @@ namespace ParamID {
     // Dev panel: Head shadow fully-open cap
     constexpr const char* HEAD_SHADOW_FULL_OPEN_HZ = "head_shadow_full_open_hz";
 
+    // Input gain (Options tab)
+    constexpr const char* INPUT_GAIN_DB = "input_gain_db";
+
     // Dev panel: Geometry
     constexpr const char* SPHERE_RADIUS             = "sphere_radius";
     constexpr const char* VERT_MONO_CYLINDER_RADIUS = "vert_mono_cyl_radius";
@@ -211,6 +214,15 @@ namespace ParamID {
 
     // Head follows camera toggle
     constexpr const char* HEAD_FOLLOWS_CAMERA = "head_follows_camera";
+
+    // Link listener orientation across instances
+    constexpr const char* LISTENER_LINK = "listener_link";
+
+    // Walker — movable listener position (always active)
+    constexpr const char* WALKER_X       = "walker_x";
+    constexpr const char* WALKER_Y       = "walker_y";
+    constexpr const char* WALKER_Z       = "walker_z";
+    constexpr const char* WASD_CONTROL   = "walker_enabled";  // reused ID for DAW compat
 
     // Binaural toggle (user-facing)
     constexpr const char* BINAURAL_ENABLED   = "binaural_enabled";

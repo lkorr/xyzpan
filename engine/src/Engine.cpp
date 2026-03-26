@@ -338,6 +338,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     float blkY = currentParams.y + lfoY_.peek() * lfoDepthYSmooth_.current();
     float blkZ = currentParams.z + lfoZ_.peek() * lfoDepthZSmooth_.current();
 
+    // Walker mode: subtract listener position before head rotation so all
+    // downstream DSP (pinna, presence, distance, air absorption) operates
+    // on listener-relative coordinates.
+    blkX -= currentParams.listenerX;
+    blkY -= currentParams.listenerY;
+    blkZ -= currentParams.listenerZ;
+
     // Listener head rotation — angular-smooth yaw/pitch/roll to handle 360°↔0° wrap
     {
         const float b = 1.0f - angularSmA_;
@@ -679,9 +686,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     std::uniform_real_distribution<float> noiseDist(-1.0f, 1.0f);
 
     // Pre-compute position-derived values for zero-LFO fast path
-    const float blkRawModDist = std::sqrt(currentParams.x * currentParams.x
-                                        + currentParams.y * currentParams.y
-                                        + currentParams.z * currentParams.z);
+    // Use listener-relative position for distance (walker mode)
+    const float relPosX = currentParams.x - currentParams.listenerX;
+    const float relPosY = currentParams.y - currentParams.listenerY;
+    const float relPosZ = currentParams.z - currentParams.listenerZ;
+    const float blkRawModDist = std::sqrt(relPosX * relPosX
+                                        + relPosY * relPosY
+                                        + relPosZ * relPosZ);
     // blkHorizMag is already computed above (sqrt(blkX^2+blkY^2)) -- reused in zero-LFO path
 
     for (int i = 0; i < numSamples; ++i) {
@@ -782,6 +793,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // Save world-space position for bridge (source sphere stays at world position)
         const float worldModX = modX, worldModY = modY, worldModZ = modZ;
 
+        // Walker mode: subtract listener position (listener-relative for DSP)
+        modX -= currentParams.listenerX;
+        modY -= currentParams.listenerY;
+        modZ -= currentParams.listenerZ;
+
         // Rotate into listener-relative frame for DSP (binaural cues, EQ targets)
         if (listenerRotated) {
             const float rx = modX * cosY + modY * sinY;
@@ -796,12 +812,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             modZ = rrz;
         }
 
-        // Position-dependent targets from object center position
-        // rawModDist uses world-space (distance is rotation-invariant)
+        // Position-dependent targets from listener-relative center position
+        // rawModDist uses listener-relative (rotation-invariant) distance
         // horizontalMag uses rotated values (needed for azimuth/rear factor)
         float rawModDist, horizontalMag;
         if (lfoActive) {
-            rawModDist    = std::sqrt(worldModX * worldModX + worldModY * worldModY + worldModZ * worldModZ);
+            rawModDist    = std::sqrt(modX * modX + modY * modY + modZ * modZ);
             horizontalMag = std::sqrt(modX * modX + modY * modY);
         } else {
             rawModDist    = blkRawModDist;
@@ -858,12 +874,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Compute L/R node positions in world space, then rotate for DSP
             const float halfSpread = smoothedWidth * kStereoMaxSpreadRadius;
 
-            // Spread direction: perpendicular to listener→object in XY plane (world space)
-            const float worldHorizMag = std::sqrt(worldModX * worldModX + worldModY * worldModY);
+            // Spread direction: perpendicular to listener→object in XY plane (listener-relative)
+            const float relHorizMag = std::sqrt(modX * modX + modY * modY);
             float spreadX, spreadY;
-            if (currentParams.stereoFaceListener && worldHorizMag > 1e-5f) {
-                spreadX =  worldModY / worldHorizMag;
-                spreadY = -worldModX / worldHorizMag;
+            if (currentParams.stereoFaceListener && relHorizMag > 1e-5f) {
+                spreadX =  modY / relHorizMag;
+                spreadY = -modX / relHorizMag;
             } else {
                 spreadX = 1.0f;
                 spreadY = 0.0f;
@@ -933,27 +949,35 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Store world-space for position bridge
             lastStereoNodes_ = { lNodeX, lNodeY, lNodeZ, rNodeX, rNodeY, rNodeZ, smoothedWidth };
 
-            // Rotate node positions into listener-relative frame for DSP
-            float dspLX = lNodeX, dspLY = lNodeY, dspLZ = lNodeZ;
-            float dspRX = rNodeX, dspRY = rNodeY, dspRZ = rNodeZ;
+            // Listener-relative node positions for DSP (distance, doppler, ER)
+            const float lRelX = lNodeX - currentParams.listenerX;
+            const float lRelY = lNodeY - currentParams.listenerY;
+            const float lRelZ = lNodeZ - currentParams.listenerZ;
+            const float rRelX = rNodeX - currentParams.listenerX;
+            const float rRelY = rNodeY - currentParams.listenerY;
+            const float rRelZ = rNodeZ - currentParams.listenerZ;
+
+            // Rotate listener-relative positions into head frame for binaural DSP
+            float dspLX = lRelX, dspLY = lRelY, dspLZ = lRelZ;
+            float dspRX = rRelX, dspRY = rRelY, dspRZ = rRelZ;
             if (listenerRotated) {
                 float rx, ry;
-                rx = lNodeX * cosY + lNodeY * sinY;
-                ry = -lNodeX * sinY + lNodeY * cosY;
+                rx = lRelX * cosY + lRelY * sinY;
+                ry = -lRelX * sinY + lRelY * cosY;
                 dspLX = rx;
-                dspLY = ry * cosP + lNodeZ * sinP;
-                dspLZ = -ry * sinP + lNodeZ * cosP;
+                dspLY = ry * cosP + lRelZ * sinP;
+                dspLZ = -ry * sinP + lRelZ * cosP;
                 // Roll around forward axis (Y in engine coords)
                 float rrx =  dspLX * cosR + dspLZ * sinR;
                 float rrz = -dspLX * sinR + dspLZ * cosR;
                 dspLX = rrx;
                 dspLZ = rrz;
 
-                rx = rNodeX * cosY + rNodeY * sinY;
-                ry = -rNodeX * sinY + rNodeY * cosY;
+                rx = rRelX * cosY + rRelY * sinY;
+                ry = -rRelX * sinY + rRelY * cosY;
                 dspRX = rx;
-                dspRY = ry * cosP + rNodeZ * sinP;
-                dspRZ = -ry * sinP + rNodeZ * cosP;
+                dspRY = ry * cosP + rRelZ * sinP;
+                dspRZ = -ry * sinP + rRelZ * cosP;
                 // Roll around forward axis (Y in engine coords)
                 rrx =  dspRX * cosR + dspRZ * sinR;
                 rrz = -dspRX * sinR + dspRZ * cosR;
@@ -966,12 +990,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             float sampleR = currentParams.testToneEnabled ? (testStereo ? testSigR : testSig) : inputR[i];
 
             // Doppler FIRST — per-node mono doppler before comb/pinna/binaural
-            // Distance is rotation-invariant, use world-space node positions
+            // Distance is rotation-invariant, use listener-relative node positions
             const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
             const float lRawDistFrac = std::clamp(
-                std::sqrt(lNodeX*lNodeX + lNodeY*lNodeY + lNodeZ*lNodeZ) / kSqrt3, 0.0f, 1.0f);
+                std::sqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ) / kSqrt3, 0.0f, 1.0f);
             const float rRawDistFrac = std::clamp(
-                std::sqrt(rNodeX*rNodeX + rNodeY*rNodeY + rNodeZ*rNodeZ) / kSqrt3, 0.0f, 1.0f);
+                std::sqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ) / kSqrt3, 0.0f, 1.0f);
 
             sampleL = dist_.processDoppler(sampleL, lRawDistFrac, sr, effectiveDoppler, currentParams);
             sampleR = distR_.processDoppler(sampleR, rRawDistFrac, sr, effectiveDoppler, currentParams);
@@ -995,10 +1019,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             dL_R += chestROut; dR_R += chestROut;
 
             // Per-node distance processing (gain + air absorption only, no doppler)
-            auto distL_result = dist_.processDistance(dL_L, dR_L, lNodeX, lNodeY, lNodeZ, sr,
+            auto distL_result = dist_.processDistance(dL_L, dR_L, lRelX, lRelY, lRelZ, sr,
                 blkDistRefScale_, currentParams);
 
-            auto distR_result = distR_.processDistance(dL_R, dR_R, rNodeX, rNodeY, rNodeZ, sr,
+            auto distR_result = distR_.processDistance(dL_R, dR_R, rRelX, rRelY, rRelZ, sr,
                 blkDistRefScale_, currentParams);
 
             // Per-node floor bounce (on per-node distance output, before combine)
@@ -1024,20 +1048,20 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float dampCutoff = kERDampingLPMaxHz
                         + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
 
-                    // Per-node distGainTarget for ER gain scaling
-                    const float lNodeDist = std::max(std::sqrt(lNodeX*lNodeX + lNodeY*lNodeY + lNodeZ*lNodeZ), kMinDistance);
+                    // Per-node distGainTarget for ER gain scaling (listener-relative)
+                    const float lNodeDist = std::max(std::sqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ), kMinDistance);
                     const float lDistRatio = distRef / lNodeDist;
                     const float lDistGainTarget = std::clamp(lDistRatio * lDistRatio, 0.0f, currentParams.distGainMax);
 
-                    const float rNodeDist = std::max(std::sqrt(rNodeX*rNodeX + rNodeY*rNodeY + rNodeZ*rNodeZ), kMinDistance);
+                    const float rNodeDist = std::max(std::sqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ), kMinDistance);
                     const float rDistRatio = distRef / rNodeDist;
                     const float rDistGainTarget = std::clamp(rDistRatio * rDistRatio, 0.0f, currentParams.distGainMax);
 
-                    auto erLResult = er_.processSample(sampleL, lNodeX, lNodeY, lNodeZ,
+                    auto erLResult = er_.processSample(sampleL, lRelX, lRelY, lRelZ,
                         lDistGainTarget, sr, dampCutoff, roomHalf,
                         ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
                         currentParams);
-                    auto erRResult = erR_.processSample(sampleR, rNodeX, rNodeY, rNodeZ,
+                    auto erRResult = erR_.processSample(sampleR, rRelX, rRelY, rRelZ,
                         rDistGainTarget, sr, dampCutoff, roomHalf,
                         ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
                         currentParams);

@@ -6,11 +6,15 @@
 #include "ParamLayout.h"
 #include "PositionBridge.h"
 #include "Presets.h"
+#include "SharedListenerHub.h"
 
-class XYZPanProcessor : public juce::AudioProcessor {
+class XYZPanProcessor : public juce::AudioProcessor,
+                        public SharedListenerHub::Listener,
+                        public juce::AudioProcessorValueTreeState::Listener,
+                        private juce::Timer {
 public:
     XYZPanProcessor();
-    ~XYZPanProcessor() override = default;
+    ~XYZPanProcessor() override;
 
     // AudioProcessor overrides
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -45,6 +49,12 @@ public:
     // Phase 6: PositionBridge for audio-to-GL position transfer (UI-07)
     // Public so XYZPanEditor / XYZPanGLView can hold a reference
     xyzpan::PositionBridge positionBridge;
+
+    // Source export for linked-instance visualization (audio → message thread)
+    xyzpan::SourceExportBuffer sourceExport;
+
+    // Foreign source bridge for linked-instance visualization (message → GL thread)
+    xyzpan::ForeignSourceBridge foreignSourceBridge;
 
     // DSP state bridge for dev panel readouts (audio thread → UI thread)
     xyzpan::DSPStateBridge dspStateBridge;
@@ -186,6 +196,32 @@ private:
     std::atomic<float>* listenerRollParam         = nullptr;
     std::atomic<float>* headFollowsCameraParam    = nullptr;
 
+    // Walker — movable listener position (always active)
+    std::atomic<float>* walkerXParam     = nullptr;
+    std::atomic<float>* walkerYParam     = nullptr;
+    std::atomic<float>* walkerZParam     = nullptr;
+    std::atomic<float>* wasdControlParam = nullptr;
+
+    xyzpan::dsp::OnePoleSmooth walkerXSmooth_;
+    xyzpan::dsp::OnePoleSmooth walkerYSmooth_;
+    xyzpan::dsp::OnePoleSmooth walkerZSmooth_;
+
+    // Listener link across instances
+    std::atomic<float>* listenerLinkParam         = nullptr;
+    juce::SharedResourcePointer<SharedListenerHub> listenerHub_;
+    std::atomic<bool> receivingBroadcast_{false};
+
+    // SharedListenerHub::Listener overrides
+    void listenerOrientationChanged(float yaw, float pitch, float roll,
+                                     bool headFollows) override;
+    void listenerPositionChanged(float x, float y, float z) override;
+    xyzpan::SourceExportBuffer* getSourceExportBuffer() override { return &sourceExport; }
+
+    // juce::Timer override — collects foreign source positions for GL view
+    void timerCallback() override;
+    // APVTS::Listener override
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
+
     // Dev panel: Presence shelf
     std::atomic<float>* presenceShelfFreqParam = nullptr;
     std::atomic<float>* presenceShelfMaxDbParam = nullptr;
@@ -229,6 +265,9 @@ private:
 
     // Dev panel: Head shadow fully-open cap
     std::atomic<float>* headShadowFullOpenHzParam = nullptr;
+
+    // Input gain
+    std::atomic<float>* inputGainDbParam = nullptr;
 
     // Dev panel: Geometry
     std::atomic<float>* sphereRadiusParam       = nullptr;

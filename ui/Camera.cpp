@@ -4,25 +4,24 @@
 
 namespace xyzpan {
 
-glm::mat4 Camera::getViewMatrix() const
+glm::mat4 Camera::getViewMatrix(const glm::vec3& target) const
 {
     // Convert yaw/pitch from degrees to radians
     const float yawRad   = yaw   * (3.14159265f / 180.0f);
     const float pitchRad = pitch * (3.14159265f / 180.0f);
 
-    // Compute eye position in spherical coordinates around origin
+    // Compute eye position in spherical coordinates around target
     const float cosP = std::cos(pitchRad);
     const float sinP = std::sin(pitchRad);
     const float cosY = std::cos(yawRad);
     const float sinY = std::sin(yawRad);
 
     const glm::vec3 eye(
-        dist * cosP * sinY,   // X
-        dist * sinP,          // Y (elevation)
-        dist * cosP * cosY    // Z
+        target.x + dist * cosP * sinY,   // X
+        target.y + dist * sinP,           // Y (elevation)
+        target.z + dist * cosP * cosY     // Z
     );
 
-    const glm::vec3 target(0.0f, 0.0f, 0.0f);
     const glm::vec3 up(0.0f, 1.0f, 0.0f);
 
     return glm::lookAt(eye, target, up);

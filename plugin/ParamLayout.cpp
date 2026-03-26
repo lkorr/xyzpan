@@ -510,6 +510,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(5000.0f, 20000.0f, 1.0f, 0.3f), xyzpan::kHeadShadowFullOpenHz));
 
     // -------------------------------------------------------------------------
+    // Input gain (Options tab)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::INPUT_GAIN_DB, 1}, "Input Gain",
+        NR(0.0f, 12.0f, 0.1f), 0.0f));
+
+    // -------------------------------------------------------------------------
     // Dev Panel: Geometry
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<APF>(PID{ParamID::SPHERE_RADIUS, 1}, "Sphere Radius",
@@ -596,6 +602,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(0.0f, 360.0f, 0.1f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ParamID::HEAD_FOLLOWS_CAMERA, 1}, "Head Follows Camera", false));
+
+    // Link listener orientation across plugin instances
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::LISTENER_LINK, 1}, "Link Listener", false));
+
+    // -------------------------------------------------------------------------
+    // Walker — movable listener position (always active; WASD toggle for keyboard control)
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::WALKER_X, 1}, "Walker X",
+        NR(-1.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::WALKER_Y, 1}, "Walker Y",
+        NR(-1.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::WALKER_Z, 1}, "Walker Z",
+        NR(-1.0f, 1.0f, 0.001f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::WASD_CONTROL, 1}, "WASD Control", false));
 
     // -------------------------------------------------------------------------
     // Binaural toggle (user-facing)

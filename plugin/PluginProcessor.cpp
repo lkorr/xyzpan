@@ -229,6 +229,30 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(listenerRollParam       != nullptr);
     jassert(headFollowsCameraParam  != nullptr);
 
+    // Listener link
+    listenerLinkParam = apvts.getRawParameterValue(ParamID::LISTENER_LINK);
+    jassert(listenerLinkParam != nullptr);
+
+    // Walker — movable listener position (always active)
+    walkerXParam     = apvts.getRawParameterValue(ParamID::WALKER_X);
+    walkerYParam     = apvts.getRawParameterValue(ParamID::WALKER_Y);
+    walkerZParam     = apvts.getRawParameterValue(ParamID::WALKER_Z);
+    wasdControlParam = apvts.getRawParameterValue(ParamID::WASD_CONTROL);
+    jassert(walkerXParam     != nullptr);
+    jassert(walkerYParam     != nullptr);
+    jassert(walkerZParam     != nullptr);
+    jassert(wasdControlParam != nullptr);
+
+    // Register APVTS listeners for linked orientation + position broadcasting
+    apvts.addParameterListener(ParamID::LISTENER_YAW,        this);
+    apvts.addParameterListener(ParamID::LISTENER_PITCH,      this);
+    apvts.addParameterListener(ParamID::LISTENER_ROLL,       this);
+    apvts.addParameterListener(ParamID::HEAD_FOLLOWS_CAMERA, this);
+    apvts.addParameterListener(ParamID::LISTENER_LINK,       this);
+    apvts.addParameterListener(ParamID::WALKER_X,            this);
+    apvts.addParameterListener(ParamID::WALKER_Y,            this);
+    apvts.addParameterListener(ParamID::WALKER_Z,            this);
+
     // Dev panel: Presence shelf
     presenceShelfFreqParam  = apvts.getRawParameterValue(ParamID::PRESENCE_SHELF_FREQ_HZ);
     presenceShelfMaxDbParam = apvts.getRawParameterValue(ParamID::PRESENCE_SHELF_MAX_DB);
@@ -296,6 +320,10 @@ XYZPanProcessor::XYZPanProcessor()
     // Dev panel: Head shadow fully-open cap
     headShadowFullOpenHzParam = apvts.getRawParameterValue(ParamID::HEAD_SHADOW_FULL_OPEN_HZ);
     jassert(headShadowFullOpenHzParam != nullptr);
+
+    // Input gain
+    inputGainDbParam = apvts.getRawParameterValue(ParamID::INPUT_GAIN_DB);
+    jassert(inputGainDbParam != nullptr);
 
     // Dev panel: Geometry
     sphereRadiusParam      = apvts.getRawParameterValue(ParamID::SPHERE_RADIUS);
@@ -397,6 +425,25 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(bypassDopplerParam    != nullptr);
     jassert(bypassAirAbsParam     != nullptr);
     jassert(bypassReverbParam     != nullptr);
+
+    // Start 30Hz timer for collecting foreign source positions
+    startTimerHz(30);
+}
+
+XYZPanProcessor::~XYZPanProcessor() {
+    stopTimer();
+    apvts.removeParameterListener(ParamID::LISTENER_YAW,        this);
+    apvts.removeParameterListener(ParamID::LISTENER_PITCH,      this);
+    apvts.removeParameterListener(ParamID::LISTENER_ROLL,       this);
+    apvts.removeParameterListener(ParamID::HEAD_FOLLOWS_CAMERA, this);
+    apvts.removeParameterListener(ParamID::LISTENER_LINK,       this);
+    apvts.removeParameterListener(ParamID::WALKER_X,            this);
+    apvts.removeParameterListener(ParamID::WALKER_Y,            this);
+    apvts.removeParameterListener(ParamID::WALKER_Z,            this);
+
+    // Always remove — conditional check was unreliable when APVTS state
+    // was replaced, leaving a dangling pointer in the linked_ vector.
+    listenerHub_->removeLinkedInstance(this);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -408,6 +455,14 @@ void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     // Phase 6: prepare R smoother — 20ms matches engine's internal position smoothing window
     rSmooth_.prepare(20.0f, static_cast<float>(sampleRate));
     rSmooth_.reset(rParam != nullptr ? rParam->load() : 1.0f);
+
+    // Walker position smoothers — 5ms: just enough to avoid zipper noise
+    walkerXSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
+    walkerYSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
+    walkerZSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
+    walkerXSmooth_.reset(walkerXParam != nullptr ? walkerXParam->load() : 0.0f);
+    walkerYSmooth_.reset(walkerYParam != nullptr ? walkerYParam->load() : 0.0f);
+    walkerZSmooth_.reset(walkerZParam != nullptr ? walkerZParam->load() : 0.0f);
 }
 
 void XYZPanProcessor::releaseResources() {
@@ -436,6 +491,12 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.x = xParam->load() * r;
     params.y = yParam->load() * r;
     params.z = zParam->load() * r;
+
+    // Walker listener position — always active, scaled by R
+    params.listenerX = walkerXSmooth_.process(walkerXParam->load()) * r;
+    params.listenerY = walkerYSmooth_.process(walkerYParam->load()) * r;
+    params.listenerZ = walkerZSmooth_.process(walkerZParam->load()) * r;
+
     // Dev panel: binaural panning tuning
     params.maxITD_ms       = itdMaxParam->load();
     params.headShadowMinHz = headShadowHzParam->load();
@@ -675,6 +736,17 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         }
     }
 
+    // Apply input gain (0–12 dB) to input channels before engine processing
+    {
+        const float gainDb = inputGainDbParam->load();
+        if (gainDb > 0.001f) {
+            const float gainLin = std::pow(10.0f, gainDb / 20.0f);
+            const int numInCh = getTotalNumInputChannels();
+            for (int ch = 0; ch < numInCh; ++ch)
+                buffer.applyGain(ch, 0, buffer.getNumSamples(), gainLin);
+        }
+    }
+
     // Build input channel pointer array.
     // Use getTotalNumInputChannels() for numIn — NOT buffer.getNumChannels(), which
     // returns total channel slots (inputs + outputs). For mono-in/stereo-out, the buffer
@@ -723,9 +795,19 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     snap.listenerPitch = params.listenerPitch;
     snap.listenerRoll  = params.listenerRoll;
 
+    snap.listenerPosX = params.listenerX;
+    snap.listenerPosY = params.listenerY;
+    snap.listenerPosZ = params.listenerZ;
+
     snap.sphereRadius = sphereRadiusParam->load();
 
     positionBridge.write(snap);
+
+    // Export source position for linked-instance visualization
+    sourceExport.write(snap.x, snap.y, snap.z, snap.distance,
+                       snap.stereoWidth,
+                       snap.lNodeX, snap.lNodeY, snap.lNodeZ,
+                       snap.rNodeX, snap.rNodeY, snap.rNodeZ);
 
     // DSP state bridge for dev panel readouts
     dspStateBridge.write(engine.getLastDSPState());
@@ -742,6 +824,114 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
 juce::AudioProcessorEditor* XYZPanProcessor::createEditor() {
     return new XYZPanEditor(*this);
+}
+
+// ---------------------------------------------------------------------------
+// 30Hz timer — collect foreign source positions for GL view
+// ---------------------------------------------------------------------------
+void XYZPanProcessor::timerCallback() {
+    if (listenerLinkParam->load() < 0.5f) {
+        xyzpan::ForeignSourceBridge::Payload empty;
+        foreignSourceBridge.write(empty);
+        return;
+    }
+    xyzpan::ForeignSourceBridge::Payload payload;
+    payload.count = listenerHub_->getLinkedSources(
+        this, payload.sources, xyzpan::kMaxLinkedSources);
+    foreignSourceBridge.write(payload);
+}
+
+// ---------------------------------------------------------------------------
+// Linked listener orientation — APVTS parameter listener
+// ---------------------------------------------------------------------------
+void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float newValue) {
+    if (parameterID == ParamID::LISTENER_LINK) {
+        if (newValue >= 0.5f) {
+            listenerHub_->addLinkedInstance(this);
+            // Adopt group orientation if others are already linked
+            float yaw, pitch, roll;
+            bool headFollows;
+            if (listenerHub_->getCachedOrientation(yaw, pitch, roll, headFollows)) {
+                receivingBroadcast_.store(true, std::memory_order_relaxed);
+                if (auto* p = apvts.getParameter(ParamID::LISTENER_YAW))
+                    p->setValueNotifyingHost(p->convertTo0to1(yaw));
+                if (auto* p = apvts.getParameter(ParamID::LISTENER_PITCH))
+                    p->setValueNotifyingHost(p->convertTo0to1(pitch));
+                if (auto* p = apvts.getParameter(ParamID::LISTENER_ROLL))
+                    p->setValueNotifyingHost(p->convertTo0to1(roll));
+                if (auto* p = apvts.getParameter(ParamID::HEAD_FOLLOWS_CAMERA))
+                    p->setValueNotifyingHost(headFollows ? 1.0f : 0.0f);
+                receivingBroadcast_.store(false, std::memory_order_relaxed);
+            }
+            // Adopt group walker position
+            float wx, wy, wz;
+            if (listenerHub_->getCachedPosition(wx, wy, wz)) {
+                receivingBroadcast_.store(true, std::memory_order_relaxed);
+                if (auto* p = apvts.getParameter(ParamID::WALKER_X))
+                    p->setValueNotifyingHost(p->convertTo0to1(wx));
+                if (auto* p = apvts.getParameter(ParamID::WALKER_Y))
+                    p->setValueNotifyingHost(p->convertTo0to1(wy));
+                if (auto* p = apvts.getParameter(ParamID::WALKER_Z))
+                    p->setValueNotifyingHost(p->convertTo0to1(wz));
+                receivingBroadcast_.store(false, std::memory_order_relaxed);
+            }
+        } else {
+            listenerHub_->removeLinkedInstance(this);
+        }
+        return;
+    }
+
+    // For orientation params: broadcast if linked and not receiving
+    if (receivingBroadcast_.load(std::memory_order_relaxed))
+        return;
+    if (listenerLinkParam->load() < 0.5f)
+        return;
+
+    // Broadcast orientation for yaw/pitch/roll/headFollows changes
+    if (parameterID == ParamID::LISTENER_YAW || parameterID == ParamID::LISTENER_PITCH ||
+        parameterID == ParamID::LISTENER_ROLL || parameterID == ParamID::HEAD_FOLLOWS_CAMERA) {
+        listenerHub_->broadcastOrientation(
+            this,
+            listenerYawParam->load(),
+            listenerPitchParam->load(),
+            listenerRollParam->load(),
+            headFollowsCameraParam->load() >= 0.5f);
+    }
+
+    // Broadcast walker position for walker_x/y/z changes
+    if (parameterID == ParamID::WALKER_X || parameterID == ParamID::WALKER_Y ||
+        parameterID == ParamID::WALKER_Z) {
+        listenerHub_->broadcastPosition(
+            this,
+            walkerXParam->load(),
+            walkerYParam->load(),
+            walkerZParam->load());
+    }
+}
+
+void XYZPanProcessor::listenerOrientationChanged(float yaw, float pitch, float roll,
+                                                   bool headFollows) {
+    receivingBroadcast_.store(true, std::memory_order_relaxed);
+    if (auto* p = apvts.getParameter(ParamID::LISTENER_YAW))
+        p->setValueNotifyingHost(p->convertTo0to1(yaw));
+    if (auto* p = apvts.getParameter(ParamID::LISTENER_PITCH))
+        p->setValueNotifyingHost(p->convertTo0to1(pitch));
+    if (auto* p = apvts.getParameter(ParamID::LISTENER_ROLL))
+        p->setValueNotifyingHost(p->convertTo0to1(roll));
+    if (auto* p = apvts.getParameter(ParamID::HEAD_FOLLOWS_CAMERA))
+        p->setValueNotifyingHost(headFollows ? 1.0f : 0.0f);
+    receivingBroadcast_.store(false, std::memory_order_relaxed);
+}
+
+void XYZPanProcessor::listenerPositionChanged(float x, float y, float z) {
+    receivingBroadcast_.store(true, std::memory_order_relaxed);
+    if (auto* p = apvts.getParameter(ParamID::WALKER_X))
+        p->setValueNotifyingHost(p->convertTo0to1(x));
+    if (auto* p = apvts.getParameter(ParamID::WALKER_Y))
+        p->setValueNotifyingHost(p->convertTo0to1(y));
+    if (auto* p = apvts.getParameter(ParamID::WALKER_Z))
+        p->setValueNotifyingHost(p->convertTo0to1(z));
+    receivingBroadcast_.store(false, std::memory_order_relaxed);
 }
 
 // User-facing params saved in DAW state / user presets.
@@ -770,6 +960,9 @@ static const std::unordered_set<juce::String> kUserParams = {
     "binaural_enabled", "er_enabled",
     // listener
     "listener_yaw", "listener_pitch", "listener_roll", "head_follows_camera",
+    "listener_link",
+    // walker
+    "walker_x", "walker_y", "walker_z", "walker_enabled",
 };
 
 void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {

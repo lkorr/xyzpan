@@ -29,7 +29,8 @@ struct Camera {
     SnapView activeSnap = SnapView::Orbit;
 
     // Returns a view matrix for the current camera state.
-    glm::mat4 getViewMatrix() const;
+    // Optional target offset shifts the orbit center (default: origin).
+    glm::mat4 getViewMatrix(const glm::vec3& target = glm::vec3(0.0f)) const;
 
     // Snap presets
     void setSnapTopDown();  // XY plane — looking straight down from above

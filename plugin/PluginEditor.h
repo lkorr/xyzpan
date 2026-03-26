@@ -82,7 +82,8 @@ private:
 //     "REVERB" — Size/Decay/Damp/Wet knobs vertical stack (80px) + DEV toggle at bottom
 // ---------------------------------------------------------------------------
 class XYZPanEditor : public juce::AudioProcessorEditor,
-                     public juce::KeyListener {
+                     public juce::KeyListener,
+                     private juce::Timer {
 public:
     explicit XYZPanEditor(XYZPanProcessor& p);
     ~XYZPanEditor() override;
@@ -171,10 +172,29 @@ private:
     juce::ToggleButton headFollowsToggle_;
     std::unique_ptr<BA> headFollowsAtt_;
 
+    // Link listener orientation across instances
+    juce::ToggleButton listenerLinkToggle_;
+    std::unique_ptr<BA> listenerLinkAtt_;
+
     // Tab state for Options / Perspective / Customize split
     enum class OptionsTab { Options, Perspective, Customize };
     OptionsTab activeTab_ = OptionsTab::Options;
     void setActiveTab(OptionsTab tab);
+
+    // Left column tab state — Source (existing X/Y/Z + LFOs) vs Listener (walker + perspective)
+    enum class LeftTab { Source, Listener };
+    LeftTab activeLeftTab_ = LeftTab::Source;
+    void setActiveLeftTab(LeftTab tab);
+
+    // Walker knobs (always active)
+    juce::Slider walkerXKnob_, walkerYKnob_, walkerZKnob_;
+    juce::Label  walkerXLabel_, walkerYLabel_, walkerZLabel_;
+    std::unique_ptr<SA> walkerXAtt_, walkerYAtt_, walkerZAtt_;
+
+    // WASD control toggle + keyboard movement
+    juce::ToggleButton wasdToggle_;
+    std::unique_ptr<BA> wasdAtt_;
+    void timerCallback() override;
 
     // Stereo orbit LFO strips (XY / XZ / YZ planes)
     LFOStrip orbitXYLFO_, orbitXZLFO_, orbitYZLFO_;
@@ -189,6 +209,11 @@ private:
     juce::Label  dopplerLabel_;
     juce::Label  dopplerSubLabel_;  // "(adds delay)" small text
     std::unique_ptr<SA> dopplerAtt_;
+
+    // Input gain knob — options tab, next to sphere/doppler
+    juce::Slider inputGainKnob_;
+    juce::Label  inputGainLabel_;
+    std::unique_ptr<SA> inputGainAtt_;
 
     // Dev panel toggle (bottom row) + overlay panel
     juce::TextButton devToggle_{"DEV"};
@@ -238,12 +263,13 @@ private:
     juce::Label    noseSizeLabel_;
     int noseSectionHeaderY_ = 0;
 
-    // Pupil size / ear rotation / googly gravity sliders
-    juce::Slider pupilSizeSlider_, earRotationSlider_, googlyGravitySlider_, googlySpringSlider_;
-    juce::Label  pupilSizeLabel_, earRotationLabel_, googlyGravityLabel_, googlySpringLabel_;
+    // Pupil size / ear rotation / googly sliders
+    juce::Slider pupilSizeSlider_, earRotationSlider_, googlySlider_;
+    juce::Label  pupilSizeLabel_, earRotationLabel_, googlyLabel_;
 
     void applyCurrentTheme();
     void pushAvatarToGL();
+    void syncEyeSpacingSliderMode(bool isCyclops);
 
     // Shared geometry: computed once per paint/resized call to avoid drift
     struct Layout {

@@ -26,8 +26,9 @@ namespace xyzpan {
 // ---------------------------------------------------------------------------
 XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
                              juce::AudioProcessor* proc,
-                             xyzpan::PositionBridge& bridge)
-    : apvts_(apvts), proc_(proc), bridge_(bridge)
+                             xyzpan::PositionBridge& bridge,
+                             xyzpan::ForeignSourceBridge& foreignBridge)
+    : apvts_(apvts), proc_(proc), bridge_(bridge), foreignBridge_(foreignBridge)
 {
     // CRITICAL ORDER per RESEARCH.md: configure context BEFORE attachTo
     glContext_.setOpenGLVersionRequired(juce::OpenGLContext::openGL3_2);
@@ -112,10 +113,14 @@ void XYZPanGLView::newOpenGLContextCreated()
     coneIndexCount_ = static_cast<int>(coneIdx_.size());
     uploadConeVAO();
 
+    // Build flat 2D arrow for direction indicator
+    uploadArrow2DVAO();
+
     // Create trail VAO/VBOs
     createTrailVAO(vaoTrailSource_, vboTrailSource_, TrailBuffer::kCapacity);
     createTrailVAO(vaoTrailL_,      vboTrailL_,      TrailBuffer::kCapacity);
     createTrailVAO(vaoTrailR_,      vboTrailR_,      TrailBuffer::kCapacity);
+    createTrailVAO(vaoTrailListener_, vboTrailListener_, TrailBuffer::kCapacity);
 
 }
 
@@ -124,7 +129,7 @@ void XYZPanGLView::newOpenGLContextCreated()
 // ---------------------------------------------------------------------------
 void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
 {
-    if (!headFollowsActive_ || drivingParamsFromCamera_)
+    if (!headFollowsActive_ || drivingParamsFromCamera_->load(std::memory_order_relaxed))
         return;
 
     if (id == "listener_yaw")
@@ -179,8 +184,14 @@ void XYZPanGLView::renderOpenGL()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Update matrices
-    viewMatrix_ = camera_.getViewMatrix();
+    // Walker listener position in GL coordinates (computed early for camera)
+    const glm::vec3 listenerPos(snap.listenerPosX, snap.listenerPosZ, -snap.listenerPosY);
+    const bool walkerActive = (std::abs(snap.listenerPosX) > 1e-7f ||
+                               std::abs(snap.listenerPosY) > 1e-7f ||
+                               std::abs(snap.listenerPosZ) > 1e-7f);
+
+    // Update matrices — camera follows walker listener position
+    viewMatrix_ = camera_.getViewMatrix(listenerPos);
     const float aspect = static_cast<float>(w) / static_cast<float>(h);
     const float nearPlane = std::max(0.001f, camera_.dist * 0.1f);
     projMatrix_ = glm::perspective(glm::radians(45.0f), aspect, nearPlane, 100.0f);
@@ -230,6 +241,12 @@ void XYZPanGLView::renderOpenGL()
         trailR_.clear();
     }
 
+    // Listener trail — only when walker is active
+    if (walkerActive)
+        trailListener_.push(listenerPos, now);
+    else
+        trailListener_.clear();
+
     // Draw room wireframe — scaled by R, per-vertex axis colors
     drawColorLines(vaoRoom_, roomVertexCount_, 0.7f, roomModelMatrix);
 
@@ -273,31 +290,25 @@ void XYZPanGLView::renderOpenGL()
             float camPitchDeg = std::fmod(-camera_.pitch, 360.0f);
             if (camPitchDeg < 0.0f) camPitchDeg += 360.0f;
 
-            // Guard: suppress parameterChanged echoes from our own writes
-            drivingParamsFromCamera_ = true;
-            juce::MessageManager::callAsync([this, camYawDeg, camPitchDeg]() {
-                if (auto* p = apvts_.getParameter("listener_yaw"))
+            // Guard: suppress parameterChanged echoes from our own writes.
+            // shared_ptr captured by value so lambda is safe if GLView is destroyed first.
+            auto flag = drivingParamsFromCamera_;
+            auto* apvtsPtr = &apvts_;
+            flag->store(true, std::memory_order_relaxed);
+            juce::MessageManager::callAsync([flag, apvtsPtr, camYawDeg, camPitchDeg]() {
+                if (auto* p = apvtsPtr->getParameter("listener_yaw"))
                     p->setValueNotifyingHost(p->convertTo0to1(camYawDeg));
-                if (auto* p = apvts_.getParameter("listener_pitch"))
+                if (auto* p = apvtsPtr->getParameter("listener_pitch"))
                     p->setValueNotifyingHost(p->convertTo0to1(camPitchDeg));
-                if (auto* p = apvts_.getParameter("listener_roll"))
+                if (auto* p = apvtsPtr->getParameter("listener_roll"))
                     p->setValueNotifyingHost(p->convertTo0to1(0.0f));
-                drivingParamsFromCamera_ = false;
+                flag->store(false, std::memory_order_relaxed);
             });
         }
 
         if (headFollowsActive_ && !toggleOn) {
-            // Exiting head-follows mode: restore saved values
+            // Exiting head-follows mode: retain current camera-driven angles
             headFollowsActive_ = false;
-            const float sy = savedYawDeg_, sp = savedPitchDeg_, sr = savedRollDeg_;
-            juce::MessageManager::callAsync([this, sy, sp, sr]() {
-                if (auto* p = apvts_.getParameter("listener_yaw"))
-                    p->setValueNotifyingHost(p->convertTo0to1(sy));
-                if (auto* p = apvts_.getParameter("listener_pitch"))
-                    p->setValueNotifyingHost(p->convertTo0to1(sp));
-                if (auto* p = apvts_.getParameter("listener_roll"))
-                    p->setValueNotifyingHost(p->convertTo0to1(sr));
-            });
         }
     }
 
@@ -315,8 +326,8 @@ void XYZPanGLView::renderOpenGL()
         const glm::vec3 earCol   = avatar.headColor  ? toVec3(avatar.headColor)  : theme.glEar;
         const glm::vec3 noseCol  = avatar.noseColor  ? toVec3(avatar.noseColor)  : theme.glNose;
 
-        // Listener head rotation matrix (yaw around GL Y-up, pitch around GL X-right, roll around GL -Z forward)
-        glm::mat4 headRot(1.0f);
+        // Listener head transform: translate to walker position, then rotate
+        glm::mat4 headRot = glm::translate(glm::mat4(1.0f), listenerPos);
         headRot = glm::rotate(headRot, snap.listenerYaw,  glm::vec3(0.0f, 1.0f, 0.0f));
         headRot = glm::rotate(headRot, snap.listenerPitch, glm::vec3(1.0f, 0.0f, 0.0f));
         headRot = glm::rotate(headRot, snap.listenerRoll,  glm::vec3(0.0f, 0.0f, -1.0f));
@@ -384,27 +395,18 @@ void XYZPanGLView::renderOpenGL()
             }
         }
 
-        // Direction arrow — cone tip + thin shaft pointing forward from the face
+        // Direction arrow — flat 2D arrow pointing forward from the face
         {
-            const glm::vec3 arrowCol = noseCol;
-            constexpr float kShaftStart  = 0.065f;  // gap from head center
-            constexpr float kShaftLen    = 0.055f;   // shaft length
-            constexpr float kShaftRadius = 0.004f;
-            constexpr float kTipLen      = 0.025f;   // arrowhead cone length
-            constexpr float kTipRadius   = 0.010f;
+            constexpr float kGap   = 0.065f;  // gap from head center
+            constexpr float kLen   = 0.08f;   // total arrow length
+            constexpr float kWidth = 0.02f;   // half-width scale
 
-            // Shaft — elongated sphere along -Z
-            glm::mat4 ms = headRot;
-            ms = glm::translate(ms, glm::vec3(0.0f, 0.0f, -(kShaftStart + kShaftLen * 0.5f) * hs));
-            ms = glm::scale(ms, glm::vec3(kShaftRadius * hs, kShaftRadius * hs, kShaftLen * 0.5f * hs));
-            drawSphereWithModel(ms, arrowCol, 0.85f * headAlpha);
-
-            // Tip — cone at the end of the shaft, pointing -Z
-            glm::mat4 mt = headRot;
-            mt = glm::translate(mt, glm::vec3(0.0f, 0.0f, -(kShaftStart + kShaftLen) * hs));
-            mt = glm::rotate(mt, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-            mt = glm::scale(mt, glm::vec3(kTipRadius * hs, kTipLen * hs, kTipRadius * hs));
-            drawCone(mt, arrowCol, 0.9f * headAlpha);
+            // Arrow mesh points along +Y. Rotate so +Y maps to -Z (forward).
+            glm::mat4 ma = headRot;
+            ma = glm::translate(ma, glm::vec3(0.0f, 0.0f, -kGap * hs));
+            ma = glm::rotate(ma, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+            ma = glm::scale(ma, glm::vec3(kWidth * hs, kLen * hs, 1.0f));
+            drawArrow2D(ma, noseCol, 0.9f * headAlpha);
         }
 
         if (headAlpha < 1.0f)
@@ -471,6 +473,33 @@ void XYZPanGLView::renderOpenGL()
         }
     }
 
+    // Foreign (linked instance) source nodes
+    {
+        const auto fp = foreignBridge_.read();
+        static constexpr glm::vec3 kPalette[8] = {
+            {0.60f, 0.40f, 0.80f},  // purple
+            {0.30f, 0.70f, 0.50f},  // teal-green
+            {0.80f, 0.45f, 0.30f},  // burnt orange
+            {0.40f, 0.55f, 0.85f},  // steel blue
+            {0.75f, 0.35f, 0.55f},  // rose
+            {0.50f, 0.70f, 0.35f},  // olive green
+            {0.85f, 0.65f, 0.30f},  // amber
+            {0.45f, 0.45f, 0.70f},  // lavender
+        };
+        for (int i = 0; i < fp.count; ++i) {
+            const auto& fs = fp.sources[i];
+            const auto color = kPalette[fs.colorIndex % 8];
+            const glm::vec3 fPos(fs.x, fs.z, -fs.y);  // XYZPan → GL
+            drawSphere(fPos, 0.035f, color, 0.6f);
+            if (fs.stereoWidth > 0.0f) {
+                const glm::vec3 fL(fs.lNodeX, fs.lNodeZ, -fs.lNodeY);
+                const glm::vec3 fR(fs.rNodeX, fs.rNodeZ, -fs.rNodeY);
+                drawSphere(fL, 0.028f, color * 0.8f, 0.45f);
+                drawSphere(fR, 0.028f, color * 0.8f, 0.45f);
+            }
+        }
+    }
+
     // End sphere/cone shader batch
     glBindVertexArray(0);
 
@@ -493,6 +522,13 @@ void XYZPanGLView::renderOpenGL()
                       theme.glStereoL, lTrailOpacity, now);
             drawTrail(trailR_, vaoTrailR_, vboTrailR_,
                       theme.glStereoR, rTrailOpacity, now);
+        }
+
+        // Listener trail — teal/aqua when walker is active
+        if (walkerActive) {
+            static const glm::vec3 kListenerTrailColor(0.30f, 0.66f, 0.66f); // aqua
+            drawTrail(trailListener_, vaoTrailListener_, vboTrailListener_,
+                      kListenerTrailColor, 0.5f, now);
         }
     }
     glDepthMask(GL_TRUE);
@@ -522,13 +558,17 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoCone_)   { glDeleteVertexArrays(1, &vaoCone_);   vaoCone_   = 0; }
     if (vboCone_)   { glDeleteBuffers(1, &vboCone_);        vboCone_   = 0; }
     if (iboCone_)   { glDeleteBuffers(1, &iboCone_);        iboCone_   = 0; }
+    if (vaoArrow2D_) { glDeleteVertexArrays(1, &vaoArrow2D_); vaoArrow2D_ = 0; }
+    if (vboArrow2D_) { glDeleteBuffers(1, &vboArrow2D_);      vboArrow2D_ = 0; }
 
     if (vaoTrailSource_) { glDeleteVertexArrays(1, &vaoTrailSource_); vaoTrailSource_ = 0; }
     if (vboTrailSource_) { glDeleteBuffers(1, &vboTrailSource_);      vboTrailSource_ = 0; }
     if (vaoTrailL_)      { glDeleteVertexArrays(1, &vaoTrailL_);      vaoTrailL_      = 0; }
     if (vboTrailL_)      { glDeleteBuffers(1, &vboTrailL_);           vboTrailL_      = 0; }
-    if (vaoTrailR_)      { glDeleteVertexArrays(1, &vaoTrailR_);      vaoTrailR_      = 0; }
-    if (vboTrailR_)      { glDeleteBuffers(1, &vboTrailR_);           vboTrailR_      = 0; }
+    if (vaoTrailR_)        { glDeleteVertexArrays(1, &vaoTrailR_);        vaoTrailR_        = 0; }
+    if (vboTrailR_)        { glDeleteBuffers(1, &vboTrailR_);           vboTrailR_        = 0; }
+    if (vaoTrailListener_) { glDeleteVertexArrays(1, &vaoTrailListener_); vaoTrailListener_ = 0; }
+    if (vboTrailListener_) { glDeleteBuffers(1, &vboTrailListener_);      vboTrailListener_ = 0; }
 
 }
 
@@ -974,6 +1014,82 @@ void XYZPanGLView::drawCone(const glm::mat4& model,
     sphereShader_->setUniform("opacity",   opacity);
     glDrawElements(GL_TRIANGLES, coneIndexCount_, GL_UNSIGNED_INT, nullptr);
     // Restore sphere VAO since cone is drawn mid-batch
+    glBindVertexArray(vaoSphere_);
+}
+
+// ---------------------------------------------------------------------------
+// uploadArrow2DVAO — flat 2D arrow (shaft + arrowhead) as GL_TRIANGLES
+// Arrow points along +Y in local space, centered at origin base.
+// ---------------------------------------------------------------------------
+void XYZPanGLView::uploadArrow2DVAO()
+{
+    if (vaoArrow2D_) glDeleteVertexArrays(1, &vaoArrow2D_);
+    if (vboArrow2D_) glDeleteBuffers(1, &vboArrow2D_);
+
+    // Arrow dimensions (unit-ish, scaled by model matrix at draw time)
+    constexpr float shaftW  = 0.25f;   // half-width of the shaft
+    constexpr float shaftH  = 0.6f;    // shaft height (from base)
+    constexpr float headW   = 0.5f;    // half-width of arrowhead base
+    constexpr float totalH  = 1.0f;    // tip of the arrowhead
+
+    // All verts in XY plane (Z=0).  6 triangles = shaft quad (2 tri) + arrowhead (1 tri)
+    // Shaft: two triangles forming a rectangle
+    // Arrowhead: one triangle on top
+    const float verts[] = {
+        // Shaft triangle 1
+        -shaftW, 0.0f,    0.0f,
+         shaftW, 0.0f,    0.0f,
+         shaftW, shaftH,  0.0f,
+        // Shaft triangle 2
+        -shaftW, 0.0f,    0.0f,
+         shaftW, shaftH,  0.0f,
+        -shaftW, shaftH,  0.0f,
+        // Arrowhead triangle
+        -headW,  shaftH,  0.0f,
+         headW,  shaftH,  0.0f,
+         0.0f,   totalH,  0.0f,
+    };
+
+    arrow2DVertexCount_ = 9;
+
+    glGenVertexArrays(1, &vaoArrow2D_);
+    glGenBuffers(1, &vboArrow2D_);
+
+    glBindVertexArray(vaoArrow2D_);
+    glBindBuffer(GL_ARRAY_BUFFER, vboArrow2D_);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+// ---------------------------------------------------------------------------
+// drawArrow2D — flat 2D arrow using line shader (unlit, solid color)
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawArrow2D(const glm::mat4& model,
+                                 const glm::vec3& color, float opacity)
+{
+    if (!lineShader_ || vaoArrow2D_ == 0 || arrow2DVertexCount_ == 0) return;
+
+    lineShader_->use();
+    lineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+    lineShader_->setUniform("lineColor", color.r, color.g, color.b);
+    lineShader_->setUniform("opacity",   opacity);
+
+    glBindVertexArray(vaoArrow2D_);
+    glDrawArrays(GL_TRIANGLES, 0, arrow2DVertexCount_);
+
+    // Restore sphere shader + sphere VAO for the ongoing batch
+    sphereShader_->use();
+    sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+    sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z);
     glBindVertexArray(vaoSphere_);
 }
 
@@ -1599,8 +1715,8 @@ void XYZPanGLView::updateGooglyPhysics(const SourcePositionSnapshot& snap, doubl
     constexpr float kSpringMax    = 80.0f;
     constexpr float kDampingMax   = 12.0f;
     constexpr float kGravityForce = 120.0f;
-    constexpr float kMaxRange     = 0.3f;
-    constexpr float kMinRange     = 0.02f;
+    constexpr float kMaxRange     = 0.6f;
+    constexpr float kMinRange     = 0.04f;
 
     // Eye positioning constants (must match drawEyesGoogly)
     constexpr float kBaseEyeSpacing = 0.018f;
