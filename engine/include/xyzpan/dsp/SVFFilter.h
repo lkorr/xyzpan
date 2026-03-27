@@ -54,6 +54,8 @@ public:
     // Safe to call every sample for smooth cutoff modulation.
     void setCoefficients(float cutoffHz, float sampleRate, float Q = 0.7071f) {
         float safeHz = std::min(cutoffHz, 0.45f * sampleRate);
+        if (safeHz == lastCutoff_) return;  // skip tan() when cutoff unchanged
+        lastCutoff_ = safeHz;
         float g = std::tan(3.14159265f * safeHz / sampleRate);
         k_  = 1.0f / Q;
         a1_ = 1.0f / (1.0f + g * (g + k_));
@@ -87,6 +89,7 @@ private:
     float   a3_      = 0.0f;
     float   ic1eq_   = 0.0f;
     float   ic2eq_   = 0.0f;
+    float   lastCutoff_ = -1.0f;
 };
 
 } // namespace xyzpan::dsp

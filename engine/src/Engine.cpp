@@ -1070,6 +1070,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     dR += (erLResult.directR + erRResult.directR) * erLevelSm;
                     erReverbAccumL = (erLResult.reverbL + erRResult.reverbL) * erLevelSm * erSendSm;
                     erReverbAccumR = (erLResult.reverbR + erRResult.reverbR) * erLevelSm * erSendSm;
+                } else {
+                    er_.sharedDelay.push(sampleL);
+                    erR_.sharedDelay.push(sampleR);
                 }
             }
         } else {
@@ -1186,17 +1189,19 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             auxGainSmooth_.process(1.0f);
         }
 
-        // Reverb — always call processSample to keep FDN state fed; bypass skips wet addition
+        // Reverb — gate FDN when wet is zero (both target and smoothed) to save CPU.
+        // FDN will build up naturally when reverb is re-enabled.
         {
-            const float preDelaySamp = effectiveDistFrac
-                * (currentParams.verbPreDelayMax * static_cast<float>(sampleRate) / 1000.0f);
-            // Feed FDN with dry signal + ER reverb accumulation
-            float wetL, wetR;
-            reverb_.processSample(dL + erReverbAccumL, dR + erReverbAccumR, preDelaySamp, wetL, wetR);
             const float wetGain = verbWetSmooth_.process(currentParams.verbWet);
-            if (!currentParams.bypassReverb) {
-                dL += wetGain * wetL;
-                dR += wetGain * wetR;
+            if (wetGain > 1e-6f || currentParams.verbWet > 1e-6f) {
+                const float preDelaySamp = effectiveDistFrac
+                    * (currentParams.verbPreDelayMax * static_cast<float>(sampleRate) / 1000.0f);
+                float wetL, wetR;
+                reverb_.processSample(dL + erReverbAccumL, dR + erReverbAccumR, preDelaySamp, wetL, wetR);
+                if (!currentParams.bypassReverb) {
+                    dL += wetGain * wetL;
+                    dR += wetGain * wetR;
+                }
             }
         }
 

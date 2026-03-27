@@ -39,6 +39,9 @@ void OutputMeter::timerCallback() {
     updatePeak(smoothL_, peakL_, peakDecayL_);
     updatePeak(smoothR_, peakR_, peakDecayR_);
 
+    // Skip repaint when meter is fully silent and settled
+    if (smoothL_ < 1e-6f && smoothR_ < 1e-6f && peakL_ < 1e-6f && peakR_ < 1e-6f)
+        return;
     repaint();
 }
 

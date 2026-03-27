@@ -21,6 +21,10 @@ void LFOWaveformDisplay::timerCallback()
 {
     if (outputSource_) {
         float val = outputSource_->load(std::memory_order_relaxed);
+        // Skip repaint when waveform is static (value unchanged and buffer full)
+        if (std::abs(val - lastSampledValue_) < 0.001f && historyCount_ >= kHistorySize)
+            return;
+        lastSampledValue_ = val;
         history_[static_cast<size_t>(historyWritePos_)] = val;
         historyWritePos_ = (historyWritePos_ + 1) % kHistorySize;
         if (historyCount_ < kHistorySize) ++historyCount_;

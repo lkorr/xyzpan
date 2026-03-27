@@ -87,14 +87,17 @@ BinauralPipeline::BinauralResult BinauralPipeline::processSample(
         + (params.rearShadowMinHz - kRearShadowFullOpenHz) * nodeRearAmount;
     const float nodeCombWetTarget = params.combWetMax * std::max(0.0f, nodeRearFactor);
 
-    // Comb bank — smoother always runs; bypass skips audible effect
+    // Comb bank — smoother always runs; gate filter chain when wet ≈ 0
     const float combWet = combWetSmooth.process(nodeCombWetTarget);
-    float combSig = inputSample;
-    for (int c = 0; c < kMaxCombFilters; ++c)
-        combSig = combBank[c].process(combSig);
-    const float depthOut = params.bypassComb
-        ? inputSample
-        : inputSample * (1.0f - combWet) + combSig * combWet;
+    float depthOut;
+    if (params.bypassComb || combWet < 1e-6f) {
+        depthOut = inputSample;
+    } else {
+        float combSig = inputSample;
+        for (int c = 0; c < kMaxCombFilters; ++c)
+            combSig = combBank[c].process(combSig);
+        depthOut = inputSample * (1.0f - combWet) + combSig * combWet;
+    }
 
     // Mono EQ chain — bypass skips biquad .process() calls
     float monoEQ;

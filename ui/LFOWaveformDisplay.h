@@ -24,6 +24,7 @@ public:
 
 private:
     std::atomic<float>* outputSource_ = nullptr;
+    float lastSampledValue_ = 0.0f;
 
     static constexpr int kFps = 30;
     static constexpr int kHistorySize = 64;   // ~2.1s at 30fps
