@@ -268,6 +268,9 @@ private:
     // References to processor APVTS, processor base, and bridge
     // ------------------------------------------------------------------
     juce::AudioProcessorValueTreeState& apvts_;
+    // Shared flag for callAsync lambdas — cleared in destructor so pending
+    // async lambdas can detect that the GLView (and its APVTS ref) are gone.
+    std::shared_ptr<std::atomic<bool>> glAlive_ = std::make_shared<std::atomic<bool>>(true);
     juce::AudioProcessor*               proc_;   // kept for future WeakReference use
     xyzpan::PositionBridge&             bridge_;
     xyzpan::ForeignSourceBridge&        foreignBridge_;

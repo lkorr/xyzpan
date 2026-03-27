@@ -47,6 +47,9 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
 
 XYZPanGLView::~XYZPanGLView()
 {
+    // Mark dead so any pending callAsync lambdas skip APVTS access
+    glAlive_->store(false, std::memory_order_release);
+
     apvts_.removeParameterListener("listener_yaw",   this);
     apvts_.removeParameterListener("listener_pitch",  this);
     apvts_.removeParameterListener("listener_roll",   this);
@@ -307,9 +310,14 @@ void XYZPanGLView::renderOpenGL()
             // Guard: suppress parameterChanged echoes from our own writes.
             // shared_ptr captured by value so lambda is safe if GLView is destroyed first.
             auto flag = drivingParamsFromCamera_;
+            auto alive = glAlive_;
             auto* apvtsPtr = &apvts_;
             flag->store(true, std::memory_order_relaxed);
-            juce::MessageManager::callAsync([flag, apvtsPtr, camYawDeg, camPitchDeg, camRollDeg]() {
+            juce::MessageManager::callAsync([flag, alive, apvtsPtr, camYawDeg, camPitchDeg, camRollDeg]() {
+                if (!alive->load(std::memory_order_acquire)) {
+                    flag->store(false, std::memory_order_relaxed);
+                    return;
+                }
                 if (auto* p = apvtsPtr->getParameter("listener_yaw"))
                     p->setValueNotifyingHost(p->convertTo0to1(camYawDeg));
                 if (auto* p = apvtsPtr->getParameter("listener_pitch"))
@@ -629,11 +637,13 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
         const float newY = std::clamp(curY + dY, -1.0f, 1.0f);
         const float newZ = std::clamp(curZ + dZ, -1.0f, 1.0f);
 
-        // NEVER write APVTS from GL/render thread — post to message thread
-        // Capture APVTS by pointer (safe: proc lifetime > editor lifetime)
+        // NEVER write APVTS from GL/render thread — post to message thread.
+        // Capture alive flag (shared_ptr) so lambda is safe if GLView is destroyed.
         juce::AudioProcessorValueTreeState* apvtsPtr = &apvts_;
+        auto alive = glAlive_;
         juce::MessageManager::callAsync(
-            [apvtsPtr, newX, newY, newZ]() {
+            [apvtsPtr, alive, newX, newY, newZ]() {
+                if (!alive->load(std::memory_order_acquire)) return;
                 if (auto* p = apvtsPtr->getParameter(kParamX))
                     p->setValueNotifyingHost(apvtsPtr->getParameterRange(kParamX).convertTo0to1(newX));
                 if (auto* p = apvtsPtr->getParameter(kParamY))

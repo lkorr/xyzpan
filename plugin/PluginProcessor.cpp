@@ -431,12 +431,16 @@ XYZPanProcessor::XYZPanProcessor()
 }
 
 XYZPanProcessor::~XYZPanProcessor() {
-    // FIRST: atomically mark dead + remove from hub. This must happen before
-    // any other teardown so no concurrent hub iteration can call virtual
-    // methods on this partially-destroyed object.
-    listenerHub_->detachInstance(this);
-
+    // Stop the timer FIRST to prevent timerCallback from firing during teardown.
+    // JUCE timers fire on the message thread; since we're already on the message
+    // thread, this won't race — but it prevents any pending timer from firing
+    // after we begin destruction.
     stopTimer();
+
+    // Remove APVTS listeners BEFORE detaching from the hub. If we detach first,
+    // the removal callbacks can trigger APVTS operations on surviving instances
+    // that might broadcast orientation back to us while we still have listeners
+    // registered — leading to parameterChanged calls on a half-destroyed object.
     apvts.removeParameterListener(ParamID::LISTENER_YAW,        this);
     apvts.removeParameterListener(ParamID::LISTENER_PITCH,      this);
     apvts.removeParameterListener(ParamID::LISTENER_ROLL,       this);
@@ -445,6 +449,10 @@ XYZPanProcessor::~XYZPanProcessor() {
     apvts.removeParameterListener(ParamID::WALKER_X,            this);
     apvts.removeParameterListener(ParamID::WALKER_Y,            this);
     apvts.removeParameterListener(ParamID::WALKER_Z,            this);
+
+    // Now detach from the hub — mark dead, remove from linked list, fire
+    // removal callbacks (which tell surviving editors to unbind from us).
+    listenerHub_->detachInstance(this);
 }
 
 void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
