@@ -692,22 +692,21 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(instanceSelector_);
     instanceSelector_.setVisible(false);  // hidden until 2+ instances linked
 
-    // Register removal callback so we detach if remote instance is destroyed
+    // Register removal callback so we detach if remote instance is destroyed.
+    // This fires outside the hub's spinlock, so it's safe to do full
+    // attachment teardown + rebuild synchronously.
     proc_.getListenerHub().addRemovalCallback(this, [this](SharedListenerHub::Listener* removed) {
         if (remoteFocusProc_ != nullptr &&
             static_cast<SharedListenerHub::Listener*>(remoteFocusProc_) == removed) {
-            // Must revert to self — remote is being destroyed
-            // We're under the hub's spinlock here, so just do the minimal bookkeeping;
-            // the actual attachment rebuild will happen on the next message-thread
-            // timer tick via setRemoteFocus(-1).
+            // Immediately revert to self — detach all remote attachments
+            // before the remote processor's destructor continues
             remoteFocusProc_ = nullptr;
             remoteFocusIndex_ = -1;
-            // Schedule full reattach on message thread
-            auto safeThis = juce::Component::SafePointer<XYZPanEditor>(this);
-            juce::MessageManager::callAsync([safeThis]() {
-                if (auto* self = safeThis.getComponent())
-                    self->setRemoteFocus(-1);
-            });
+            detachAndRebindTo(proc_.apvts, &proc_);
+            glView_.setFocusedForeignSource(-1);
+            instanceSelector_.setSelectedId(1, juce::dontSendNotification);
+            lastKnownLinkedCount_ = 0;  // force dropdown rebuild on next timer tick
+            repaint();
         }
     });
 
@@ -732,10 +731,12 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 // ---------------------------------------------------------------------------
 XYZPanEditor::~XYZPanEditor()
 {
+    // Remove callback first so it can't fire during teardown
+    proc_.getListenerHub().removeRemovalCallback(this);
+
     // Revert to self before destruction to avoid dangling attachments
     if (remoteFocusProc_ != nullptr)
         setRemoteFocus(-1);
-    proc_.getListenerHub().removeRemovalCallback(this);
 
     stopTimer();
     removeMouseListener(this);
@@ -2097,9 +2098,16 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
     }
 
     auto* remoteListener = others[static_cast<size_t>(linkedIndex)];
+
+    // Validate alive before dereferencing virtual methods
+    if (!remoteListener->hubAlive_.load(std::memory_order_acquire)) {
+        setRemoteFocus(-1);
+        return;
+    }
+
     auto* remoteProc = dynamic_cast<XYZPanProcessor*>(remoteListener->getProcessor());
 
-    if (remoteProc == nullptr || !remoteListener->hubAlive_.load(std::memory_order_acquire)) {
+    if (remoteProc == nullptr) {
         setRemoteFocus(-1);
         return;
     }
@@ -2178,10 +2186,14 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
     updateOrbitEnabled();
 
     // Update reset buttons to target correct processor's atomics
-    resetXYZPhasesBtn_.onClick = [targetProc] {
-        targetProc->resetXYZLfoPhases.store(true);
+    // Use member pointer (remoteFocusProc_ or proc_) so the lambda never
+    // holds a stale captured pointer if the remote instance is destroyed.
+    resetXYZPhasesBtn_.onClick = [this] {
+        auto* target = remoteFocusProc_ != nullptr ? remoteFocusProc_ : &proc_;
+        target->resetXYZLfoPhases.store(true);
     };
-    resetOrbitPhasesBtn_.onClick = [targetProc] {
-        targetProc->resetOrbitLfoPhases.store(true);
+    resetOrbitPhasesBtn_.onClick = [this] {
+        auto* target = remoteFocusProc_ != nullptr ? remoteFocusProc_ : &proc_;
+        target->resetOrbitLfoPhases.store(true);
     };
 }

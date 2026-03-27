@@ -50,16 +50,26 @@ public:
         linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
     }
 
-    // Convenience: atomically mark dead + fire removal callbacks + remove.
+    // Convenience: atomically mark dead + remove + fire removal callbacks.
     // This is the preferred API — call as the VERY FIRST line of the destructor.
+    // Callbacks are fired OUTSIDE the spinlock so they can safely do
+    // heavyweight work (SliderAttachment teardown, APVTS operations, etc.).
     void detachInstance(Listener* l) {
         l->hubAlive_.store(false, std::memory_order_release);
+
+        // Snapshot callbacks and remove from linked list under the lock
+        std::vector<std::function<void(Listener*)>> cbSnapshot;
         {
             const juce::SpinLock::ScopedLockType lock(spinLock_);
-            for (auto& cb : removalCallbacks_)
-                cb.fn(l);
             linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
+            cbSnapshot.reserve(removalCallbacks_.size());
+            for (auto& cb : removalCallbacks_)
+                cbSnapshot.push_back(cb.fn);
         }
+
+        // Fire callbacks outside the lock — safe for expensive operations
+        for (auto& fn : cbSnapshot)
+            fn(l);
     }
 
     void broadcastOrientation(Listener* sender, float yaw, float pitch, float roll,
