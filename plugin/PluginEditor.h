@@ -180,6 +180,8 @@ private:
     XYZPanProcessor* remoteFocusProc_ = nullptr;  // null = controlling self
     int remoteFocusIndex_ = -1;                    // -1 = self
     int lastKnownLinkedCount_ = 0;
+    int remoteFocusValidationCounter_ = 0;         // throttle spinlock validation to ~6Hz
+    int selectorRebuildCounter_ = 0;               // throttle selector rebuild to ~6Hz
     juce::ComboBox instanceSelector_;
     void setRemoteFocus(int linkedIndex);
     void rebuildInstanceSelector();

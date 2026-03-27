@@ -1638,15 +1638,24 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
 {
-    // Periodically rebuild instance selector and validate remote focus
-    rebuildInstanceSelector();
+    // Validate remote focus — hubAlive_ check is lock-free (every frame),
+    // full linked-index check is throttled to ~6Hz to avoid unnecessary spinlock traffic.
     if (remoteFocusProc_ != nullptr) {
-        // Check if remote is still in the hub
         auto* remoteListener = static_cast<SharedListenerHub::Listener*>(remoteFocusProc_);
-        if (!remoteListener->hubAlive_.load(std::memory_order_acquire) ||
-            proc_.getListenerHub().getLinkedIndex(remoteListener) < 0) {
+        if (!remoteListener->hubAlive_.load(std::memory_order_acquire)) {
             setRemoteFocus(-1);
+        } else if (++remoteFocusValidationCounter_ >= 10) {
+            remoteFocusValidationCounter_ = 0;
+            if (proc_.getListenerHub().getLinkedIndex(remoteListener) < 0)
+                setRemoteFocus(-1);
         }
+    }
+
+    // Rebuild instance selector at ~6Hz (every 10th frame) — linked count
+    // rarely changes and the removal callback handles urgent detach.
+    if (++selectorRebuildCounter_ >= 10) {
+        selectorRebuildCounter_ = 0;
+        rebuildInstanceSelector();
     }
 
     if (!wasdToggle_.getToggleState())
