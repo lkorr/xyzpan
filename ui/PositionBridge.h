@@ -64,6 +64,7 @@ struct ForeignSourceSnapshot {
     float lNodeX = 0.0f, lNodeY = 0.0f, lNodeZ = 0.0f;
     float rNodeX = 0.0f, rNodeY = 0.0f, rNodeZ = 0.0f;
     int   colorIndex  = 0;
+    char  name[32]    = {};  // null-terminated instance name for GL labels
 };
 
 // Lock-free double-buffer: audio thread → message thread source position export.

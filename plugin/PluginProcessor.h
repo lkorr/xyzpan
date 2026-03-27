@@ -44,6 +44,11 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    // Track / instance naming
+    void updateTrackProperties(const TrackProperties& properties) override;
+    void setInstanceName(const juce::String& name);
+    juce::String getInstanceNameValue() const { return instanceName_; }
+
     // APVTS — public so editor and parameter attachments can access it
     juce::AudioProcessorValueTreeState apvts;
 
@@ -214,6 +219,10 @@ private:
     xyzpan::dsp::OnePoleSmooth walkerYSmooth_;
     xyzpan::dsp::OnePoleSmooth walkerZSmooth_;
 
+    // Instance name (auto-populated from DAW track name, user-editable)
+    juce::String instanceName_;
+    bool nameManuallySet_ = false;
+
     // Listener link across instances
     std::atomic<float>* listenerLinkParam         = nullptr;
     juce::SharedResourcePointer<SharedListenerHub> listenerHub_;
@@ -225,6 +234,7 @@ private:
     void listenerPositionChanged(float x, float y, float z) override;
     xyzpan::SourceExportBuffer* getSourceExportBuffer() override { return &sourceExport; }
     juce::AudioProcessor* getProcessor() override { return this; }
+    juce::String getInstanceName() const override { return instanceName_; }
 
     // juce::Timer override — collects foreign source positions for GL view
     void timerCallback() override;

@@ -986,13 +986,33 @@ void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
             xml->removeChildElement(child, true);
     }
 
+    // Persist instance name
+    if (instanceName_.isNotEmpty()) {
+        xml->setAttribute("instanceName", instanceName_);
+        xml->setAttribute("nameManuallySet", nameManuallySet_ ? 1 : 0);
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 
 void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
-    if (xml != nullptr && xml->hasTagName(apvts.state.getType()))
+    if (xml != nullptr && xml->hasTagName(apvts.state.getType())) {
+        // Restore instance name before replacing state
+        instanceName_     = xml->getStringAttribute("instanceName", "");
+        nameManuallySet_  = xml->getIntAttribute("nameManuallySet", 0) != 0;
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+    }
+}
+
+void XYZPanProcessor::updateTrackProperties(const TrackProperties& properties) {
+    if (properties.name.has_value() && !nameManuallySet_)
+        instanceName_ = *properties.name;
+}
+
+void XYZPanProcessor::setInstanceName(const juce::String& name) {
+    instanceName_ = name;
+    nameManuallySet_ = name.isNotEmpty();
 }
 
 // ---------------------------------------------------------------------------

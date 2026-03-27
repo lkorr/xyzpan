@@ -22,7 +22,16 @@ glm::mat4 Camera::getViewMatrix(const glm::vec3& target) const
         target.z + dist * cosP * cosY     // Z
     );
 
-    const glm::vec3 up(0.0f, 1.0f, 0.0f);
+    // Rotate the up vector by roll around the camera's forward axis
+    const glm::vec3 forward = glm::normalize(target - eye);
+    const float rollRad = roll * (3.14159265f / 180.0f);
+    const float cosR = std::cos(rollRad);
+    const float sinR = std::sin(rollRad);
+    const glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+    // Rodrigues' rotation of worldUp around forward by rollRad
+    const glm::vec3 up = worldUp * cosR
+                       + glm::cross(forward, worldUp) * sinR
+                       + forward * glm::dot(forward, worldUp) * (1.0f - cosR);
 
     return glm::lookAt(eye, target, up);
 }
@@ -33,11 +42,13 @@ void Camera::setSnapTopDown()
     if (activeSnap == SnapView::Orbit) {
         savedYaw_   = yaw;
         savedPitch_ = pitch;
+        savedRoll_  = roll;
     }
     // Top-down: looking straight down along -Y axis.
     // Pitch=89.9 (near vertical) to avoid gimbal lock at exactly 90.
     yaw         = 0.0f;
     pitch       = 89.9f;
+    roll        = 0.0f;
     dist        = 3.5f;
     orthoSnap   = true;
     activeSnap  = SnapView::TopDown;
@@ -48,10 +59,12 @@ void Camera::setSnapSide()
     if (activeSnap == SnapView::Orbit) {
         savedYaw_   = yaw;
         savedPitch_ = pitch;
+        savedRoll_  = roll;
     }
     // Side (XZ plane): looking from the positive X side, pitch=0, yaw=90
     yaw        = 90.0f;
     pitch      = 0.0f;
+    roll       = 0.0f;
     dist       = 3.5f;
     orthoSnap  = true;
     activeSnap = SnapView::Side;
@@ -62,10 +75,12 @@ void Camera::setSnapFront()
     if (activeSnap == SnapView::Orbit) {
         savedYaw_   = yaw;
         savedPitch_ = pitch;
+        savedRoll_  = roll;
     }
     // Front (YZ plane): looking from the positive Z side, pitch=0, yaw=0
     yaw        = 0.0f;
     pitch      = 0.0f;
+    roll       = 0.0f;
     dist       = 3.5f;
     orthoSnap  = true;
     activeSnap = SnapView::Front;
@@ -75,6 +90,7 @@ void Camera::setOrbit()
 {
     yaw        = savedYaw_;
     pitch      = savedPitch_;
+    roll       = savedRoll_;
     orthoSnap  = false;
     activeSnap = SnapView::Orbit;
 }

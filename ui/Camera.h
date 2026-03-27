@@ -20,6 +20,7 @@ struct Camera {
     // Orbit state
     float yaw    = 35.0f;   // degrees — horizontal rotation around Y axis
     float pitch  = 25.0f;   // degrees — vertical elevation angle
+    float roll   = 0.0f;    // degrees — axial rotation around forward axis
     float dist   = 3.5f;    // orbit radius from origin
 
     // Snap state
@@ -46,6 +47,7 @@ private:
     // Saved orbit values when snapping (restore on setOrbit())
     float savedYaw_   = 35.0f;
     float savedPitch_ = 25.0f;
+    float savedRoll_  = 0.0f;
 };
 
 } // namespace xyzpan

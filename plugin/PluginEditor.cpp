@@ -682,15 +682,51 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Customize tab starts hidden
     customizeViewport_.setVisible(false);
 
-    // ----- Instance selector (remote focus) -----
-    instanceSelector_.addItem("Self", 1);
-    instanceSelector_.setSelectedId(1, juce::dontSendNotification);
-    instanceSelector_.onChange = [this] {
-        const int sel = instanceSelector_.getSelectedId();
-        setRemoteFocus(sel <= 1 ? -1 : sel - 2);  // id 1=Self, id 2+=linked index 0+
+    // ----- Remote tab: instance list + name editor -----
+    // Rows are non-interactive labels; clicks handled in mouseDown via hit-testing
+    for (int i = 0; i < kMaxRemoteRows; ++i) {
+        instanceRows_[i].setJustificationType(juce::Justification::centredLeft);
+        instanceRows_[i].setInterceptsMouseClicks(false, false);
+        addAndMakeVisible(instanceRows_[i]);
+        instanceRows_[i].setVisible(false);
+    }
+
+    // Remote status label
+    remoteStatusLabel_.setText("No linked instances", juce::dontSendNotification);
+    remoteStatusLabel_.setJustificationType(juce::Justification::centred);
+    remoteStatusLabel_.setColour(juce::Label::textColourId,
+                                 juce::Colour(lookAndFeel_.currentTheme().bronze));
+    addAndMakeVisible(remoteStatusLabel_);
+    remoteStatusLabel_.setVisible(false);
+
+    // Own-instance name editor
+    instanceNameLabel_.setText("Name:", juce::dontSendNotification);
+    instanceNameLabel_.setColour(juce::Label::textColourId,
+                                 juce::Colour(lookAndFeel_.currentTheme().bronze));
+    addAndMakeVisible(instanceNameLabel_);
+    instanceNameLabel_.setVisible(false);
+
+    instanceNameEditor_.setJustification(juce::Justification::centredLeft);
+    instanceNameEditor_.setColour(juce::TextEditor::backgroundColourId,
+                                   juce::Colour(lookAndFeel_.currentTheme().darkIron).brighter(0.1f));
+    instanceNameEditor_.setColour(juce::TextEditor::textColourId,
+                                   juce::Colour(lookAndFeel_.currentTheme().brightGold));
+    instanceNameEditor_.setColour(juce::TextEditor::outlineColourId,
+                                   juce::Colour(lookAndFeel_.currentTheme().bronze).withAlpha(0.5f));
+    instanceNameEditor_.setText(proc_.getInstanceNameValue(), false);
+    instanceNameEditor_.onReturnKey = [this] {
+        proc_.setInstanceName(instanceNameEditor_.getText().trim());
+        glView_.setOwnInstanceName(instanceNameEditor_.getText().trim());
     };
-    addAndMakeVisible(instanceSelector_);
-    instanceSelector_.setVisible(false);  // hidden until 2+ instances linked
+    instanceNameEditor_.onFocusLost = [this] {
+        proc_.setInstanceName(instanceNameEditor_.getText().trim());
+        glView_.setOwnInstanceName(instanceNameEditor_.getText().trim());
+    };
+    addAndMakeVisible(instanceNameEditor_);
+    instanceNameEditor_.setVisible(false);
+
+    // Initialize GL view with current instance name
+    glView_.setOwnInstanceName(proc_.getInstanceNameValue());
 
     // Register removal callback so we detach if remote instance is destroyed.
     // This fires outside the hub's spinlock, so it's safe to do full
@@ -704,8 +740,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
             remoteFocusIndex_ = -1;
             detachAndRebindTo(proc_.apvts, &proc_);
             glView_.setFocusedForeignSource(-1);
-            instanceSelector_.setSelectedId(1, juce::dontSendNotification);
-            lastKnownLinkedCount_ = 0;  // force dropdown rebuild on next timer tick
+            lastKnownLinkedCount_ = 0;  // force list rebuild on next timer tick
+            if (activeLeftTab_ == LeftTab::Remote)
+                setActiveLeftTab(LeftTab::Source);
             repaint();
         }
     });
@@ -811,18 +848,28 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
         g.drawHorizontalLine(hdrY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
 
-        const int halfW = kLeftColW / 2;
+        const int thirdW = kLeftColW / 3;
         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
 
         g.setColour(activeLeftTab_ == LeftTab::Source
             ? juce::Colour(ct.brightGold)
             : juce::Colour(ct.bronze));
-        g.drawText("Source", 0, hdrY, halfW, kSectionHdrH, juce::Justification::centred);
+        g.drawText("Source", 0, hdrY, thirdW, kSectionHdrH, juce::Justification::centred);
 
         g.setColour(activeLeftTab_ == LeftTab::Listener
             ? juce::Colour(ct.brightGold)
             : juce::Colour(ct.bronze));
-        g.drawText("Listener", halfW, hdrY, kLeftColW - halfW, kSectionHdrH, juce::Justification::centred);
+        g.drawText("Listener", thirdW, hdrY, thirdW, kSectionHdrH, juce::Justification::centred);
+
+        // Remote tab — grayed out when <2 linked instances
+        const bool remoteAvailable = (lastKnownLinkedCount_ >= 2);
+        if (activeLeftTab_ == LeftTab::Remote)
+            g.setColour(juce::Colour(ct.brightGold));
+        else if (remoteAvailable)
+            g.setColour(juce::Colour(ct.bronze));
+        else
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.3f));
+        g.drawText("Remote", thirdW * 2, hdrY, kLeftColW - thirdW * 2, kSectionHdrH, juce::Justification::centred);
     }
 
     // Remote focus indicator — colored bar at top of left column content area
@@ -996,11 +1043,26 @@ void XYZPanEditor::resized()
     // Shared structural geometry — used by both left column and bottom row blocks
     const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Instance selector — right half of the left column header bar
-    if (instanceSelector_.isVisible()) {
-        const int selW = 140;
-        const int selH = kSectionHdrH - 4;
-        instanceSelector_.setBounds(kLeftColW - selW - 4, lo.contentY + 2, selW, selH);
+    // Remote tab content — name editor + instance list in left column content area
+    {
+        const int contentTop = lo.contentY + kSectionHdrH + (remoteFocusIndex_ >= 0 ? 6 : 0);
+        const int pad = 8;
+        int y = contentTop + pad;
+
+        // "Name:" label + text editor
+        instanceNameLabel_.setBounds(pad, y, 42, 22);
+        instanceNameEditor_.setBounds(pad + 44, y, kLeftColW - 2 * pad - 44, 22);
+        y += 30;
+
+        // Status label (shown when no linked instances)
+        remoteStatusLabel_.setBounds(pad, y, kLeftColW - 2 * pad, 24);
+        y += 28;
+
+        // Instance rows
+        const int rowH = 24;
+        for (int i = 0; i < kMaxRemoteRows; ++i) {
+            instanceRows_[i].setBounds(pad, y + i * (rowH + 2), kLeftColW - 2 * pad, rowH);
+        }
     }
 
     // ===== GL VIEW =====
@@ -1460,6 +1522,7 @@ void XYZPanEditor::setActiveLeftTab(LeftTab tab)
     activeLeftTab_ = tab;
     const bool source   = (tab == LeftTab::Source);
     const bool listener = (tab == LeftTab::Listener);
+    const bool remote   = (tab == LeftTab::Remote);
 
     // Source tab components
     xKnob_.setVisible(source);
@@ -1491,6 +1554,13 @@ void XYZPanEditor::setActiveLeftTab(LeftTab tab)
     listenerRollLabel_.setVisible(listener);
     headFollowsToggle_.setVisible(listener);
     listenerLinkToggle_.setVisible(listener);
+
+    // Remote tab components
+    instanceNameLabel_.setVisible(remote);
+    instanceNameEditor_.setVisible(remote);
+    remoteStatusLabel_.setVisible(remote && lastKnownLinkedCount_ < 2);
+    for (int i = 0; i < kMaxRemoteRows; ++i)
+        instanceRows_[i].setVisible(remote && i < instanceRowCount_);
 
     repaint();
 }
@@ -1547,14 +1617,26 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
 
     const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Hit-test left column header area — "Source" | "Listener" tabs
+    // Hit-test left column header area — "Source" | "Listener" | "Remote" tabs
     if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
-        const int halfW = kLeftColW / 2;
-        if (pos.x < halfW)
+        const int thirdW = kLeftColW / 3;
+        if (pos.x < thirdW)
             setActiveLeftTab(LeftTab::Source);
-        else
+        else if (pos.x < thirdW * 2)
             setActiveLeftTab(LeftTab::Listener);
+        else if (lastKnownLinkedCount_ >= 2)
+            setActiveLeftTab(LeftTab::Remote);
         return;
+    }
+
+    // Hit-test instance rows in Remote tab
+    if (activeLeftTab_ == LeftTab::Remote) {
+        for (int i = 0; i < instanceRowCount_; ++i) {
+            if (instanceRows_[i].getBounds().contains(pos)) {
+                setRemoteFocus(i == 0 ? -1 : i - 1);
+                return;
+            }
+        }
     }
 
     // Hit-test bottom tab header area (the 240px orbit-controls header) — two halves
@@ -1651,11 +1733,13 @@ void XYZPanEditor::timerCallback()
         }
     }
 
-    // Rebuild instance selector at ~6Hz (every 10th frame) — linked count
+    // Rebuild instance list at ~6Hz (every 10th frame) — linked count
     // rarely changes and the removal callback handles urgent detach.
     if (++selectorRebuildCounter_ >= 10) {
         selectorRebuildCounter_ = 0;
-        rebuildInstanceSelector();
+        rebuildInstanceList();
+        // Keep GL view instance name in sync (may change from DAW track rename)
+        glView_.setOwnInstanceName(proc_.getInstanceNameValue());
     }
 
     if (!wasdToggle_.getToggleState())
@@ -2026,55 +2110,90 @@ void XYZPanEditor::randomizeCustHats()
 // Remote instance focus — instance selector + attachment rebinding
 // ---------------------------------------------------------------------------
 
-void XYZPanEditor::rebuildInstanceSelector()
+void XYZPanEditor::rebuildInstanceList()
 {
     auto& hub = proc_.getListenerHub();
     const int count = hub.getLinkedCount();
 
-    if (count == lastKnownLinkedCount_)
+    if (count == lastKnownLinkedCount_ && !forceListRebuild_)
         return;
     lastKnownLinkedCount_ = count;
+    forceListRebuild_ = false;
 
-    const int prevId = instanceSelector_.getSelectedId();
-    instanceSelector_.clear(juce::dontSendNotification);
-    instanceSelector_.addItem("Self", 1);
-
-    // Only show the selector when 2+ instances are linked
     if (count < 2) {
-        instanceSelector_.setSelectedId(1, juce::dontSendNotification);
-        instanceSelector_.setVisible(false);
         if (remoteFocusProc_ != nullptr)
             setRemoteFocus(-1);
+        if (activeLeftTab_ == LeftTab::Remote)
+            setActiveLeftTab(LeftTab::Source);
+        instanceRowCount_ = 0;
+        for (int i = 0; i < kMaxRemoteRows; ++i)
+            instanceRows_[i].setVisible(false);
+        remoteStatusLabel_.setText("No linked instances", juce::dontSendNotification);
+        if (activeLeftTab_ == LeftTab::Remote)
+            remoteStatusLabel_.setVisible(true);
+        repaint();
         return;
     }
 
-    instanceSelector_.setVisible(true);
+    if (activeLeftTab_ == LeftTab::Remote)
+        remoteStatusLabel_.setVisible(false);
 
-    // Enumerate linked instances — skip self, assign color-indexed names
+    // Build row list: "Self" + each linked instance
     SharedListenerHub::Listener* instances[xyzpan::kMaxLinkedSources + 1];
     const int n = hub.getLinkedInstances(instances, xyzpan::kMaxLinkedSources + 1);
+
+    const auto& ct = lookAndFeel_.currentTheme();
+    int row = 0;
+
+    // Row 0: Self
+    {
+        const bool isFocused = (remoteFocusIndex_ < 0);
+        instanceRows_[row].setText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " Self",
+                                   juce::dontSendNotification);
+        instanceRows_[row].setColour(juce::Label::textColourId,
+                                     isFocused ? juce::Colour(ct.brightGold)
+                                               : juce::Colour(ct.bronze));
+        if (activeLeftTab_ == LeftTab::Remote)
+            instanceRows_[row].setVisible(true);
+        ++row;
+    }
+
+    // Rows 1+: linked instances (skip self)
     int colorIdx = 0;
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n && row < kMaxRemoteRows; ++i) {
         if (instances[i] == static_cast<SharedListenerHub::Listener*>(&proc_))
             continue;
-        // ComboBox IDs: 2 = linked index 0, 3 = linked index 1, etc.
-        juce::String name = "Source ";
-        name += juce::String(colorIdx + 1);
-        name += " (";
-        name += kPaletteNames[colorIdx % 8];
-        name += ")";
-        instanceSelector_.addItem(name, colorIdx + 2);
+        if (!instances[i]->hubAlive_.load(std::memory_order_acquire))
+            continue;
+
+        juce::String name = instances[i]->getInstanceName();
+        if (name.isEmpty()) {
+            name = "Source " + juce::String(colorIdx + 1);
+        }
+
+        const bool isFocused = (remoteFocusIndex_ == colorIdx);
+        const auto colour = kPaletteColours[colorIdx % 8];
+        instanceRows_[row].setText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + name,
+                                   juce::dontSendNotification);
+        instanceRows_[row].setColour(juce::Label::textColourId,
+                                     isFocused ? colour.brighter(0.4f) : colour);
+        if (activeLeftTab_ == LeftTab::Remote)
+            instanceRows_[row].setVisible(true);
+        ++row;
         ++colorIdx;
     }
 
-    // Try to restore previous selection
-    if (prevId > 0 && instanceSelector_.indexOfItemId(prevId) >= 0)
-        instanceSelector_.setSelectedId(prevId, juce::dontSendNotification);
-    else {
-        instanceSelector_.setSelectedId(1, juce::dontSendNotification);
-        if (remoteFocusProc_ != nullptr)
-            setRemoteFocus(-1);
-    }
+    instanceRowCount_ = row;
+
+    // Hide unused rows
+    for (int i = row; i < kMaxRemoteRows; ++i)
+        instanceRows_[i].setVisible(false);
+
+    // Validate current focus is still in range
+    if (remoteFocusIndex_ >= colorIdx && remoteFocusProc_ != nullptr)
+        setRemoteFocus(-1);
+
+    repaint();
 }
 
 void XYZPanEditor::setRemoteFocus(int linkedIndex)
@@ -2085,7 +2204,7 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
         remoteFocusProc_ = nullptr;
         detachAndRebindTo(proc_.apvts, &proc_);
         glView_.setFocusedForeignSource(-1);
-        instanceSelector_.setSelectedId(1, juce::dontSendNotification);
+        forceListRebuild_ = true;
         repaint();
         return;
     }
@@ -2125,6 +2244,7 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
     remoteFocusProc_ = remoteProc;
     detachAndRebindTo(remoteProc->apvts, remoteProc);
     glView_.setFocusedForeignSource(linkedIndex);
+    forceListRebuild_ = true;
     repaint();
 }
 

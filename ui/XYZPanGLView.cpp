@@ -561,6 +561,15 @@ void XYZPanGLView::renderOpenGL()
 
     // Cache projected source position for hit-testing on mouse events
     projectedSourcePos_ = projectToScreen(sourcePos);
+
+    // Write matrices + source screen pos to double-buffer for paint() overlay
+    {
+        const int idx = 1 - paintWriteIdx_.load(std::memory_order_relaxed);
+        paintBuf_[idx].proj = projMatrix_;
+        paintBuf_[idx].view = viewMatrix_;
+        paintBuf_[idx].sourceScreenPos = projectedSourcePos_;
+        paintWriteIdx_.store(idx, std::memory_order_release);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -596,6 +605,78 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoTrailListener_) { glDeleteVertexArrays(1, &vaoTrailListener_); vaoTrailListener_ = 0; }
     if (vboTrailListener_) { glDeleteBuffers(1, &vboTrailListener_);      vboTrailListener_ = 0; }
 
+}
+
+// ---------------------------------------------------------------------------
+// paint — JUCE overlay composited on top of GL (text labels above nodes)
+// ---------------------------------------------------------------------------
+void XYZPanGLView::paint(juce::Graphics& g)
+{
+    // Palette matching the GL kPalette — converted to JUCE Colour
+    static const juce::Colour kLabelPalette[8] = {
+        juce::Colour::fromFloatRGBA(0.60f, 0.40f, 0.80f, 1.0f),  // purple
+        juce::Colour::fromFloatRGBA(0.30f, 0.70f, 0.50f, 1.0f),  // teal-green
+        juce::Colour::fromFloatRGBA(0.80f, 0.45f, 0.30f, 1.0f),  // burnt orange
+        juce::Colour::fromFloatRGBA(0.40f, 0.55f, 0.85f, 1.0f),  // steel blue
+        juce::Colour::fromFloatRGBA(0.75f, 0.35f, 0.55f, 1.0f),  // rose
+        juce::Colour::fromFloatRGBA(0.50f, 0.70f, 0.35f, 1.0f),  // olive green
+        juce::Colour::fromFloatRGBA(0.85f, 0.65f, 0.30f, 1.0f),  // amber
+        juce::Colour::fromFloatRGBA(0.45f, 0.45f, 0.70f, 1.0f),  // lavender
+    };
+
+    const auto font = juce::Font(juce::FontOptions(11.0f, juce::Font::bold));
+    g.setFont(font);
+
+    const float labelOffsetY = -18.0f;  // pixels above the projected center
+    const float w = getWidth() * 1.0f;
+    const float h = getHeight() * 1.0f;
+
+    auto drawLabel = [&](const glm::vec2& screenPos, const juce::String& text,
+                         juce::Colour colour) {
+        if (screenPos.x < -100.0f || screenPos.x > w + 100.0f ||
+            screenPos.y < -100.0f || screenPos.y > h + 100.0f)
+            return;  // off-screen
+        const int tw = font.getStringWidth(text);
+        const int tx = static_cast<int>(screenPos.x) - tw / 2;
+        const int ty = static_cast<int>(screenPos.y + labelOffsetY);
+        g.setColour(colour.withAlpha(0.85f));
+        g.drawText(text, tx, ty, tw, 16, juce::Justification::centred, false);
+    };
+
+    // Read matrices from lock-free double-buffer (written by GL thread)
+    const auto ms = paintBuf_[paintWriteIdx_.load(std::memory_order_acquire)];
+
+    // Local projection helper using snapshot matrices (avoids reading GL-thread members)
+    auto projectLocal = [&](const glm::vec3& worldPos) -> glm::vec2 {
+        const glm::vec4 clip = ms.proj * ms.view * glm::vec4(worldPos, 1.0f);
+        if (std::abs(clip.w) < 1e-6f) return {-9999.0f, -9999.0f};
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        return {(ndc.x * 0.5f + 0.5f) * w,
+                (1.0f - (ndc.y * 0.5f + 0.5f)) * h};
+    };
+
+    // Own source node label
+    if (ownInstanceName_.isNotEmpty()) {
+        ColorTheme theme;
+        {
+            const juce::SpinLock::ScopedLockType lock(customizeLock_);
+            theme = glTheme_;
+        }
+        drawLabel(ms.sourceScreenPos, ownInstanceName_,
+                  juce::Colour(theme.brightGold));
+    }
+
+    // Foreign source node labels
+    {
+        const auto fp = foreignBridge_.read();
+        for (int i = 0; i < fp.count; ++i) {
+            const auto& fs = fp.sources[i];
+            juce::String name(fs.name);
+            if (name.isEmpty()) continue;
+            const glm::vec3 fPos(fs.x, fs.z, -fs.y);  // XYZPan → GL coords
+            drawLabel(projectLocal(fPos), name, kLabelPalette[fs.colorIndex % 8]);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

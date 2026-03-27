@@ -180,22 +180,30 @@ private:
     XYZPanProcessor* remoteFocusProc_ = nullptr;  // null = controlling self
     int remoteFocusIndex_ = -1;                    // -1 = self
     int lastKnownLinkedCount_ = 0;
+    bool forceListRebuild_ = false;                // set by setRemoteFocus to refresh highlighting
     int remoteFocusValidationCounter_ = 0;         // throttle spinlock validation to ~6Hz
     int selectorRebuildCounter_ = 0;               // throttle selector rebuild to ~6Hz
-    juce::ComboBox instanceSelector_;
     void setRemoteFocus(int linkedIndex);
-    void rebuildInstanceSelector();
+    void rebuildInstanceList();
     void detachAndRebindTo(juce::AudioProcessorValueTreeState& target, XYZPanProcessor* targetProc);
+
+    // Remote tab — clickable instance list + own-name editor
+    static constexpr int kMaxRemoteRows = 9;  // Self + up to 8 linked
+    juce::Label instanceRows_[kMaxRemoteRows]; // clickable row labels
+    int instanceRowCount_ = 0;                  // currently visible rows
+    juce::Label instanceNameLabel_;             // "Name:" label
+    juce::TextEditor instanceNameEditor_;       // editable own-instance name
 
     // Tab state for Options / Perspective / Customize split
     enum class OptionsTab { Options, Perspective, Customize };
     OptionsTab activeTab_ = OptionsTab::Options;
     void setActiveTab(OptionsTab tab);
 
-    // Left column tab state — Source (existing X/Y/Z + LFOs) vs Listener (walker + perspective)
-    enum class LeftTab { Source, Listener };
+    // Left column tab state — Source (X/Y/Z + LFOs) vs Listener (walker + perspective) vs Remote
+    enum class LeftTab { Source, Listener, Remote };
     LeftTab activeLeftTab_ = LeftTab::Source;
     void setActiveLeftTab(LeftTab tab);
+    juce::Label remoteStatusLabel_;
 
     // Walker knobs (always active)
     juce::Slider walkerXKnob_, walkerYKnob_, walkerZKnob_;

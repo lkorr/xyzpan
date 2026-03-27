@@ -145,6 +145,12 @@ public:
     // When set, the GL view draws a highlight ring around that source.
     void setFocusedForeignSource(int index) { focusedForeignIndex_.store(index, std::memory_order_relaxed); }
 
+    // Set the name displayed above the own source node (message thread only)
+    void setOwnInstanceName(const juce::String& name) { ownInstanceName_ = name; }
+
+    // JUCE paint overlay — draws text labels above nodes on top of GL content
+    void paint(juce::Graphics& g) override;
+
 private:
     // ------------------------------------------------------------------
     // GL helper: compile a shader program from vertex+fragment source
@@ -256,6 +262,15 @@ private:
     // Cached projected source screen position for hit-testing
     glm::vec2   projectedSourcePos_ = {0.0f, 0.0f};
 
+    // Lock-free double-buffer: GL thread writes matrices, message thread reads for paint()
+    struct PaintSnapshot {
+        glm::mat4 proj  = glm::mat4(1.0f);
+        glm::mat4 view  = glm::mat4(1.0f);
+        glm::vec2 sourceScreenPos = {0.0f, 0.0f};
+    };
+    PaintSnapshot paintBuf_[2];
+    std::atomic<int> paintWriteIdx_{0};
+
     // ------------------------------------------------------------------
     // Drag state
     // ------------------------------------------------------------------
@@ -352,6 +367,9 @@ private:
     float savedYawDeg_   = 0.0f;
     float savedPitchDeg_ = 0.0f;
     float savedRollDeg_  = 0.0f;
+
+    // Instance name for paint() overlay labels (message thread only)
+    juce::String   ownInstanceName_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanGLView)
 };

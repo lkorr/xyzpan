@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <cstring>
 
 // Process-wide singleton shared across all XYZPan plugin instances in the same
 // DAW host process via juce::SharedResourcePointer<SharedListenerHub>.
@@ -25,6 +26,9 @@ public:
 
         // Returns the AudioProcessor that owns this listener (for remote control).
         virtual juce::AudioProcessor* getProcessor() { return nullptr; }
+
+        // User-visible instance name (e.g. DAW track name or manual rename).
+        virtual juce::String getInstanceName() const { return {}; }
 
         // Safety flag — cleared by the instance before destruction begins.
         // The hub checks this under the spinlock before dispatching to skip
@@ -177,6 +181,15 @@ public:
             if (count >= maxOut) break;
             out[count] = buf->read();
             out[count].colorIndex = colorIdx++;
+            // Copy instance name (truncated to fit fixed-size buffer)
+            auto nameStr = l->getInstanceName();
+            if (nameStr.isEmpty())
+                nameStr = "Source " + juce::String(colorIdx);
+            auto nameUtf8 = nameStr.toUTF8();
+            const size_t len = std::min<size_t>(nameUtf8.sizeInBytes(),
+                                                 sizeof(out[count].name) - 1);
+            std::memcpy(out[count].name, nameUtf8.getAddress(), len);
+            out[count].name[len] = '\0';
             ++count;
         }
         return count;
