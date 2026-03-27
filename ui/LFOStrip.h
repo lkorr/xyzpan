@@ -22,6 +22,9 @@ public:
              juce::AudioProcessorValueTreeState& apvts);
     ~LFOStrip() override;
 
+    // Rebind all attachments + listeners to a different APVTS (for remote instance control).
+    void rebindAPVTS(juce::AudioProcessorValueTreeState& newAPVTS);
+
     void resized() override;
     void setOutputSource(std::atomic<float>* src);
 
@@ -63,6 +66,9 @@ private:
     std::unique_ptr<SA> rateAtt_, depthAtt_, phaseAtt_, smoothAtt_;
     std::unique_ptr<SA> beatDivAtt_;
     std::unique_ptr<BA> syncAtt_;
+
+    // Stored param IDs for rebinding
+    juce::String rateID_, depthID_, phaseID_, waveformID_, smoothID_, beatDivID_;
 
     // Sync state tracking for visibility toggle
     bool syncOn_ = false;

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <memory>
 #include "xyzpan/Engine.h"
 #include "xyzpan/DSPStateBridge.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
@@ -58,6 +59,13 @@ public:
 
     // DSP state bridge for dev panel readouts (audio thread → UI thread)
     xyzpan::DSPStateBridge dspStateBridge;
+
+    // Shared flag: true while processor is applying a broadcast from another linked instance.
+    // GLView checks this to suppress cross-instance head-follows feedback loops.
+    auto getReceivingBroadcastFlag() const { return receivingBroadcast_; }
+
+    // Access to the shared listener hub (for remote instance control)
+    SharedListenerHub& getListenerHub() { return *listenerHub_; }
 
     // Momentary reset flags — set by UI, consumed (cleared) by processBlock
     std::atomic<bool> resetXYZLfoPhases{false};
@@ -209,13 +217,14 @@ private:
     // Listener link across instances
     std::atomic<float>* listenerLinkParam         = nullptr;
     juce::SharedResourcePointer<SharedListenerHub> listenerHub_;
-    std::atomic<bool> receivingBroadcast_{false};
+    std::shared_ptr<std::atomic<bool>> receivingBroadcast_ = std::make_shared<std::atomic<bool>>(false);
 
     // SharedListenerHub::Listener overrides
     void listenerOrientationChanged(float yaw, float pitch, float roll,
                                      bool headFollows) override;
     void listenerPositionChanged(float x, float y, float z) override;
     xyzpan::SourceExportBuffer* getSourceExportBuffer() override { return &sourceExport; }
+    juce::AudioProcessor* getProcessor() override { return this; }
 
     // juce::Timer override — collects foreign source positions for GL view
     void timerCallback() override;

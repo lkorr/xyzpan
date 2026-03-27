@@ -113,7 +113,8 @@ public:
     XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
                  juce::AudioProcessor* proc,
                  xyzpan::PositionBridge& bridge,
-                 xyzpan::ForeignSourceBridge& foreignBridge);
+                 xyzpan::ForeignSourceBridge& foreignBridge,
+                 std::shared_ptr<std::atomic<bool>> receivingBroadcast = nullptr);
     ~XYZPanGLView() override;
 
     // OpenGLRenderer overrides
@@ -139,6 +140,10 @@ public:
     // read on GL thread under SpinLock).
     void setColorTheme(const ColorTheme& theme);
     void setAvatarParams(const AvatarParams& params);
+
+    // Set the index of the focused foreign source (-1 = none).
+    // When set, the GL view draws a highlight ring around that source.
+    void setFocusedForeignSource(int index) { focusedForeignIndex_.store(index, std::memory_order_relaxed); }
 
 private:
     // ------------------------------------------------------------------
@@ -274,6 +279,7 @@ private:
     juce::SpinLock     customizeLock_;
     ColorTheme         glTheme_;
     AvatarParams       avatarParams_;
+    std::atomic<int>   focusedForeignIndex_{-1};
 
     // Ear/eye type draw dispatchers
     // Nose type draw dispatchers
@@ -339,6 +345,7 @@ private:
     // Head-follows-camera state
     bool  headFollowsActive_ = false;
     std::shared_ptr<std::atomic<bool>> drivingParamsFromCamera_ = std::make_shared<std::atomic<bool>>(false);
+    std::shared_ptr<std::atomic<bool>> receivingBroadcast_;  // shared with processor; suppresses cross-instance feedback
     float savedYawDeg_   = 0.0f;
     float savedPitchDeg_ = 0.0f;
     float savedRollDeg_  = 0.0f;

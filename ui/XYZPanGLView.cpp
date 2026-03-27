@@ -27,8 +27,10 @@ namespace xyzpan {
 XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
                              juce::AudioProcessor* proc,
                              xyzpan::PositionBridge& bridge,
-                             xyzpan::ForeignSourceBridge& foreignBridge)
-    : apvts_(apvts), proc_(proc), bridge_(bridge), foreignBridge_(foreignBridge)
+                             xyzpan::ForeignSourceBridge& foreignBridge,
+                             std::shared_ptr<std::atomic<bool>> receivingBroadcast)
+    : apvts_(apvts), proc_(proc), bridge_(bridge), foreignBridge_(foreignBridge),
+      receivingBroadcast_(std::move(receivingBroadcast))
 {
     // CRITICAL ORDER per RESEARCH.md: configure context BEFORE attachTo
     glContext_.setOpenGLVersionRequired(juce::OpenGLContext::openGL3_2);
@@ -129,13 +131,23 @@ void XYZPanGLView::newOpenGLContextCreated()
 // ---------------------------------------------------------------------------
 void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
 {
-    if (!headFollowsActive_ || drivingParamsFromCamera_->load(std::memory_order_relaxed))
+    if (!headFollowsActive_ || drivingParamsFromCamera_->load(std::memory_order_relaxed)
+        || (receivingBroadcast_ && receivingBroadcast_->load(std::memory_order_relaxed)))
         return;
 
     if (id == "listener_yaw")
         camera_.yaw = newValue;              // both use 0–360°
-    else if (id == "listener_pitch")
-        camera_.pitch = -newValue;           // camera pitch is negated relative to param
+    else if (id == "listener_pitch") {
+        // Param is 0–360° (negated + wrapped from camera pitch).
+        // Reverse: negate, then normalize to [-180, 180) so the camera
+        // stays in its expected [-89, 89] range.
+        float p = -newValue;
+        if (p < -180.0f) p += 360.0f;
+        else if (p > 180.0f) p -= 360.0f;
+        camera_.pitch = p;
+    }
+    else if (id == "listener_roll")
+        camera_.roll = newValue;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,25 +295,27 @@ void XYZPanGLView::renderOpenGL()
         }
 
         if (headFollowsActive_ && toggleOn) {
-            // Map camera yaw/pitch to listener params (wrap to 0–360°)
-            // camera_.yaw and camera_.pitch are already in degrees
+            // Map camera yaw/pitch/roll to listener params (wrap to 0–360°)
+            // camera_.yaw, camera_.pitch, and camera_.roll are already in degrees
             float camYawDeg = std::fmod(camera_.yaw, 360.0f);
             if (camYawDeg < 0.0f) camYawDeg += 360.0f;
             float camPitchDeg = std::fmod(-camera_.pitch, 360.0f);
             if (camPitchDeg < 0.0f) camPitchDeg += 360.0f;
+            float camRollDeg = std::fmod(camera_.roll, 360.0f);
+            if (camRollDeg < 0.0f) camRollDeg += 360.0f;
 
             // Guard: suppress parameterChanged echoes from our own writes.
             // shared_ptr captured by value so lambda is safe if GLView is destroyed first.
             auto flag = drivingParamsFromCamera_;
             auto* apvtsPtr = &apvts_;
             flag->store(true, std::memory_order_relaxed);
-            juce::MessageManager::callAsync([flag, apvtsPtr, camYawDeg, camPitchDeg]() {
+            juce::MessageManager::callAsync([flag, apvtsPtr, camYawDeg, camPitchDeg, camRollDeg]() {
                 if (auto* p = apvtsPtr->getParameter("listener_yaw"))
                     p->setValueNotifyingHost(p->convertTo0to1(camYawDeg));
                 if (auto* p = apvtsPtr->getParameter("listener_pitch"))
                     p->setValueNotifyingHost(p->convertTo0to1(camPitchDeg));
                 if (auto* p = apvtsPtr->getParameter("listener_roll"))
-                    p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+                    p->setValueNotifyingHost(p->convertTo0to1(camRollDeg));
                 flag->store(false, std::memory_order_relaxed);
             });
         }
@@ -486,11 +500,15 @@ void XYZPanGLView::renderOpenGL()
             {0.85f, 0.65f, 0.30f},  // amber
             {0.45f, 0.45f, 0.70f},  // lavender
         };
+        const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
         for (int i = 0; i < fp.count; ++i) {
             const auto& fs = fp.sources[i];
             const auto color = kPalette[fs.colorIndex % 8];
             const glm::vec3 fPos(fs.x, fs.z, -fs.y);  // XYZPan → GL
             drawSphere(fPos, 0.035f, color, 0.6f);
+            // Highlight ring around focused foreign source
+            if (fs.colorIndex == focusIdx)
+                drawSphere(fPos, 0.050f, color, 0.25f);
             if (fs.stereoWidth > 0.0f) {
                 const glm::vec3 fL(fs.lNodeX, fs.lNodeZ, -fs.lNodeY);
                 const glm::vec3 fR(fs.rNodeX, fs.rNodeZ, -fs.rNodeY);

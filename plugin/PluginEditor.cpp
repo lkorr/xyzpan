@@ -4,13 +4,28 @@
 #include <cmath>
 #include <random>
 
+// Palette names/colours matching the GL foreign source palette
+static const char* kPaletteNames[8] = {
+    "Purple", "Teal", "Orange", "Blue", "Rose", "Olive", "Amber", "Lavender"
+};
+static const juce::Colour kPaletteColours[8] = {
+    juce::Colour::fromFloatRGBA(0.60f, 0.40f, 0.80f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.30f, 0.70f, 0.50f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.80f, 0.45f, 0.30f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.40f, 0.55f, 0.85f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.75f, 0.35f, 0.55f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.50f, 0.70f, 0.35f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.85f, 0.65f, 0.30f, 1.0f),
+    juce::Colour::fromFloatRGBA(0.45f, 0.45f, 0.70f, 1.0f),
+};
+
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     : AudioProcessorEditor(p),
       proc_(p),
-      glView_(p.apvts, &p, p.positionBridge, p.foreignSourceBridge),
+      glView_(p.apvts, &p, p.positionBridge, p.foreignSourceBridge, p.getReceivingBroadcastFlag()),
       xLFO_('X', p.apvts),
       yLFO_('Y', p.apvts),
       zLFO_('Z', p.apvts),
@@ -667,6 +682,35 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Customize tab starts hidden
     customizeViewport_.setVisible(false);
 
+    // ----- Instance selector (remote focus) -----
+    instanceSelector_.addItem("Self", 1);
+    instanceSelector_.setSelectedId(1, juce::dontSendNotification);
+    instanceSelector_.onChange = [this] {
+        const int sel = instanceSelector_.getSelectedId();
+        setRemoteFocus(sel <= 1 ? -1 : sel - 2);  // id 1=Self, id 2+=linked index 0+
+    };
+    addAndMakeVisible(instanceSelector_);
+    instanceSelector_.setVisible(false);  // hidden until 2+ instances linked
+
+    // Register removal callback so we detach if remote instance is destroyed
+    proc_.getListenerHub().addRemovalCallback(this, [this](SharedListenerHub::Listener* removed) {
+        if (remoteFocusProc_ != nullptr &&
+            static_cast<SharedListenerHub::Listener*>(remoteFocusProc_) == removed) {
+            // Must revert to self — remote is being destroyed
+            // We're under the hub's spinlock here, so just do the minimal bookkeeping;
+            // the actual attachment rebuild will happen on the next message-thread
+            // timer tick via setRemoteFocus(-1).
+            remoteFocusProc_ = nullptr;
+            remoteFocusIndex_ = -1;
+            // Schedule full reattach on message thread
+            auto safeThis = juce::Component::SafePointer<XYZPanEditor>(this);
+            juce::MessageManager::callAsync([safeThis]() {
+                if (auto* self = safeThis.getComponent())
+                    self->setRemoteFocus(-1);
+            });
+        }
+    });
+
     // Generate noise texture for panel overlay
     noiseTexture_ = generateNoiseTexture(256);
 
@@ -688,6 +732,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 // ---------------------------------------------------------------------------
 XYZPanEditor::~XYZPanEditor()
 {
+    // Revert to self before destruction to avoid dangling attachments
+    if (remoteFocusProc_ != nullptr)
+        setRemoteFocus(-1);
+    proc_.getListenerHub().removeRemovalCallback(this);
+
     stopTimer();
     removeMouseListener(this);
     removeKeyListener(this);
@@ -773,6 +822,14 @@ void XYZPanEditor::paint(juce::Graphics& g)
             ? juce::Colour(ct.brightGold)
             : juce::Colour(ct.bronze));
         g.drawText("Listener", halfW, hdrY, kLeftColW - halfW, kSectionHdrH, juce::Justification::centred);
+    }
+
+    // Remote focus indicator — colored bar at top of left column content area
+    if (remoteFocusIndex_ >= 0) {
+        const int barH = 3;
+        const int barY = lo.contentY + kSectionHdrH;
+        g.setColour(kPaletteColours[remoteFocusIndex_ % 8]);
+        g.fillRect(0, barY, kLeftColW, barH);
     }
 
     // Tabbed header — bottom row, orbit portion: "Options" | "Perspective" tabs + LFO plane labels
@@ -937,6 +994,13 @@ void XYZPanEditor::resized()
 
     // Shared structural geometry — used by both left column and bottom row blocks
     const auto lo = Layout::compute(getWidth(), getHeight());
+
+    // Instance selector — right half of the left column header bar
+    if (instanceSelector_.isVisible()) {
+        const int selW = 140;
+        const int selH = kSectionHdrH - 4;
+        instanceSelector_.setBounds(kLeftColW - selW - 4, lo.contentY + 2, selW, selH);
+    }
 
     // ===== GL VIEW =====
     glView_.setBounds(glArea);
@@ -1573,6 +1637,17 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
 {
+    // Periodically rebuild instance selector and validate remote focus
+    rebuildInstanceSelector();
+    if (remoteFocusProc_ != nullptr) {
+        // Check if remote is still in the hub
+        auto* remoteListener = static_cast<SharedListenerHub::Listener*>(remoteFocusProc_);
+        if (!remoteListener->hubAlive_.load(std::memory_order_acquire) ||
+            proc_.getListenerHub().getLinkedIndex(remoteListener) < 0) {
+            setRemoteFocus(-1);
+        }
+    }
+
     if (!wasdToggle_.getToggleState())
         return;
 
@@ -1935,4 +2010,178 @@ void XYZPanEditor::randomizeCustHats()
     hatColorSwatch_.setColour(juce::Colour(ap.hatColor));
     hatTypeCombo_.setSelectedId(ap.hatType + 1, juce::dontSendNotification);
     hatSizeSlider_.setValue(static_cast<double>(ap.hatSize), juce::dontSendNotification);
+}
+
+// ---------------------------------------------------------------------------
+// Remote instance focus — instance selector + attachment rebinding
+// ---------------------------------------------------------------------------
+
+void XYZPanEditor::rebuildInstanceSelector()
+{
+    auto& hub = proc_.getListenerHub();
+    const int count = hub.getLinkedCount();
+
+    if (count == lastKnownLinkedCount_)
+        return;
+    lastKnownLinkedCount_ = count;
+
+    const int prevId = instanceSelector_.getSelectedId();
+    instanceSelector_.clear(juce::dontSendNotification);
+    instanceSelector_.addItem("Self", 1);
+
+    // Only show the selector when 2+ instances are linked
+    if (count < 2) {
+        instanceSelector_.setSelectedId(1, juce::dontSendNotification);
+        instanceSelector_.setVisible(false);
+        if (remoteFocusProc_ != nullptr)
+            setRemoteFocus(-1);
+        return;
+    }
+
+    instanceSelector_.setVisible(true);
+
+    // Enumerate linked instances — skip self, assign color-indexed names
+    SharedListenerHub::Listener* instances[xyzpan::kMaxLinkedSources + 1];
+    const int n = hub.getLinkedInstances(instances, xyzpan::kMaxLinkedSources + 1);
+    int colorIdx = 0;
+    for (int i = 0; i < n; ++i) {
+        if (instances[i] == static_cast<SharedListenerHub::Listener*>(&proc_))
+            continue;
+        // ComboBox IDs: 2 = linked index 0, 3 = linked index 1, etc.
+        juce::String name = "Source ";
+        name += juce::String(colorIdx + 1);
+        name += " (";
+        name += kPaletteNames[colorIdx % 8];
+        name += ")";
+        instanceSelector_.addItem(name, colorIdx + 2);
+        ++colorIdx;
+    }
+
+    // Try to restore previous selection
+    if (prevId > 0 && instanceSelector_.indexOfItemId(prevId) >= 0)
+        instanceSelector_.setSelectedId(prevId, juce::dontSendNotification);
+    else {
+        instanceSelector_.setSelectedId(1, juce::dontSendNotification);
+        if (remoteFocusProc_ != nullptr)
+            setRemoteFocus(-1);
+    }
+}
+
+void XYZPanEditor::setRemoteFocus(int linkedIndex)
+{
+    if (linkedIndex < 0) {
+        // Revert to self
+        remoteFocusIndex_ = -1;
+        remoteFocusProc_ = nullptr;
+        detachAndRebindTo(proc_.apvts, &proc_);
+        glView_.setFocusedForeignSource(-1);
+        instanceSelector_.setSelectedId(1, juce::dontSendNotification);
+        repaint();
+        return;
+    }
+
+    // Find the remote processor
+    auto& hub = proc_.getListenerHub();
+    SharedListenerHub::Listener* instances[xyzpan::kMaxLinkedSources + 1];
+    const int n = hub.getLinkedInstances(instances, xyzpan::kMaxLinkedSources + 1);
+
+    // Build list of non-self instances
+    std::vector<SharedListenerHub::Listener*> others;
+    for (int i = 0; i < n; ++i)
+        if (instances[i] != static_cast<SharedListenerHub::Listener*>(&proc_))
+            others.push_back(instances[i]);
+
+    if (linkedIndex >= static_cast<int>(others.size())) {
+        setRemoteFocus(-1);  // out of range, revert
+        return;
+    }
+
+    auto* remoteListener = others[static_cast<size_t>(linkedIndex)];
+    auto* remoteProc = dynamic_cast<XYZPanProcessor*>(remoteListener->getProcessor());
+
+    if (remoteProc == nullptr || !remoteListener->hubAlive_.load(std::memory_order_acquire)) {
+        setRemoteFocus(-1);
+        return;
+    }
+
+    remoteFocusIndex_ = linkedIndex;
+    remoteFocusProc_ = remoteProc;
+    detachAndRebindTo(remoteProc->apvts, remoteProc);
+    glView_.setFocusedForeignSource(linkedIndex);
+    repaint();
+}
+
+void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
+                                      XYZPanProcessor* targetProc)
+{
+    // Destroy all remoteable slider attachments
+    xAtt_.reset();
+    yAtt_.reset();
+    zAtt_.reset();
+    stereoWidthAtt_.reset();
+    orbitPhaseAtt_.reset();
+    orbitOffsetAtt_.reset();
+    orbitSpeedMulAtt_.reset();
+    lfoSpeedMulAtt_.reset();
+    sphereRadiusAtt_.reset();
+    verbSizeAtt_.reset();
+    verbDecayAtt_.reset();
+    verbDampingAtt_.reset();
+    verbWetAtt_.reset();
+    dopplerAtt_.reset();
+    inputGainAtt_.reset();
+
+    // Destroy remoteable button attachments
+    faceListenerAtt_.reset();
+    binauralAtt_.reset();
+    earlyReflAtt_.reset();
+
+    // Recreate all attachments pointing to target APVTS
+    xAtt_ = std::make_unique<SA>(target, ParamID::X, xKnob_);
+    yAtt_ = std::make_unique<SA>(target, ParamID::Y, yKnob_);
+    zAtt_ = std::make_unique<SA>(target, ParamID::Z, zKnob_);
+    stereoWidthAtt_   = std::make_unique<SA>(target, ParamID::STEREO_WIDTH, stereoWidthKnob_);
+    orbitPhaseAtt_    = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_PHASE, orbitPhaseKnob_);
+    orbitOffsetAtt_   = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_OFFSET, orbitOffsetKnob_);
+    orbitSpeedMulAtt_ = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_SPEED_MUL, orbitSpeedMulKnob_);
+    lfoSpeedMulAtt_   = std::make_unique<SA>(target, ParamID::LFO_SPEED_MUL, lfoSpeedMulKnob_);
+    sphereRadiusAtt_  = std::make_unique<SA>(target, ParamID::SPHERE_RADIUS, sphereRadiusKnob_);
+    verbSizeAtt_      = std::make_unique<SA>(target, ParamID::VERB_SIZE, verbSize_);
+    verbDecayAtt_     = std::make_unique<SA>(target, ParamID::VERB_DECAY, verbDecay_);
+    verbDampingAtt_   = std::make_unique<SA>(target, ParamID::VERB_DAMPING, verbDamping_);
+    verbWetAtt_       = std::make_unique<SA>(target, ParamID::VERB_WET, verbWet_);
+    dopplerAtt_       = std::make_unique<SA>(target, ParamID::DIST_DELAY_MAX_MS, dopplerKnob_);
+    inputGainAtt_     = std::make_unique<SA>(target, ParamID::INPUT_GAIN_DB, inputGainKnob_);
+
+    faceListenerAtt_ = std::make_unique<BA>(target, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
+    binauralAtt_     = std::make_unique<BA>(target, ParamID::BINAURAL_ENABLED, binauralToggle_);
+    earlyReflAtt_    = std::make_unique<BA>(target, ParamID::ER_ENABLED, earlyReflToggle_);
+
+    // Rebind all 6 LFO strips
+    xLFO_.rebindAPVTS(target);
+    yLFO_.rebindAPVTS(target);
+    zLFO_.rebindAPVTS(target);
+    orbitXYLFO_.rebindAPVTS(target);
+    orbitXZLFO_.rebindAPVTS(target);
+    orbitYZLFO_.rebindAPVTS(target);
+
+    // Update LFO waveform display output sources
+    xLFO_.setOutputSource(&targetProc->lfoOutputX);
+    yLFO_.setOutputSource(&targetProc->lfoOutputY);
+    zLFO_.setOutputSource(&targetProc->lfoOutputZ);
+    orbitXYLFO_.setOutputSource(&targetProc->lfoOutputOrbitXY);
+    orbitXZLFO_.setOutputSource(&targetProc->lfoOutputOrbitXZ);
+    orbitYZLFO_.setOutputSource(&targetProc->lfoOutputOrbitYZ);
+
+    // Re-hook width-gate callback (needs to still work after rebind)
+    stereoWidthKnob_.onValueChange = [this] { updateOrbitEnabled(); };
+    updateOrbitEnabled();
+
+    // Update reset buttons to target correct processor's atomics
+    resetXYZPhasesBtn_.onClick = [targetProc] {
+        targetProc->resetXYZLfoPhases.store(true);
+    };
+    resetOrbitPhasesBtn_.onClick = [targetProc] {
+        targetProc->resetOrbitLfoPhases.store(true);
+    };
 }

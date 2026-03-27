@@ -44,6 +44,14 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
     apvts_ = &apvts;
     syncParamID_ = syncID;
 
+    // Store IDs for rebinding
+    rateID_ = rateID;
+    depthID_ = depthID;
+    phaseID_ = phaseID;
+    waveformID_ = waveformID;
+    smoothID_ = smoothID;
+    beatDivID_ = beatDivID;
+
     // Configure knobs as small rotary sliders
     for (auto* knob : { &rateKnob_, &depthKnob_, &phaseKnob_, &smoothKnob_ }) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -193,4 +201,39 @@ void LFOStrip::resized()
         const int syncX = col0X + (colW - kSyncW) / 2;
         syncBtn_.setBounds(syncX, row3Y, kSyncW, kSyncH);
     }
+}
+
+void LFOStrip::rebindAPVTS(juce::AudioProcessorValueTreeState& newAPVTS)
+{
+    // Remove listener from old APVTS
+    if (apvts_ != nullptr)
+        apvts_->removeParameterListener(syncParamID_, this);
+
+    // Destroy all existing attachments
+    rateAtt_.reset();
+    depthAtt_.reset();
+    phaseAtt_.reset();
+    smoothAtt_.reset();
+    beatDivAtt_.reset();
+    syncAtt_.reset();
+
+    // Update stored APVTS pointer
+    apvts_ = &newAPVTS;
+
+    // Recreate attachments pointing to new APVTS
+    rateAtt_    = std::make_unique<SA>(newAPVTS, rateID_,    rateKnob_);
+    depthAtt_   = std::make_unique<SA>(newAPVTS, depthID_,   depthKnob_);
+    phaseAtt_   = std::make_unique<SA>(newAPVTS, phaseID_,   phaseKnob_);
+    smoothAtt_  = std::make_unique<SA>(newAPVTS, smoothID_,  smoothKnob_);
+    beatDivAtt_ = std::make_unique<SA>(newAPVTS, beatDivID_, beatDivKnob_);
+    syncAtt_    = std::make_unique<BA>(newAPVTS, syncParamID_, syncBtn_);
+
+    // Rebind shape selector
+    shapeSelector_.setParam(newAPVTS, waveformID_);
+
+    // Re-register sync listener on new APVTS
+    if (auto* syncParam = newAPVTS.getRawParameterValue(syncParamID_))
+        syncOn_ = syncParam->load() >= 0.5f;
+    newAPVTS.addParameterListener(syncParamID_, this);
+    updateSyncVisibility();
 }

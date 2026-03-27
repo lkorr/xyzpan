@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <atomic>
+#include <functional>
 
 // Process-wide singleton shared across all XYZPan plugin instances in the same
 // DAW host process via juce::SharedResourcePointer<SharedListenerHub>.
@@ -21,6 +22,9 @@ public:
                                                  bool headFollows) = 0;
         virtual void listenerPositionChanged(float /*x*/, float /*y*/, float /*z*/) {}
         virtual xyzpan::SourceExportBuffer* getSourceExportBuffer() { return nullptr; }
+
+        // Returns the AudioProcessor that owns this listener (for remote control).
+        virtual juce::AudioProcessor* getProcessor() { return nullptr; }
 
         // Safety flag — cleared by the instance before destruction begins.
         // The hub checks this under the spinlock before dispatching to skip
@@ -46,11 +50,16 @@ public:
         linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
     }
 
-    // Convenience: atomically mark dead + remove in one call.
+    // Convenience: atomically mark dead + fire removal callbacks + remove.
     // This is the preferred API — call as the VERY FIRST line of the destructor.
     void detachInstance(Listener* l) {
         l->hubAlive_.store(false, std::memory_order_release);
-        removeLinkedInstance(l);
+        {
+            const juce::SpinLock::ScopedLockType lock(spinLock_);
+            for (auto& cb : removalCallbacks_)
+                cb.fn(l);
+            linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
+        }
     }
 
     void broadcastOrientation(Listener* sender, float yaw, float pitch, float roll,
@@ -108,6 +117,41 @@ public:
         return static_cast<int>(linked_.size());
     }
 
+    // Returns pointers to all linked instances. Returns count written.
+    int getLinkedInstances(Listener** out, int maxOut) const {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        int count = 0;
+        for (auto* l : linked_) {
+            if (count >= maxOut) break;
+            out[count++] = l;
+        }
+        return count;
+    }
+
+    // Returns the index of a listener in the linked list, or -1 if not found.
+    int getLinkedIndex(const Listener* l) const {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        for (int i = 0; i < static_cast<int>(linked_.size()); ++i)
+            if (linked_[i] == l) return i;
+        return -1;
+    }
+
+    // Register a callback invoked (under lock, on message thread) when any
+    // instance is removed. Editors use this to detach remote attachments
+    // before the processor is destroyed.
+    void addRemovalCallback(void* owner, std::function<void(Listener*)> cb) {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        removalCallbacks_.push_back({owner, std::move(cb)});
+    }
+
+    void removeRemovalCallback(void* owner) {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        removalCallbacks_.erase(
+            std::remove_if(removalCallbacks_.begin(), removalCallbacks_.end(),
+                           [owner](const RemovalCB& cb) { return cb.owner == owner; }),
+            removalCallbacks_.end());
+    }
+
     // Collect source positions from all linked instances except caller.
     // Returns number of sources written.
     int getLinkedSources(const Listener* caller,
@@ -129,8 +173,14 @@ public:
     }
 
 private:
+    struct RemovalCB {
+        void* owner;
+        std::function<void(Listener*)> fn;
+    };
+
     mutable juce::SpinLock spinLock_;
     std::vector<Listener*> linked_;
+    std::vector<RemovalCB> removalCallbacks_;
 
     bool  hasCache_ = false;
     float cachedYaw_   = 0.0f;

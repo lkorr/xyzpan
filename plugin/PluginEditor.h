@@ -176,6 +176,15 @@ private:
     juce::ToggleButton listenerLinkToggle_;
     std::unique_ptr<BA> listenerLinkAtt_;
 
+    // Remote instance focus — control another linked instance's parameters
+    XYZPanProcessor* remoteFocusProc_ = nullptr;  // null = controlling self
+    int remoteFocusIndex_ = -1;                    // -1 = self
+    int lastKnownLinkedCount_ = 0;
+    juce::ComboBox instanceSelector_;
+    void setRemoteFocus(int linkedIndex);
+    void rebuildInstanceSelector();
+    void detachAndRebindTo(juce::AudioProcessorValueTreeState& target, XYZPanProcessor* targetProc);
+
     // Tab state for Options / Perspective / Customize split
     enum class OptionsTab { Options, Perspective, Customize };
     OptionsTab activeTab_ = OptionsTab::Options;
