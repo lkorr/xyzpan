@@ -195,10 +195,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(wasdToggle_);
     wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
 
-    // Listener tab components initially hidden (Source tab is default)
-    // This also hides perspective controls (yaw/pitch/roll, head follows, link)
-    // which now live in the Listener tab instead of the bottom row Perspective tab.
-    setActiveLeftTab(LeftTab::Source);
+    // Listener section starts collapsed — mini knobs visible, full controls hidden
+    setListenerExpanded(false);
 
     binauralToggle_.setButtonText("");
     binauralToggle_.setClickingTogglesState(true);
@@ -682,7 +680,24 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Customize tab starts hidden
     customizeViewport_.setVisible(false);
 
-    // ----- Remote tab: instance list + name editor -----
+    // ----- Remote popup button — visible only when linked instances >= 2 -----
+    remoteBtn_.onClick = [this] {
+        glView_.setShowInstanceList(!glView_.getShowInstanceList());
+    };
+    addAndMakeVisible(remoteBtn_);
+
+    // Wire GL view instance list click callback to remote focus
+    glView_.onInstanceClicked = [this](int linkedIndex) {
+        setRemoteFocus(linkedIndex);
+    };
+
+    // Wire GL view rename callback to update processor instance name
+    glView_.onInstanceRenamed = [this](const juce::String& newName) {
+        proc_.setInstanceName(newName);
+        glView_.setOwnInstanceName(newName);
+    };
+
+    // ----- Remote: instance list + name editor -----
     // Rows are non-interactive labels; clicks handled in mouseDown via hit-testing
     for (int i = 0; i < kMaxRemoteRows; ++i) {
         instanceRows_[i].setJustificationType(juce::Justification::centredLeft);
@@ -690,6 +705,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         addAndMakeVisible(instanceRows_[i]);
         instanceRows_[i].setVisible(false);
     }
+
+    // Instance list now rendered in GL view overlay — keep row labels hidden
+    instanceRowCount_ = 0;
 
     // Remote status label
     remoteStatusLabel_.setText("No linked instances", juce::dontSendNotification);
@@ -699,7 +717,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(remoteStatusLabel_);
     remoteStatusLabel_.setVisible(false);
 
-    // Own-instance name editor
+    // Own-instance name editor (kept functional but hidden — remote UI is now in GL overlay)
     instanceNameLabel_.setText("Name:", juce::dontSendNotification);
     instanceNameLabel_.setColour(juce::Label::textColourId,
                                  juce::Colour(lookAndFeel_.currentTheme().bronze));
@@ -741,8 +759,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
             detachAndRebindTo(proc_.apvts, &proc_);
             glView_.setFocusedForeignSource(-1);
             lastKnownLinkedCount_ = 0;  // force list rebuild on next timer tick
-            if (activeLeftTab_ == LeftTab::Remote)
-                setActiveLeftTab(LeftTab::Source);
+            // Hide remote popup if open
+            instanceNameLabel_.setVisible(false);
+            instanceNameEditor_.setVisible(false);
+            for (int ri = 0; ri < kMaxRemoteRows; ++ri)
+                instanceRows_[ri].setVisible(false);
             repaint();
         }
     });
@@ -775,6 +796,7 @@ XYZPanEditor::~XYZPanEditor()
     if (remoteFocusProc_ != nullptr)
         setRemoteFocus(-1);
 
+    endWasdGestureIfActive();
     stopTimer();
     removeMouseListener(this);
     removeKeyListener(this);
@@ -784,7 +806,7 @@ XYZPanEditor::~XYZPanEditor()
 // ---------------------------------------------------------------------------
 // Layout::compute — single source of structural geometry used by paint + resized
 // ---------------------------------------------------------------------------
-XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
+XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool listenerExpanded)
 {
     Layout l;
     l.contentY    = kPresetBarH;
@@ -797,6 +819,13 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
     l.reverbX     = l.lfoX + l.lfoTotalW;
     l.orbitTotalW = l.reverbX;
     l.contentTop  = l.bottomY + kSectionHdrH;
+
+    // Listener section lives at the bottom of the left column.
+    // Collapsed: just the header (24px)
+    // Expanded:  header (24) + walker knobs (70) + perspective (64) + toggles (44) = 202px
+    const int listenerH = listenerExpanded ? 202 : kSectionHdrH;
+    l.listenerHdrY = l.bottomY - listenerH;
+
     return l;
 }
 
@@ -806,7 +835,7 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 void XYZPanEditor::paint(juce::Graphics& g)
 {
     const auto& ct = lookAndFeel_.currentTheme();
-    const auto lo = Layout::compute(getWidth(), getHeight());
+    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
     const int bx = 0;
     const int bw = getWidth() - kMeterW;
 
@@ -837,42 +866,29 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
-    // Left column tabbed header — "Source" | "Listener" (replaces static "POSITION")
+    // Left column: "SOURCE" header (always visible)
+    drawHeader(0, lo.contentY, kLeftColW, "SOURCE");
+
+    // Listener section header with collapse indicator (below source section)
     {
-        const int hdrY = lo.contentY;
-        auto hdrRect = juce::Rectangle<int>(0, hdrY, kLeftColW, kSectionHdrH);
+        const int listenerHdrY = lo.listenerHdrY;
+        auto hdrRect = juce::Rectangle<int>(0, listenerHdrY, kLeftColW, kSectionHdrH);
         g.setGradientFill(juce::ColourGradient(
-            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(hdrY),
-            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(hdrY), false));
+            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(listenerHdrY),
+            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(listenerHdrY), false));
         g.fillRect(hdrRect);
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
-        g.drawHorizontalLine(hdrY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
-
-        const int thirdW = kLeftColW / 3;
+        g.setColour(juce::Colour(ct.brightGold));
         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-
-        g.setColour(activeLeftTab_ == LeftTab::Source
-            ? juce::Colour(ct.brightGold)
-            : juce::Colour(ct.bronze));
-        g.drawText("Source", 0, hdrY, thirdW, kSectionHdrH, juce::Justification::centred);
-
-        g.setColour(activeLeftTab_ == LeftTab::Listener
-            ? juce::Colour(ct.brightGold)
-            : juce::Colour(ct.bronze));
-        g.drawText("Listener", thirdW, hdrY, thirdW, kSectionHdrH, juce::Justification::centred);
-
-        // Remote tab — grayed out when <2 linked instances
-        const bool remoteAvailable = (lastKnownLinkedCount_ >= 2);
-        if (activeLeftTab_ == LeftTab::Remote)
-            g.setColour(juce::Colour(ct.brightGold));
-        else if (remoteAvailable)
-            g.setColour(juce::Colour(ct.bronze));
-        else
-            g.setColour(juce::Colour(ct.bronze).withAlpha(0.3f));
-        g.drawText("Remote", thirdW * 2, hdrY, kLeftColW - thirdW * 2, kSectionHdrH, juce::Justification::centred);
+        // Disclosure triangle + "LISTENER"
+        juce::String listenerTitle = listenerExpanded_ ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc"))
+                                                       : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"));
+        listenerTitle += " LISTENER";
+        g.drawText(listenerTitle, hdrRect.reduced(10, 0), juce::Justification::centredLeft);
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
+        g.drawHorizontalLine(listenerHdrY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
     }
 
-    // Remote focus indicator — colored bar at top of left column content area
+    // Remote focus indicator — colored bar below source header
     if (remoteFocusIndex_ >= 0) {
         const int barH = 3;
         const int barY = lo.contentY + kSectionHdrH;
@@ -880,12 +896,12 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.fillRect(0, barY, kLeftColW, barH);
     }
 
-    // Tabbed header — bottom row, orbit portion: "Options" | "Perspective" tabs + LFO plane labels
+    // Bottom row header — "OPTIONS" + orbit LFO plane labels (XY / XZ / YZ)
     {
         const int hdrY = lo.bottomY;
         const int fullW = kOrbitCtrlW + lo.lfoTotalW;
 
-        // Background gradient for full header width (same as drawHeader)
+        // Background gradient for full header width
         auto hdrRect = juce::Rectangle<int>(bx, hdrY, fullW, kSectionHdrH);
         g.setGradientFill(juce::ColourGradient(
             juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(bx), static_cast<float>(hdrY),
@@ -896,26 +912,25 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
         g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(bx), static_cast<float>(bx + fullW));
 
-        // Tab labels in the 240px controls area — two halves (Perspective moved to left column)
+        // Tab labels — "Options" | "Customize"
         const int halfTab = kOrbitCtrlW / 2;
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
 
         auto tabColor = [&](OptionsTab t) {
             return activeTab_ == t
-                ? juce::Colour(lookAndFeel_.currentTheme().brightGold)
-                : juce::Colour(lookAndFeel_.currentTheme().bronze);
+                ? juce::Colour(ct.brightGold)
+                : juce::Colour(ct.bronze);
         };
 
         g.setColour(tabColor(OptionsTab::Options));
         g.drawText("Options", bx, hdrY, halfTab, kSectionHdrH, juce::Justification::centred);
 
         g.setColour(tabColor(OptionsTab::Customize));
-        g.drawText("Custom", bx + halfTab, hdrY, kOrbitCtrlW - halfTab, kSectionHdrH, juce::Justification::centred);
+        g.drawText("Customize", bx + halfTab, hdrY, kOrbitCtrlW - halfTab, kSectionHdrH, juce::Justification::centred);
 
         // Orbit LFO plane labels (XY / XZ / YZ) in the right portion
         const int lfoX = lo.lfoX;
         const int stripW = lo.lfoTotalW / 3;
-        g.setColour(juce::Colour(ct.brightGold));
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         g.drawText("XY", lfoX,              hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
         g.drawText("XZ", lfoX + stripW,     hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
@@ -925,22 +940,22 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // "REVERB" header — bottom row, reverb portion
     drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW, "REVERB");
 
-    // ===== DIVIDERS — POSITION SECTION (Source tab only) =====
-    if (activeLeftTab_ == LeftTab::Source) {
+    // ===== DIVIDERS — SOURCE SECTION (always visible) =====
+    {
         // Thin bronze separator above LFO Speed slider row
         {
             const int lfoSpeedRowH = 32;
-            const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
+            const int lfoSpeedSepY = lo.listenerHdrY - lfoSpeedRowH;
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
             g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
         }
 
-        // Vertical dividers between X | Y | Z sub-columns (extend to bottom of left column)
+        // Vertical dividers between X | Y | Z sub-columns (from source header to LFO speed row)
         {
             const int subColW = kLeftColW / 3;
             const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
             const int lfoSpeedRowH = 32;
-            const float divBot = static_cast<float>(lo.bottomY - lfoSpeedRowH);
+            const float divBot = static_cast<float>(lo.listenerHdrY - lfoSpeedRowH);
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
             g.drawVerticalLine(subColW,     divTop, divBot);
             g.drawVerticalLine(subColW * 2, divTop, divBot);
@@ -1041,29 +1056,9 @@ void XYZPanEditor::resized()
     auto glArea = b;
 
     // Shared structural geometry — used by both left column and bottom row blocks
-    const auto lo = Layout::compute(getWidth(), getHeight());
+    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
 
-    // Remote tab content — name editor + instance list in left column content area
-    {
-        const int contentTop = lo.contentY + kSectionHdrH + (remoteFocusIndex_ >= 0 ? 6 : 0);
-        const int pad = 8;
-        int y = contentTop + pad;
-
-        // "Name:" label + text editor
-        instanceNameLabel_.setBounds(pad, y, 42, 22);
-        instanceNameEditor_.setBounds(pad + 44, y, kLeftColW - 2 * pad - 44, 22);
-        y += 30;
-
-        // Status label (shown when no linked instances)
-        remoteStatusLabel_.setBounds(pad, y, kLeftColW - 2 * pad, 24);
-        y += 28;
-
-        // Instance rows
-        const int rowH = 24;
-        for (int i = 0; i < kMaxRemoteRows; ++i) {
-            instanceRows_[i].setBounds(pad, y + i * (rowH + 2), kLeftColW - 2 * pad, rowH);
-        }
-    }
+    // Remote instance list is now rendered as GL view overlay — no left column layout needed
 
     // ===== GL VIEW =====
     glView_.setBounds(glArea);
@@ -1085,21 +1080,19 @@ void XYZPanEditor::resized()
         : defaultPanelW;
     devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
 
-    // ===== LEFT COLUMN — POSITION =====
+    // ===== LEFT COLUMN — SOURCE (always visible) + LISTENER (collapsible) =====
     const int leftColTop = leftCol.getY();  // = kPresetBarH after preset bar removed
     const int posColW = kLeftColW / 3;
-    const int knobH   = 108;
+    const int knobH   = 100;  // slightly reduced from 108 to fit stacked layout
     const int posPad  = 6;
 
-    // --- POSITION SECTION (full left column height) ---
+    // --- SOURCE SECTION (top of left column, down to listener header) ---
     {
-        // Reserve 32px at the bottom of the position section for the LFO Speed slider
         const int lfoSpeedRowH = 32;
-        const int posSectionBottom = lo.bottomY - lfoSpeedRowH;
-        auto posSection = juce::Rectangle<int>(0, leftColTop + kSectionHdrH, kLeftColW,
-                                               posSectionBottom - (leftColTop + kSectionHdrH));
+        const int posSectionBottom = lo.listenerHdrY - lfoSpeedRowH;
+        const int sourceTop = leftColTop + kSectionHdrH;
 
-        const int bigLabelH = 22;
+        const int bigLabelH = 20;
         auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
                                 int colX, int colW, int colTop, int colBottom) {
             label.setBounds(colX, colTop, colW, bigLabelH);
@@ -1112,13 +1105,13 @@ void XYZPanEditor::resized()
         };
 
         layoutPosCol(xKnob_, xLabel_, xLFO_,
-                     0,            posColW, posSection.getY(), posSection.getBottom());
+                     0,            posColW, sourceTop, posSectionBottom);
         layoutPosCol(yKnob_, yLabel_, yLFO_,
-                     posColW,      posColW, posSection.getY(), posSection.getBottom());
+                     posColW,      posColW, sourceTop, posSectionBottom);
         layoutPosCol(zKnob_, zLabel_, zLFO_,
-                     posColW * 2,  kLeftColW - posColW * 2, posSection.getY(), posSection.getBottom());
+                     posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
 
-        // LFO Speed slider row — spans full left column width at the bottom of position section
+        // LFO Speed slider row — spans full left column width just above listener header
         const int speedY = posSectionBottom;
         const int speedLabelW = 70;
         const int resetBtnW = 44;
@@ -1131,47 +1124,54 @@ void XYZPanEditor::resized()
                                      resetBtnW, lfoSpeedRowH - 8);
     }
 
-    // --- LISTENER TAB layout (walker knobs + perspective knobs, same left column area) ---
+    // --- LISTENER SECTION (bottom of left column, below source) ---
     {
-        const int colTop = leftColTop + kSectionHdrH;
-        const int bigLabelH = 22;
-        const int walkerKnobH = 108;
+        const int listenerContentY = lo.listenerHdrY + kSectionHdrH;
 
-        // Walker X/Y/Z knobs — 3 columns, same sizing as source X/Y/Z
-        auto layoutWalkerCol = [&](juce::Slider& knob, juce::Label& label,
-                                   int colX, int colW, int top) {
-            label.setBounds(colX, top, colW, bigLabelH);
-            int knobW = juce::jmin(walkerKnobH, colW - posPad * 2);
-            int knobX = colX + (colW - knobW) / 2;
-            knob.setBounds(knobX, top + bigLabelH, knobW, walkerKnobH);
-        };
+        if (listenerExpanded_) {
+            // Expanded: full walker knobs + perspective + toggles
+            const int walkerKnobH = 68;
+            const int bigLabelH = 16;
 
-        layoutWalkerCol(walkerXKnob_, walkerXLabel_, 0,            posColW, colTop);
-        layoutWalkerCol(walkerYKnob_, walkerYLabel_, posColW,      posColW, colTop);
-        layoutWalkerCol(walkerZKnob_, walkerZLabel_, posColW * 2,  kLeftColW - posColW * 2, colTop);
+            auto layoutWalkerCol = [&](juce::Slider& knob, juce::Label& label,
+                                       int colX, int colW, int top) {
+                label.setBounds(colX, top, colW, bigLabelH);
+                int knobW = juce::jmin(walkerKnobH, colW - posPad * 2);
+                int knobX = colX + (colW - knobW) / 2;
+                knob.setBounds(knobX, top + bigLabelH, knobW, walkerKnobH);
+            };
 
-        // Yaw / Pitch / Roll knobs — row of 3, below walker knobs
-        const int perspY = colTop + bigLabelH + walkerKnobH + 8;
-        const int perspKnobSz = 58;
-        const int perspLabelH = 14;
-        const int perspColW = kLeftColW / 3;
+            layoutWalkerCol(walkerXKnob_, walkerXLabel_, 0,            posColW, listenerContentY);
+            layoutWalkerCol(walkerYKnob_, walkerYLabel_, posColW,      posColW, listenerContentY);
+            layoutWalkerCol(walkerZKnob_, walkerZLabel_, posColW * 2,  kLeftColW - posColW * 2, listenerContentY);
 
-        auto layoutPerspCol = [&](juce::Slider& knob, juce::Label& label, int cx, int cw) {
-            int kx = cx + (cw - perspKnobSz) / 2;
-            knob.setBounds(kx, perspY, perspKnobSz, perspKnobSz);
-            label.setBounds(cx, perspY + perspKnobSz, cw, perspLabelH);
-        };
+            // Yaw / Pitch / Roll knobs — below walker knobs
+            const int perspY = listenerContentY + bigLabelH + walkerKnobH + 4;
+            const int perspKnobSz = 50;
+            const int perspLabelH = 14;
+            const int perspColW = kLeftColW / 3;
 
-        layoutPerspCol(listenerYawKnob_,   listenerYawLabel_,   0, perspColW);
-        layoutPerspCol(listenerPitchKnob_, listenerPitchLabel_, perspColW, perspColW);
-        layoutPerspCol(listenerRollKnob_,  listenerRollLabel_,  perspColW * 2, kLeftColW - perspColW * 2);
+            auto layoutPerspCol = [&](juce::Slider& knob, juce::Label& label, int cx, int cw) {
+                int kx = cx + (cw - perspKnobSz) / 2;
+                knob.setBounds(kx, perspY, perspKnobSz, perspKnobSz);
+                label.setBounds(cx, perspY + perspKnobSz, cw, perspLabelH);
+            };
 
-        // Toggles below perspective knobs
-        const int toggleY = perspY + perspKnobSz + perspLabelH + 4;
-        const int toggleH = 22;
-        wasdToggle_.setBounds(kPadding, toggleY, kLeftColW - kPadding * 2, toggleH);
-        headFollowsToggle_.setBounds(kPadding, toggleY + toggleH + 2, kLeftColW - kPadding * 2, toggleH);
-        listenerLinkToggle_.setBounds(kPadding, toggleY + (toggleH + 2) * 2, kLeftColW - kPadding * 2, toggleH);
+            layoutPerspCol(listenerYawKnob_,   listenerYawLabel_,   0, perspColW);
+            layoutPerspCol(listenerPitchKnob_, listenerPitchLabel_, perspColW, perspColW);
+            layoutPerspCol(listenerRollKnob_,  listenerRollLabel_,  perspColW * 2, kLeftColW - perspColW * 2);
+
+            // Toggles + Remote button below perspective knobs
+            const int toggleY = perspY + perspKnobSz + perspLabelH + 2;
+            const int toggleH = 20;
+            const int halfW = (kLeftColW - kPadding * 3) / 2;
+            wasdToggle_.setBounds(kPadding, toggleY, halfW, toggleH);
+            headFollowsToggle_.setBounds(kPadding + halfW + kPadding, toggleY, halfW, toggleH);
+            listenerLinkToggle_.setBounds(kPadding, toggleY + toggleH + 2, halfW, toggleH);
+            remoteBtn_.setBounds(kPadding + halfW + kPadding, toggleY + toggleH + 2, halfW, toggleH);
+        } else {
+            // Collapsed: just the header bar, no content (knobs hidden by setListenerExpanded)
+        }
     }
 
     // ===== BOTTOM ROW =====
@@ -1183,8 +1183,7 @@ void XYZPanEditor::resized()
         const int contentTop = lo.contentTop;
         const int reverbX    = lo.reverbX;
 
-        // --- ORBIT CONTROLS (fixed 240px left portion) ---
-        // Three tab pages share this space; all get bounds, visibility managed by setActiveTab().
+        // --- OPTIONS CONTROLS (fixed 240px left portion, always visible) ---
         {
             const int ox = bx;
             const int ow = kOrbitCtrlW;
@@ -1192,7 +1191,6 @@ void XYZPanEditor::resized()
             const int knobSz = 58;
             const int labelH_b = 14;
 
-            // === OPTIONS TAB layout ===
             // Top row: Sphere | Doppler | In Gain — three knobs in equal columns
             {
                 const int colW = ow / 3;
@@ -1230,7 +1228,7 @@ void XYZPanEditor::resized()
                 earlyReflLabel_.setBounds(erPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
             }
 
-            // Orbit sliders below checkbox row
+            // Orbit sliders + Face Listener + Customize button below checkbox row
             {
                 const int labelW = 46;
                 const int sliderH = 22;
@@ -1248,13 +1246,10 @@ void XYZPanEditor::resized()
                 placeOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_);
                 placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
 
-                sy -= 4;
                 faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
             }
 
-            // Perspective controls now in left column Listener tab (layout handled above).
-
-            // === CUSTOMIZE TAB layout (scrollable viewport) ===
+            // === CUSTOMIZE VIEWPORT (overlays Options area when visible) ===
             {
                 const int sliderH  = 20;
                 const int comboH   = 22;
@@ -1515,58 +1510,7 @@ void XYZPanEditor::syncEyeSpacingSliderMode(bool isCyclops)
 }
 
 // ---------------------------------------------------------------------------
-// setActiveLeftTab — show/hide Source vs Listener components in left column
-// ---------------------------------------------------------------------------
-void XYZPanEditor::setActiveLeftTab(LeftTab tab)
-{
-    activeLeftTab_ = tab;
-    const bool source   = (tab == LeftTab::Source);
-    const bool listener = (tab == LeftTab::Listener);
-    const bool remote   = (tab == LeftTab::Remote);
-
-    // Source tab components
-    xKnob_.setVisible(source);
-    xLabel_.setVisible(source);
-    yKnob_.setVisible(source);
-    yLabel_.setVisible(source);
-    zKnob_.setVisible(source);
-    zLabel_.setVisible(source);
-    xLFO_.setVisible(source);
-    yLFO_.setVisible(source);
-    zLFO_.setVisible(source);
-    lfoSpeedMulKnob_.setVisible(source);
-    lfoSpeedMulLabel_.setVisible(source);
-    resetXYZPhasesBtn_.setVisible(source);
-
-    // Listener tab components: walker knobs + perspective controls
-    walkerXKnob_.setVisible(listener);
-    walkerXLabel_.setVisible(listener);
-    walkerYKnob_.setVisible(listener);
-    walkerYLabel_.setVisible(listener);
-    walkerZKnob_.setVisible(listener);
-    walkerZLabel_.setVisible(listener);
-    wasdToggle_.setVisible(listener);
-    listenerYawKnob_.setVisible(listener);
-    listenerYawLabel_.setVisible(listener);
-    listenerPitchKnob_.setVisible(listener);
-    listenerPitchLabel_.setVisible(listener);
-    listenerRollKnob_.setVisible(listener);
-    listenerRollLabel_.setVisible(listener);
-    headFollowsToggle_.setVisible(listener);
-    listenerLinkToggle_.setVisible(listener);
-
-    // Remote tab components
-    instanceNameLabel_.setVisible(remote);
-    instanceNameEditor_.setVisible(remote);
-    remoteStatusLabel_.setVisible(remote && lastKnownLinkedCount_ < 2);
-    for (int i = 0; i < kMaxRemoteRows; ++i)
-        instanceRows_[i].setVisible(remote && i < instanceRowCount_);
-
-    repaint();
-}
-
-// ---------------------------------------------------------------------------
-// setActiveTab — show/hide components for Options vs Perspective vs Customize tab
+// setActiveTab — show/hide components for Options vs Customize tab
 // ---------------------------------------------------------------------------
 void XYZPanEditor::setActiveTab(OptionsTab tab)
 {
@@ -1594,13 +1538,62 @@ void XYZPanEditor::setActiveTab(OptionsTab tab)
     orbitPhaseLabel_.setVisible(options);
     faceListenerToggle_.setVisible(options);
 
-    // Perspective controls now live in left column Listener tab (managed by setActiveLeftTab)
-
     // Customize-only components (all children of viewport content)
     customizeViewport_.setVisible(customize);
 
     repaint();
 }
+
+// ---------------------------------------------------------------------------
+// setListenerExpanded — toggle collapsed/expanded state of listener section
+// ---------------------------------------------------------------------------
+void XYZPanEditor::setListenerExpanded(bool expanded)
+{
+    listenerExpanded_ = expanded;
+
+    // Source controls: always visible
+    xKnob_.setVisible(true);
+    xLabel_.setVisible(true);
+    yKnob_.setVisible(true);
+    yLabel_.setVisible(true);
+    zKnob_.setVisible(true);
+    zLabel_.setVisible(true);
+    xLFO_.setVisible(true);
+    yLFO_.setVisible(true);
+    zLFO_.setVisible(true);
+    lfoSpeedMulKnob_.setVisible(true);
+    lfoSpeedMulLabel_.setVisible(true);
+    resetXYZPhasesBtn_.setVisible(true);
+
+    // Walker + perspective knobs: only visible when expanded
+    walkerXKnob_.setVisible(expanded);
+    walkerXLabel_.setVisible(expanded);
+    walkerYKnob_.setVisible(expanded);
+    walkerYLabel_.setVisible(expanded);
+    walkerZKnob_.setVisible(expanded);
+    walkerZLabel_.setVisible(expanded);
+    listenerYawKnob_.setVisible(expanded);
+    listenerYawLabel_.setVisible(expanded);
+    listenerPitchKnob_.setVisible(expanded);
+    listenerPitchLabel_.setVisible(expanded);
+    listenerRollKnob_.setVisible(expanded);
+    listenerRollLabel_.setVisible(expanded);
+
+    // Toggles + remote button: only visible when expanded
+    wasdToggle_.setVisible(expanded);
+    headFollowsToggle_.setVisible(expanded);
+    listenerLinkToggle_.setVisible(expanded);
+    remoteBtn_.setVisible(expanded);
+
+    // Only trigger relayout if we've been sized (avoid crash during construction)
+    if (getWidth() > 0 && getHeight() > 0) {
+        resized();
+        repaint();
+    }
+}
+
+// Options controls are now always visible — no tab switching needed.
+// Customize viewport toggled by customizeBtn_.onClick callback.
 
 // ---------------------------------------------------------------------------
 // mouseDown — tab header click detection + last-clicked zone tracking
@@ -1615,31 +1608,15 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
     if (zone != RandZone::None)
         lastClickedZone_ = zone;
 
-    const auto lo = Layout::compute(getWidth(), getHeight());
+    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
 
-    // Hit-test left column header area — "Source" | "Listener" | "Remote" tabs
-    if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
-        const int thirdW = kLeftColW / 3;
-        if (pos.x < thirdW)
-            setActiveLeftTab(LeftTab::Source);
-        else if (pos.x < thirdW * 2)
-            setActiveLeftTab(LeftTab::Listener);
-        else if (lastKnownLinkedCount_ >= 2)
-            setActiveLeftTab(LeftTab::Remote);
+    // Hit-test listener section header — toggle collapse/expand
+    if (pos.y >= lo.listenerHdrY && pos.y < lo.listenerHdrY + kSectionHdrH && pos.x < kLeftColW) {
+        setListenerExpanded(!listenerExpanded_);
         return;
     }
 
-    // Hit-test instance rows in Remote tab
-    if (activeLeftTab_ == LeftTab::Remote) {
-        for (int i = 0; i < instanceRowCount_; ++i) {
-            if (instanceRows_[i].getBounds().contains(pos)) {
-                setRemoteFocus(i == 0 ? -1 : i - 1);
-                return;
-            }
-        }
-    }
-
-    // Hit-test bottom tab header area (the 240px orbit-controls header) — two halves
+    // Hit-test bottom tab header area — "Options" | "Customize"
     if (pos.y >= lo.bottomY && pos.y < lo.bottomY + kSectionHdrH && pos.x < kOrbitCtrlW) {
         const int halfTab = kOrbitCtrlW / 2;
         if (pos.x < halfTab)
@@ -1648,6 +1625,8 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
             setActiveTab(OptionsTab::Customize);
         return;
     }
+
+    // Instance list click handling is now in XYZPanGLView::mouseDown
 
     AudioProcessorEditor::mouseDown(e);
 }
@@ -1716,6 +1695,18 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 }
 
 // ---------------------------------------------------------------------------
+// endWasdGestureIfActive — close automation gesture on walker params
+// ---------------------------------------------------------------------------
+void XYZPanEditor::endWasdGestureIfActive()
+{
+    if (!wasdGestureActive_) return;
+    if (auto* px = proc_.apvts.getParameter(ParamID::WALKER_X)) px->endChangeGesture();
+    if (auto* py = proc_.apvts.getParameter(ParamID::WALKER_Y)) py->endChangeGesture();
+    if (auto* pz = proc_.apvts.getParameter(ParamID::WALKER_Z)) pz->endChangeGesture();
+    wasdGestureActive_ = false;
+}
+
+// ---------------------------------------------------------------------------
 // timerCallback — WASD movement: move walker in the direction the head is looking
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
@@ -1742,8 +1733,16 @@ void XYZPanEditor::timerCallback()
         glView_.setOwnInstanceName(proc_.getInstanceNameValue());
     }
 
-    if (!wasdToggle_.getToggleState())
+    if (!wasdToggle_.getToggleState()) {
+        endWasdGestureIfActive();
         return;
+    }
+
+    // Only process WASD when this plugin window actually has keyboard focus
+    if (!hasKeyboardFocus(true)) {
+        endWasdGestureIfActive();
+        return;
+    }
 
     // Check which WASD keys are currently held
     const bool w = juce::KeyPress::isKeyCurrentlyDown('W') || juce::KeyPress::isKeyCurrentlyDown('w');
@@ -1751,8 +1750,10 @@ void XYZPanEditor::timerCallback()
     const bool s = juce::KeyPress::isKeyCurrentlyDown('S') || juce::KeyPress::isKeyCurrentlyDown('s');
     const bool d = juce::KeyPress::isKeyCurrentlyDown('D') || juce::KeyPress::isKeyCurrentlyDown('d');
 
-    if (!w && !a && !s && !d)
+    if (!w && !a && !s && !d) {
+        endWasdGestureIfActive();
         return;
+    }
 
     // Build local-space input: fwd = forward/back, strafe = left/right
     float fwd = 0.0f, strafe = 0.0f;
@@ -1800,6 +1801,13 @@ void XYZPanEditor::timerCallback()
     const float newY = juce::jlimit(-1.0f, 1.0f, py->convertFrom0to1(py->getValue()) + dy * speed);
     const float newZ = juce::jlimit(-1.0f, 1.0f, pz->convertFrom0to1(pz->getValue()) + dz * speed);
 
+    if (!wasdGestureActive_) {
+        px->beginChangeGesture();
+        py->beginChangeGesture();
+        pz->beginChangeGesture();
+        wasdGestureActive_ = true;
+    }
+
     px->setValueNotifyingHost(px->convertTo0to1(newX));
     py->setValueNotifyingHost(py->convertTo0to1(newY));
     pz->setValueNotifyingHost(pz->convertTo0to1(newZ));
@@ -1810,11 +1818,11 @@ void XYZPanEditor::timerCallback()
 // ---------------------------------------------------------------------------
 XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) const
 {
-    const auto lo = Layout::compute(getWidth(), getHeight());
+    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
     const int x = pos.x;
     const int y = pos.y;
 
-    // Position column: left column, below preset bar, above bottom row
+    // Left column: source section or listener section
     if (x >= 0 && x < kLeftColW && y >= kPresetBarH && y < lo.bottomY) {
         // Check individual LFO strips by testing component bounds
         auto inBounds = [&](const LFOStrip& strip) {
@@ -1824,6 +1832,11 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
         if (inBounds(xLFO_)) return RandZone::LfoX;
         if (inBounds(yLFO_)) return RandZone::LfoY;
         if (inBounds(zLFO_)) return RandZone::LfoZ;
+
+        // Listener section = perspective randomization zone
+        if (y >= lo.listenerHdrY)
+            return RandZone::Perspective;
+
         return RandZone::Position;
     }
 
@@ -1849,13 +1862,9 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
             if (activeTab_ == OptionsTab::Options)
                 return RandZone::StereoOrbit;
 
-            if (activeTab_ == OptionsTab::Perspective)
-                return RandZone::Perspective;
-
             if (activeTab_ == OptionsTab::Customize) {
                 // Convert mouse Y to customizeContent_ local coords
                 int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
-
                 if (localY < eyesSectionHeaderY_)
                     return RandZone::CustColors;
                 if (localY < earsSectionHeaderY_)
@@ -2123,71 +2132,23 @@ void XYZPanEditor::rebuildInstanceList()
     if (count < 2) {
         if (remoteFocusProc_ != nullptr)
             setRemoteFocus(-1);
-        if (activeLeftTab_ == LeftTab::Remote)
-            setActiveLeftTab(LeftTab::Source);
-        instanceRowCount_ = 0;
-        for (int i = 0; i < kMaxRemoteRows; ++i)
-            instanceRows_[i].setVisible(false);
-        remoteStatusLabel_.setText("No linked instances", juce::dontSendNotification);
-        if (activeLeftTab_ == LeftTab::Remote)
-            remoteStatusLabel_.setVisible(true);
         repaint();
         return;
     }
-
-    if (activeLeftTab_ == LeftTab::Remote)
-        remoteStatusLabel_.setVisible(false);
 
     // Build row list: "Self" + each linked instance
     SharedListenerHub::Listener* instances[xyzpan::kMaxLinkedSources + 1];
     const int n = hub.getLinkedInstances(instances, xyzpan::kMaxLinkedSources + 1);
 
-    const auto& ct = lookAndFeel_.currentTheme();
-    int row = 0;
-
-    // Row 0: Self
-    {
-        const bool isFocused = (remoteFocusIndex_ < 0);
-        instanceRows_[row].setText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " Self",
-                                   juce::dontSendNotification);
-        instanceRows_[row].setColour(juce::Label::textColourId,
-                                     isFocused ? juce::Colour(ct.brightGold)
-                                               : juce::Colour(ct.bronze));
-        if (activeLeftTab_ == LeftTab::Remote)
-            instanceRows_[row].setVisible(true);
-        ++row;
-    }
-
-    // Rows 1+: linked instances (skip self)
+    // Count linked instances (for focus range validation)
     int colorIdx = 0;
-    for (int i = 0; i < n && row < kMaxRemoteRows; ++i) {
+    for (int i = 0; i < n; ++i) {
         if (instances[i] == static_cast<SharedListenerHub::Listener*>(&proc_))
             continue;
         if (!instances[i]->hubAlive_.load(std::memory_order_acquire))
             continue;
-
-        juce::String name = instances[i]->getInstanceName();
-        if (name.isEmpty()) {
-            name = "Source " + juce::String(colorIdx + 1);
-        }
-
-        const bool isFocused = (remoteFocusIndex_ == colorIdx);
-        const auto colour = kPaletteColours[colorIdx % 8];
-        instanceRows_[row].setText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + name,
-                                   juce::dontSendNotification);
-        instanceRows_[row].setColour(juce::Label::textColourId,
-                                     isFocused ? colour.brighter(0.4f) : colour);
-        if (activeLeftTab_ == LeftTab::Remote)
-            instanceRows_[row].setVisible(true);
-        ++row;
         ++colorIdx;
     }
-
-    instanceRowCount_ = row;
-
-    // Hide unused rows
-    for (int i = row; i < kMaxRemoteRows; ++i)
-        instanceRows_[i].setVisible(false);
 
     // Validate current focus is still in range
     if (remoteFocusIndex_ >= colorIdx && remoteFocusProc_ != nullptr)

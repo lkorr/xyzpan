@@ -127,6 +127,9 @@ void XYZPanGLView::newOpenGLContextCreated()
     createTrailVAO(vaoTrailR_,      vboTrailR_,      TrailBuffer::kCapacity);
     createTrailVAO(vaoTrailListener_, vboTrailListener_, TrailBuffer::kCapacity);
 
+    // Text billboard quad
+    uploadTextQuadVAO();
+
 }
 
 // ---------------------------------------------------------------------------
@@ -304,16 +307,13 @@ void XYZPanGLView::renderOpenGL()
             if (camYawDeg < 0.0f) camYawDeg += 360.0f;
             float camPitchDeg = std::fmod(-camera_.pitch, 360.0f);
             if (camPitchDeg < 0.0f) camPitchDeg += 360.0f;
-            float camRollDeg = std::fmod(camera_.roll, 360.0f);
-            if (camRollDeg < 0.0f) camRollDeg += 360.0f;
-
             // Guard: suppress parameterChanged echoes from our own writes.
             // shared_ptr captured by value so lambda is safe if GLView is destroyed first.
             auto flag = drivingParamsFromCamera_;
             auto alive = glAlive_;
             auto* apvtsPtr = &apvts_;
             flag->store(true, std::memory_order_relaxed);
-            juce::MessageManager::callAsync([flag, alive, apvtsPtr, camYawDeg, camPitchDeg, camRollDeg]() {
+            juce::MessageManager::callAsync([flag, alive, apvtsPtr, camYawDeg, camPitchDeg]() {
                 if (!alive->load(std::memory_order_acquire)) {
                     flag->store(false, std::memory_order_relaxed);
                     return;
@@ -322,8 +322,7 @@ void XYZPanGLView::renderOpenGL()
                     p->setValueNotifyingHost(p->convertTo0to1(camYawDeg));
                 if (auto* p = apvtsPtr->getParameter("listener_pitch"))
                     p->setValueNotifyingHost(p->convertTo0to1(camPitchDeg));
-                if (auto* p = apvtsPtr->getParameter("listener_roll"))
-                    p->setValueNotifyingHost(p->convertTo0to1(camRollDeg));
+                // Roll is intentionally NOT driven by camera — it stays user-controlled.
                 flag->store(false, std::memory_order_relaxed);
             });
         }
@@ -559,17 +558,40 @@ void XYZPanGLView::renderOpenGL()
     }
     glDepthMask(GL_TRUE);
 
+    // Billboard text labels — depth-test on (occluded by geometry), depth-write off
+    glDepthMask(GL_FALSE);
+    {
+        // Own source label (use brightGold theme color)
+        if (ownInstanceName_.isNotEmpty()) {
+            const juce::Colour goldCol(theme.brightGold);
+            const glm::vec3 goldVec(goldCol.getFloatRed(), goldCol.getFloatGreen(), goldCol.getFloatBlue());
+            drawBillboardLabel(sourcePos, ownInstanceName_.toStdString(),
+                               goldVec, 0.85f);
+        }
+
+        // Foreign source labels
+        {
+            const auto fp2 = foreignBridge_.read();
+            static constexpr glm::vec3 kLabelPalette[8] = {
+                {0.60f, 0.40f, 0.80f}, {0.30f, 0.70f, 0.50f},
+                {0.80f, 0.45f, 0.30f}, {0.40f, 0.55f, 0.85f},
+                {0.75f, 0.35f, 0.55f}, {0.50f, 0.70f, 0.35f},
+                {0.85f, 0.65f, 0.30f}, {0.45f, 0.45f, 0.70f},
+            };
+            for (int i = 0; i < fp2.count; ++i) {
+                const auto& fs = fp2.sources[i];
+                if (fs.name[0] == '\0') continue;
+                const glm::vec3 fPos(fs.x, fs.z, -fs.y);
+                drawBillboardLabel(fPos, std::string(fs.name),
+                                   kLabelPalette[fs.colorIndex % 8], 0.85f);
+            }
+        }
+    }
+    glDepthMask(GL_TRUE);
+
     // Cache projected source position for hit-testing on mouse events
     projectedSourcePos_ = projectToScreen(sourcePos);
 
-    // Write matrices + source screen pos to double-buffer for paint() overlay
-    {
-        const int idx = 1 - paintWriteIdx_.load(std::memory_order_relaxed);
-        paintBuf_[idx].proj = projMatrix_;
-        paintBuf_[idx].view = viewMatrix_;
-        paintBuf_[idx].sourceScreenPos = projectedSourcePos_;
-        paintWriteIdx_.store(idx, std::memory_order_release);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -605,14 +627,21 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoTrailListener_) { glDeleteVertexArrays(1, &vaoTrailListener_); vaoTrailListener_ = 0; }
     if (vboTrailListener_) { glDeleteBuffers(1, &vboTrailListener_);      vboTrailListener_ = 0; }
 
+    textShader_.reset();
+    if (vaoText_) { glDeleteVertexArrays(1, &vaoText_); vaoText_ = 0; }
+    if (vboText_) { glDeleteBuffers(1, &vboText_); vboText_ = 0; }
+    for (auto& [key, cached] : textTextureCache_)
+        glDeleteTextures(1, &cached.textureId);
+    textTextureCache_.clear();
+
 }
 
 // ---------------------------------------------------------------------------
-// paint — JUCE overlay composited on top of GL (text labels above nodes)
+// paint — JUCE overlay composited on top of GL (instance list HUD)
 // ---------------------------------------------------------------------------
 void XYZPanGLView::paint(juce::Graphics& g)
 {
-    // Palette matching the GL kPalette — converted to JUCE Colour
+    // Palette for instance list entries
     static const juce::Colour kLabelPalette[8] = {
         juce::Colour::fromFloatRGBA(0.60f, 0.40f, 0.80f, 1.0f),  // purple
         juce::Colour::fromFloatRGBA(0.30f, 0.70f, 0.50f, 1.0f),  // teal-green
@@ -624,57 +653,87 @@ void XYZPanGLView::paint(juce::Graphics& g)
         juce::Colour::fromFloatRGBA(0.45f, 0.45f, 0.70f, 1.0f),  // lavender
     };
 
-    const auto font = juce::Font(juce::FontOptions(11.0f, juce::Font::bold));
-    g.setFont(font);
+    const auto fp = foreignBridge_.read();
 
-    const float labelOffsetY = -18.0f;  // pixels above the projected center
-    const float w = getWidth() * 1.0f;
-    const float h = getHeight() * 1.0f;
+    // Instance list overlay — top-left corner of GL view
+    if (showInstanceList_) {
+        const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
+        instanceListHitBoxes_.clear();
 
-    auto drawLabel = [&](const glm::vec2& screenPos, const juce::String& text,
-                         juce::Colour colour) {
-        if (screenPos.x < -100.0f || screenPos.x > w + 100.0f ||
-            screenPos.y < -100.0f || screenPos.y > h + 100.0f)
-            return;  // off-screen
-        const int tw = font.getStringWidth(text);
-        const int tx = static_cast<int>(screenPos.x) - tw / 2;
-        const int ty = static_cast<int>(screenPos.y + labelOffsetY);
-        g.setColour(colour.withAlpha(0.85f));
-        g.drawText(text, tx, ty, tw, 16, juce::Justification::centred, false);
-    };
+        const int listX = 8;
+        int listY = 8;
+        const int rowH = 20;
+        const int focusedRowH = 26;
+        const int listW = 140;
 
-    // Read matrices from lock-free double-buffer (written by GL thread)
-    const auto ms = paintBuf_[paintWriteIdx_.load(std::memory_order_acquire)];
-
-    // Local projection helper using snapshot matrices (avoids reading GL-thread members)
-    auto projectLocal = [&](const glm::vec3& worldPos) -> glm::vec2 {
-        const glm::vec4 clip = ms.proj * ms.view * glm::vec4(worldPos, 1.0f);
-        if (std::abs(clip.w) < 1e-6f) return {-9999.0f, -9999.0f};
-        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-        return {(ndc.x * 0.5f + 0.5f) * w,
-                (1.0f - (ndc.y * 0.5f + 0.5f)) * h};
-    };
-
-    // Own source node label
-    if (ownInstanceName_.isNotEmpty()) {
-        ColorTheme theme;
+        // "Self" entry
         {
-            const juce::SpinLock::ScopedLockType lock(customizeLock_);
-            theme = glTheme_;
-        }
-        drawLabel(ms.sourceScreenPos, ownInstanceName_,
-                  juce::Colour(theme.brightGold));
-    }
+            const bool isFocused = (focusIdx < 0);
+            const int rh = isFocused ? focusedRowH : rowH;
+            const float fontSize = isFocused ? 13.0f : 11.0f;
+            g.setFont(juce::Font(juce::FontOptions(fontSize, juce::Font::bold)));
 
-    // Foreign source node labels
-    {
-        const auto fp = foreignBridge_.read();
+            ColorTheme theme;
+            {
+                const juce::SpinLock::ScopedLockType lock(customizeLock_);
+                theme = glTheme_;
+            }
+            juce::Colour col = juce::Colour(theme.brightGold);
+            if (isFocused)
+                col = col.brighter(0.3f);
+            g.setColour(col.withAlpha(isFocused ? 1.0f : 0.7f));
+            juce::String selfName = ownInstanceName_.isNotEmpty() ? ownInstanceName_ : "Self";
+            g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + selfName,
+                       listX, listY, listW, rh, juce::Justification::centredLeft, false);
+
+            // Glow effect for focused entry
+            if (isFocused) {
+                g.setColour(col.withAlpha(0.15f));
+                g.fillRoundedRectangle(static_cast<float>(listX - 2), static_cast<float>(listY - 1),
+                                       static_cast<float>(listW + 4), static_cast<float>(rh + 2), 3.0f);
+            }
+
+            instanceListHitBoxes_.push_back({{listX - 4, listY - 2, listW + 8, rh + 4}, -1});
+            listY += rh + 2;
+        }
+
+        // Foreign source entries
         for (int i = 0; i < fp.count; ++i) {
             const auto& fs = fp.sources[i];
+            const bool isFocused = (fs.colorIndex == focusIdx);
+            const int rh = isFocused ? focusedRowH : rowH;
+            const float fontSize = isFocused ? 13.0f : 11.0f;
+            g.setFont(juce::Font(juce::FontOptions(fontSize, juce::Font::bold)));
+
             juce::String name(fs.name);
-            if (name.isEmpty()) continue;
-            const glm::vec3 fPos(fs.x, fs.z, -fs.y);  // XYZPan → GL coords
-            drawLabel(projectLocal(fPos), name, kLabelPalette[fs.colorIndex % 8]);
+            if (name.isEmpty()) name = "Source " + juce::String(i + 1);
+
+            juce::Colour col = kLabelPalette[fs.colorIndex % 8];
+            if (isFocused)
+                col = col.brighter(0.3f);
+            g.setColour(col.withAlpha(isFocused ? 1.0f : 0.7f));
+            g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + name,
+                       listX, listY, listW, rh, juce::Justification::centredLeft, false);
+
+            if (isFocused) {
+                g.setColour(col.withAlpha(0.15f));
+                g.fillRoundedRectangle(static_cast<float>(listX - 2), static_cast<float>(listY - 1),
+                                       static_cast<float>(listW + 4), static_cast<float>(rh + 2), 3.0f);
+            }
+
+            instanceListHitBoxes_.push_back({{listX - 4, listY - 2, listW + 8, rh + 4}, i});
+            listY += rh + 2;
+        }
+
+        // Placeholder entries when no linked instances (for UI testing)
+        if (fp.count == 0) {
+            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+            for (int i = 0; i < 2; ++i) {
+                g.setColour(kLabelPalette[i].withAlpha(0.3f));
+                g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " Source " + juce::String(i + 1),
+                           listX, listY, listW, rowH, juce::Justification::centredLeft, false);
+                listY += rowH + 2;
+            }
         }
     }
 }
@@ -686,6 +745,18 @@ void XYZPanGLView::mouseDown(const juce::MouseEvent& e)
 {
     lastDragPos_ = e.getPosition();
 
+    // Hit-test instance list overlay first
+    if (showInstanceList_) {
+        const auto pos = e.getPosition();
+        for (const auto& entry : instanceListHitBoxes_) {
+            if (entry.bounds.contains(pos)) {
+                if (onInstanceClicked)
+                    onInstanceClicked(entry.linkedIndex);
+                return;
+            }
+        }
+    }
+
     if (isNearSourceNode(e.getPosition())) {
         isDraggingSource_ = true;
         isDraggingCamera_ = false;
@@ -693,6 +764,55 @@ void XYZPanGLView::mouseDown(const juce::MouseEvent& e)
     } else {
         isDraggingSource_ = false;
         isDraggingCamera_ = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mouse: Double-click — rename own instance in overlay list
+// ---------------------------------------------------------------------------
+void XYZPanGLView::mouseDoubleClick(const juce::MouseEvent& e)
+{
+    if (!showInstanceList_) return;
+
+    const auto pos = e.getPosition();
+    for (const auto& entry : instanceListHitBoxes_) {
+        if (entry.linkedIndex == -1 && entry.bounds.contains(pos)) {
+            // Show inline text editor over the Self entry
+            renameEditor_ = std::make_unique<juce::TextEditor>();
+            renameEditor_->setBounds(entry.bounds.getX(), entry.bounds.getY(),
+                                     entry.bounds.getWidth(), entry.bounds.getHeight());
+            renameEditor_->setText(ownInstanceName_.isNotEmpty() ? ownInstanceName_ : "Self",
+                                   false);
+            renameEditor_->selectAll();
+            renameEditor_->setColour(juce::TextEditor::backgroundColourId,
+                                     juce::Colours::black.withAlpha(0.7f));
+            renameEditor_->setColour(juce::TextEditor::textColourId,
+                                     juce::Colours::white);
+            renameEditor_->setColour(juce::TextEditor::outlineColourId,
+                                     juce::Colours::transparentBlack);
+            renameEditor_->setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+
+            auto finishRename = [this] {
+                if (renameEditor_) {
+                    auto newName = renameEditor_->getText().trim();
+                    if (newName.isNotEmpty()) {
+                        ownInstanceName_ = newName;
+                        if (onInstanceRenamed)
+                            onInstanceRenamed(newName);
+                    }
+                    removeChildComponent(renameEditor_.get());
+                    renameEditor_.reset();
+                    repaint();
+                }
+            };
+
+            renameEditor_->onReturnKey = finishRename;
+            renameEditor_->onFocusLost = finishRename;
+
+            addAndMakeVisible(*renameEditor_);
+            renameEditor_->grabKeyboardFocus();
+            return;
+        }
     }
 }
 
@@ -838,6 +958,16 @@ void XYZPanGLView::compileShaders()
         !trailShader_->addFragmentShader(kTrailFragShader) ||
         !trailShader_->link()) {
         trailShader_.reset();
+        jassertfalse;
+        return;
+    }
+
+    // Text billboard shader (name labels)
+    textShader_ = std::make_unique<juce::OpenGLShaderProgram>(glContext_);
+    if (!textShader_->addVertexShader(kTextVertShader) ||
+        !textShader_->addFragmentShader(kTextFragShader) ||
+        !textShader_->link()) {
+        textShader_.reset();
         jassertfalse;
         return;
     }
@@ -1255,6 +1385,122 @@ bool XYZPanGLView::isNearSourceNode(const juce::Point<int>& mousePos) const
     const float dx = static_cast<float>(mousePos.x) - projectedSourcePos_.x;
     const float dy = static_cast<float>(mousePos.y) - projectedSourcePos_.y;
     return (dx * dx + dy * dy) <= (kHitRadius * kHitRadius);
+}
+
+// ---------------------------------------------------------------------------
+// uploadTextQuadVAO — unit quad for billboard text labels
+// ---------------------------------------------------------------------------
+void XYZPanGLView::uploadTextQuadVAO()
+{
+    // 6 vertices, 4 floats each: [x, y, u, v]
+    // V flipped so JUCE Image (y=0 top) maps correctly to GL texture (y=0 bottom)
+    const float verts[] = {
+        -0.5f, -0.5f,  0.0f, 1.0f,
+         0.5f, -0.5f,  1.0f, 1.0f,
+         0.5f,  0.5f,  1.0f, 0.0f,
+        -0.5f, -0.5f,  0.0f, 1.0f,
+         0.5f,  0.5f,  1.0f, 0.0f,
+        -0.5f,  0.5f,  0.0f, 0.0f,
+    };
+
+    glGenVertexArrays(1, &vaoText_);
+    glGenBuffers(1, &vboText_);
+    glBindVertexArray(vaoText_);
+    glBindBuffer(GL_ARRAY_BUFFER, vboText_);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, nullptr);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, reinterpret_cast<void*>(8));
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// getOrCreateTextTexture — rasterise text string to GL texture via JUCE Image
+// ---------------------------------------------------------------------------
+XYZPanGLView::CachedTextTexture XYZPanGLView::getOrCreateTextTexture(const std::string& text)
+{
+    auto it = textTextureCache_.find(text);
+    if (it != textTextureCache_.end())
+        return it->second;
+
+    const auto font = juce::Font(juce::FontOptions(32.0f, juce::Font::bold));
+    const juce::String jText(text);
+    const int tw = font.getStringWidth(jText) + 8;  // padding
+    const int th = 40;
+
+    juce::Image image(juce::Image::ARGB, tw, th, true);
+    {
+        juce::Graphics g(image);
+        g.setColour(juce::Colours::white);
+        g.setFont(font);
+        g.drawText(jText, 0, 0, tw, th, juce::Justification::centred, false);
+    }
+
+    GLuint texId = 0;
+    glGenTextures(1, &texId);
+    glBindTexture(GL_TEXTURE_2D, texId);
+
+    juce::Image::BitmapData bitmap(image, juce::Image::BitmapData::readOnly);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0,
+                 GL_BGRA, GL_UNSIGNED_BYTE, bitmap.data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    CachedTextTexture cached{texId, static_cast<float>(tw) / static_cast<float>(th)};
+    textTextureCache_[text] = cached;
+    return cached;
+}
+
+// ---------------------------------------------------------------------------
+// drawBillboardLabel — camera-facing textured quad at a world position
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawBillboardLabel(const glm::vec3& worldPos,
+                                       const std::string& text,
+                                       const glm::vec3& color,
+                                       float opacity)
+{
+    if (!textShader_ || vaoText_ == 0 || text.empty()) return;
+
+    auto cached = getOrCreateTextTexture(text);
+    if (cached.textureId == 0) return;
+
+    // Billboard: extract camera right/up from view matrix
+    const glm::vec3 camRight(viewMatrix_[0][0], viewMatrix_[1][0], viewMatrix_[2][0]);
+    const glm::vec3 camUp(viewMatrix_[0][1], viewMatrix_[1][1], viewMatrix_[2][1]);
+
+    // Position label above the node
+    const glm::vec3 labelPos = worldPos + glm::vec3(0.0f, 0.07f, 0.0f);
+
+    const float quadHeight = 0.04f;
+    const float quadWidth  = quadHeight * cached.aspectRatio;
+
+    // Build billboard model matrix
+    glm::mat4 model(1.0f);
+    model[0] = glm::vec4(camRight * quadWidth, 0.0f);
+    model[1] = glm::vec4(camUp * quadHeight, 0.0f);
+    model[2] = glm::vec4(glm::cross(camRight, camUp), 0.0f);
+    model[3] = glm::vec4(labelPos, 1.0f);
+
+    textShader_->use();
+    textShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    textShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    textShader_->setUniformMat4("model",      glm::value_ptr(model), 1, GL_FALSE);
+    textShader_->setUniform("textColor", color.r, color.g, color.b);
+    textShader_->setUniform("opacity", opacity);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, cached.textureId);
+    textShader_->setUniform("textTexture", 0);
+
+    glBindVertexArray(vaoText_);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 // ---------------------------------------------------------------------------

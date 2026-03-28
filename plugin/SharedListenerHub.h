@@ -78,17 +78,26 @@ public:
 
     void broadcastOrientation(Listener* sender, float yaw, float pitch, float roll,
                                bool headFollows) {
-        const juce::SpinLock::ScopedLockType lock(spinLock_);
-        cachedYaw_   = yaw;
-        cachedPitch_ = pitch;
-        cachedRoll_  = roll;
-        cachedHeadFollows_ = headFollows;
-        hasCache_ = true;
+        constexpr int kMaxBroadcast = 16;
+        Listener* targets[kMaxBroadcast];
+        int count = 0;
+        {
+            const juce::SpinLock::ScopedLockType lock(spinLock_);
+            cachedYaw_   = yaw;
+            cachedPitch_ = pitch;
+            cachedRoll_  = roll;
+            cachedHeadFollows_ = headFollows;
+            hasCache_ = true;
 
-        for (auto* l : linked_) {
-            if (l != sender && l->hubAlive_.load(std::memory_order_acquire))
-                l->listenerOrientationChanged(yaw, pitch, roll, headFollows);
+            for (auto* l : linked_)
+                if (l != sender && l->hubAlive_.load(std::memory_order_acquire)
+                    && count < kMaxBroadcast)
+                    targets[count++] = l;
         }
+        // Dispatch outside the lock — setValueNotifyingHost may do host work
+        for (int i = 0; i < count; ++i)
+            if (targets[i]->hubAlive_.load(std::memory_order_acquire))
+                targets[i]->listenerOrientationChanged(yaw, pitch, roll, headFollows);
     }
 
     bool getCachedOrientation(float& yaw, float& pitch, float& roll,
@@ -104,16 +113,24 @@ public:
     }
 
     void broadcastPosition(Listener* sender, float x, float y, float z) {
-        const juce::SpinLock::ScopedLockType lock(spinLock_);
-        cachedPosX_ = x;
-        cachedPosY_ = y;
-        cachedPosZ_ = z;
-        hasPosCache_ = true;
+        constexpr int kMaxBroadcast = 16;
+        Listener* targets[kMaxBroadcast];
+        int count = 0;
+        {
+            const juce::SpinLock::ScopedLockType lock(spinLock_);
+            cachedPosX_ = x;
+            cachedPosY_ = y;
+            cachedPosZ_ = z;
+            hasPosCache_ = true;
 
-        for (auto* l : linked_) {
-            if (l != sender && l->hubAlive_.load(std::memory_order_acquire))
-                l->listenerPositionChanged(x, y, z);
+            for (auto* l : linked_)
+                if (l != sender && l->hubAlive_.load(std::memory_order_acquire)
+                    && count < kMaxBroadcast)
+                    targets[count++] = l;
         }
+        for (int i = 0; i < count; ++i)
+            if (targets[i]->hubAlive_.load(std::memory_order_acquire))
+                targets[i]->listenerPositionChanged(x, y, z);
     }
 
     bool getCachedPosition(float& x, float& y, float& z) const {

@@ -169,4 +169,47 @@ void main()
 }
 )";
 
+// ---------------------------------------------------------------------------
+// Text billboard shader — camera-facing textured quads for name labels
+// Alpha-only sampling: JUCE rasterises white text on transparent background,
+// fragment reads .a and tints with uniform textColor.
+// ---------------------------------------------------------------------------
+
+inline constexpr const char* kTextVertShader = R"(
+#version 150 core
+
+in vec2 position;   // unit quad [-0.5, 0.5]
+in vec2 texCoord;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;      // billboard: translate + camera-aligned rotation + scale
+
+out vec2 vTexCoord;
+
+void main()
+{
+    vTexCoord   = texCoord;
+    gl_Position = projection * view * model * vec4(position, 0.0, 1.0);
+}
+)";
+
+inline constexpr const char* kTextFragShader = R"(
+#version 150 core
+
+in vec2 vTexCoord;
+
+uniform sampler2D textTexture;
+uniform vec3  textColor;
+uniform float opacity;
+
+out vec4 outColor;
+
+void main()
+{
+    float a = texture(textTexture, vTexCoord).a;
+    outColor = vec4(textColor, a * opacity);
+}
+)";
+
 } // namespace xyzpan

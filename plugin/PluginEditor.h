@@ -72,14 +72,17 @@ private:
 // XYZPanEditor — custom plugin editor.
 //
 // Layout:
-//   Left column (672px):
-//     "POSITION" header + 3 sub-columns (X | Y | Z) with large knobs + tall LFO strips
+//   Left column (420px) — stacked, no tabs:
+//     SOURCE section (always visible): X/Y/Z knobs + LFO strips + Speed slider
+//     LISTENER section (collapsible): collapsed = mini knobs row; expanded = full knobs
 //   Main area: XYZPanGLView (OpenGL 3D spatial view)
 //     Top-right corner: three snap buttons (XY, XZ, YZ)
 //     GL overlay (right 30%): DevPanelComponent — hidden by default
 //   Bottom row (240px), left-to-right:
-//     "STEREO ORBIT" — Sphere/Doppler knobs + orbit sliders (240px) + 3 orbit LFO strips
-//     "REVERB" — Size/Decay/Damp/Wet knobs vertical stack (80px) + DEV toggle at bottom
+//     "Options" | "Customize" tabs (240px) — clickable header switches content
+//     ORBIT LFOs — XY/XZ/YZ strips (always visible) + Speed/Reset
+//     REVERB — Size/Decay/Damp/Wet knobs + DEV toggle
+//   Remote: popup button in listener section (visible when linked instances >= 2)
 // ---------------------------------------------------------------------------
 class XYZPanEditor : public juce::AudioProcessorEditor,
                      public juce::KeyListener,
@@ -108,7 +111,7 @@ private:
     void updateSnapButtonStates();
 
     // Layout constants
-    static constexpr int kLeftColW      = 470;     // position column width
+    static constexpr int kLeftColW      = 420;     // position column width
     static constexpr int kBottomH       = 240;     // was 400 — orbit moved here
     static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
@@ -194,16 +197,18 @@ private:
     juce::Label instanceNameLabel_;             // "Name:" label
     juce::TextEditor instanceNameEditor_;       // editable own-instance name
 
-    // Tab state for Options / Perspective / Customize split
-    enum class OptionsTab { Options, Perspective, Customize };
+    // Collapsible listener section in left column
+    bool listenerExpanded_ = false;
+    void setListenerExpanded(bool expanded);
+
+    // Remote popup button (visible when linked instances >= 2)
+    juce::TextButton remoteBtn_{"Remote"};
+    juce::Label remoteStatusLabel_;
+
+    // Tab state for Options / Customize split in bottom row
+    enum class OptionsTab { Options, Customize };
     OptionsTab activeTab_ = OptionsTab::Options;
     void setActiveTab(OptionsTab tab);
-
-    // Left column tab state — Source (X/Y/Z + LFOs) vs Listener (walker + perspective) vs Remote
-    enum class LeftTab { Source, Listener, Remote };
-    LeftTab activeLeftTab_ = LeftTab::Source;
-    void setActiveLeftTab(LeftTab tab);
-    juce::Label remoteStatusLabel_;
 
     // Walker knobs (always active)
     juce::Slider walkerXKnob_, walkerYKnob_, walkerZKnob_;
@@ -213,6 +218,8 @@ private:
     // WASD control toggle + keyboard movement
     juce::ToggleButton wasdToggle_;
     std::unique_ptr<BA> wasdAtt_;
+    bool wasdGestureActive_ = false;
+    void endWasdGestureIfActive();
     void timerCallback() override;
 
     // Stereo orbit LFO strips (XY / XZ / YZ planes)
@@ -300,8 +307,9 @@ private:
         int lfoX;           // = left edge of orbit LFO strips (after cap)
         int lfoTotalW;      // = capped width of orbit LFO strips
         int contentTop;     // = bottomY + kSectionHdrH
+        int listenerHdrY;   // = Y position of listener section header in left column
 
-        static Layout compute(int totalW, int totalH);
+        static Layout compute(int totalW, int totalH, bool listenerExpanded);
     };
 
     void updateOrbitEnabled();

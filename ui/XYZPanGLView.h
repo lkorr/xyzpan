@@ -6,6 +6,8 @@
 #include <vector>
 #include <array>
 #include <functional>
+#include <string>
+#include <unordered_map>
 
 // GLM — orbit camera math
 #include <glm/glm.hpp>
@@ -148,8 +150,21 @@ public:
     // Set the name displayed above the own source node (message thread only)
     void setOwnInstanceName(const juce::String& name) { ownInstanceName_ = name; }
 
+    // Instance list overlay — clickable list in top-left of GL view
+    void setShowInstanceList(bool show) { showInstanceList_ = show; repaint(); }
+    bool getShowInstanceList() const { return showInstanceList_; }
+
+    // Callback when user clicks an instance in the overlay list.
+    // Parameter: linked index (-1 = self, 0+ = foreign source index)
+    std::function<void(int)> onInstanceClicked;
+
+    // Callback when user double-clicks Self to rename.
+    // Parameter: new name string
+    std::function<void(const juce::String&)> onInstanceRenamed;
+
     // JUCE paint overlay — draws text labels above nodes on top of GL content
     void paint(juce::Graphics& g) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
 
 private:
     // ------------------------------------------------------------------
@@ -210,6 +225,13 @@ private:
     void drawTrail(TrailBuffer& trail, GLuint vao, GLuint vbo,
                    const glm::vec3& color, float baseOpacity, double nowSeconds);
 
+    struct CachedTextTexture { GLuint textureId = 0; float aspectRatio = 1.0f; };
+
+    void uploadTextQuadVAO();
+    CachedTextTexture getOrCreateTextTexture(const std::string& text);
+    void drawBillboardLabel(const glm::vec3& worldPos, const std::string& text,
+                            const glm::vec3& color, float opacity);
+
     // ------------------------------------------------------------------
     // GL context and shaders
     // ------------------------------------------------------------------
@@ -218,6 +240,7 @@ private:
     std::unique_ptr<juce::OpenGLShaderProgram> colorLineShader_;
     std::unique_ptr<juce::OpenGLShaderProgram> sphereShader_;
     std::unique_ptr<juce::OpenGLShaderProgram> trailShader_;
+    std::unique_ptr<juce::OpenGLShaderProgram> textShader_;
 
     // ------------------------------------------------------------------
     // GL resource handles (GLuint is a global typedef from GL headers)
@@ -236,6 +259,9 @@ private:
     GLuint vaoTrailL_        = 0, vboTrailL_        = 0;
     GLuint vaoTrailR_        = 0, vboTrailR_        = 0;
     GLuint vaoTrailListener_ = 0, vboTrailListener_ = 0;
+
+    GLuint vaoText_ = 0, vboText_ = 0;
+    std::unordered_map<std::string, CachedTextTexture> textTextureCache_;
 
     int roomVertexCount_   = 0;
     int gridVertexCount_   = 0;
@@ -262,14 +288,6 @@ private:
     // Cached projected source screen position for hit-testing
     glm::vec2   projectedSourcePos_ = {0.0f, 0.0f};
 
-    // Lock-free double-buffer: GL thread writes matrices, message thread reads for paint()
-    struct PaintSnapshot {
-        glm::mat4 proj  = glm::mat4(1.0f);
-        glm::mat4 view  = glm::mat4(1.0f);
-        glm::vec2 sourceScreenPos = {0.0f, 0.0f};
-    };
-    PaintSnapshot paintBuf_[2];
-    std::atomic<int> paintWriteIdx_{0};
 
     // ------------------------------------------------------------------
     // Drag state
@@ -370,6 +388,17 @@ private:
 
     // Instance name for paint() overlay labels (message thread only)
     juce::String   ownInstanceName_;
+
+    // Instance list overlay state (message thread only)
+    bool showInstanceList_ = true;  // visible by default for UI testing
+    struct InstanceListEntry {
+        juce::Rectangle<int> bounds;
+        int linkedIndex;  // -1 = self, 0+ = foreign source index
+    };
+    std::vector<InstanceListEntry> instanceListHitBoxes_;
+
+    // Inline rename editor for own instance name
+    std::unique_ptr<juce::TextEditor> renameEditor_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanGLView)
 };
