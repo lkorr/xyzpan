@@ -202,8 +202,9 @@ private:
     void drawSphere(const glm::vec3& position, float radius,
                     const glm::vec3& color, float opacity);
 
-    // Draw sphere wireframe grid (lat/long GL_LINES) at origin with given radius
-    void drawSphereWireframe(float radius, const glm::vec3& color, float opacity);
+    // Draw sphere wireframe grid (lat/long GL_LINES) at given position with given radius
+    void drawSphereWireframe(float radius, const glm::vec3& color, float opacity,
+                             const glm::vec3& position = glm::vec3(0.0f));
 
     // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
     void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);

@@ -63,6 +63,7 @@ struct ForeignSourceSnapshot {
     float stereoWidth = 0.0f;
     float lNodeX = 0.0f, lNodeY = 0.0f, lNodeZ = 0.0f;
     float rNodeX = 0.0f, rNodeY = 0.0f, rNodeZ = 0.0f;
+    float sphereRadius = 1.732f;  // audible boundary radius
     int   colorIndex  = 0;
     char  name[32]    = {};  // null-terminated instance name for GL labels
 };
@@ -72,7 +73,8 @@ struct ForeignSourceSnapshot {
 class SourceExportBuffer {
 public:
     void write(float x, float y, float z, float distance, float stereoWidth,
-               float lx, float ly, float lz, float rx, float ry, float rz) {
+               float lx, float ly, float lz, float rx, float ry, float rz,
+               float sphereRadius) {
         const int idx = 1 - writeIdx_.load(std::memory_order_relaxed);
         auto& b = buf_[idx];
         b.x = x;  b.y = y;  b.z = z;
@@ -80,6 +82,7 @@ public:
         b.stereoWidth = stereoWidth;
         b.lNodeX = lx;  b.lNodeY = ly;  b.lNodeZ = lz;
         b.rNodeX = rx;  b.rNodeY = ry;  b.rNodeZ = rz;
+        b.sphereRadius = sphereRadius;
         writeIdx_.store(idx, std::memory_order_release);
     }
 

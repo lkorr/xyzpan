@@ -229,9 +229,11 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(listenerRollParam       != nullptr);
     jassert(headFollowsCameraParam  != nullptr);
 
-    // Listener link
-    listenerLinkParam = apvts.getRawParameterValue(ParamID::LISTENER_LINK);
-    jassert(listenerLinkParam != nullptr);
+    // Listener link + pilot
+    listenerLinkParam  = apvts.getRawParameterValue(ParamID::LISTENER_LINK);
+    listenerPilotParam = apvts.getRawParameterValue(ParamID::LISTENER_PILOT);
+    jassert(listenerLinkParam  != nullptr);
+    jassert(listenerPilotParam != nullptr);
 
     // Walker — movable listener position (always active)
     walkerXParam     = apvts.getRawParameterValue(ParamID::WALKER_X);
@@ -249,6 +251,7 @@ XYZPanProcessor::XYZPanProcessor()
     apvts.addParameterListener(ParamID::LISTENER_ROLL,       this);
     apvts.addParameterListener(ParamID::HEAD_FOLLOWS_CAMERA, this);
     apvts.addParameterListener(ParamID::LISTENER_LINK,       this);
+    apvts.addParameterListener(ParamID::LISTENER_PILOT,     this);
     apvts.addParameterListener(ParamID::WALKER_X,            this);
     apvts.addParameterListener(ParamID::WALKER_Y,            this);
     apvts.addParameterListener(ParamID::WALKER_Z,            this);
@@ -446,6 +449,7 @@ XYZPanProcessor::~XYZPanProcessor() {
     apvts.removeParameterListener(ParamID::LISTENER_ROLL,       this);
     apvts.removeParameterListener(ParamID::HEAD_FOLLOWS_CAMERA, this);
     apvts.removeParameterListener(ParamID::LISTENER_LINK,       this);
+    apvts.removeParameterListener(ParamID::LISTENER_PILOT,     this);
     apvts.removeParameterListener(ParamID::WALKER_X,            this);
     apvts.removeParameterListener(ParamID::WALKER_Y,            this);
     apvts.removeParameterListener(ParamID::WALKER_Z,            this);
@@ -501,10 +505,18 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.y = yParam->load() * r;
     params.z = zParam->load() * r;
 
-    // Walker listener position — always active, scaled by R
-    params.listenerX = walkerXSmooth_.process(walkerXParam->load()) * r;
-    params.listenerY = walkerYSmooth_.process(walkerYParam->load()) * r;
-    params.listenerZ = walkerZSmooth_.process(walkerZParam->load()) * r;
+    // Walker listener position — when linked, read from shared hub atomics
+    // so all instances use the exact same values (single source of truth).
+    const bool linked = listenerLinkParam->load() >= 0.5f;
+    const float wx = linked ? listenerHub_->sharedWalkerX.load(std::memory_order_acquire)
+                            : walkerXParam->load();
+    const float wy = linked ? listenerHub_->sharedWalkerY.load(std::memory_order_acquire)
+                            : walkerYParam->load();
+    const float wz = linked ? listenerHub_->sharedWalkerZ.load(std::memory_order_acquire)
+                            : walkerZParam->load();
+    params.listenerX = walkerXSmooth_.process(wx) * r;
+    params.listenerY = walkerYSmooth_.process(wy) * r;
+    params.listenerZ = walkerZSmooth_.process(wz) * r;
 
     // Dev panel: binaural panning tuning
     params.maxITD_ms       = itdMaxParam->load();
@@ -729,9 +741,12 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // Listener head orientation (degrees in APVTS → radians for engine)
     constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
-    params.listenerYaw   = listenerYawParam->load()   * kDegToRad;
-    params.listenerPitch = listenerPitchParam->load() * kDegToRad;
-    params.listenerRoll  = listenerRollParam->load()  * kDegToRad;
+    params.listenerYaw   = (linked ? listenerHub_->sharedYaw.load(std::memory_order_acquire)
+                                   : listenerYawParam->load()) * kDegToRad;
+    params.listenerPitch = (linked ? listenerHub_->sharedPitch.load(std::memory_order_acquire)
+                                   : listenerPitchParam->load()) * kDegToRad;
+    params.listenerRoll  = (linked ? listenerHub_->sharedRoll.load(std::memory_order_acquire)
+                                   : listenerRollParam->load()) * kDegToRad;
 
     // Binaural toggle (user-facing)
     params.binauralEnabled = binauralEnabledParam->load() >= 0.5f;
@@ -816,7 +831,8 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     sourceExport.write(snap.x, snap.y, snap.z, snap.distance,
                        snap.stereoWidth,
                        snap.lNodeX, snap.lNodeY, snap.lNodeZ,
-                       snap.rNodeX, snap.rNodeY, snap.rNodeZ);
+                       snap.rNodeX, snap.rNodeY, snap.rNodeZ,
+                       snap.sphereRadius);
 
     // DSP state bridge for dev panel readouts
     dspStateBridge.write(engine.getLastDSPState());
@@ -863,37 +879,66 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
             if (listenerHub_->getCachedOrientation(yaw, pitch, roll, headFollows)) {
                 receivingBroadcast_->store(true, std::memory_order_relaxed);
                 if (auto* p = apvts.getParameter(ParamID::LISTENER_YAW))
-                    p->setValueNotifyingHost(p->convertTo0to1(yaw));
+                    p->setValue(p->convertTo0to1(yaw));
                 if (auto* p = apvts.getParameter(ParamID::LISTENER_PITCH))
-                    p->setValueNotifyingHost(p->convertTo0to1(pitch));
+                    p->setValue(p->convertTo0to1(pitch));
                 if (auto* p = apvts.getParameter(ParamID::LISTENER_ROLL))
-                    p->setValueNotifyingHost(p->convertTo0to1(roll));
+                    p->setValue(p->convertTo0to1(roll));
                 if (auto* p = apvts.getParameter(ParamID::HEAD_FOLLOWS_CAMERA))
-                    p->setValueNotifyingHost(headFollows ? 1.0f : 0.0f);
+                    p->setValue(headFollows ? 1.0f : 0.0f);
                 receivingBroadcast_->store(false, std::memory_order_relaxed);
+            } else {
+                // First instance to link — seed shared atomics + auto-claim pilot
+                listenerHub_->sharedYaw.store(listenerYawParam->load(), std::memory_order_release);
+                listenerHub_->sharedPitch.store(listenerPitchParam->load(), std::memory_order_release);
+                listenerHub_->sharedRoll.store(listenerRollParam->load(), std::memory_order_release);
+                listenerHub_->claimPilot(this);
             }
             // Adopt group walker position
             float wx, wy, wz;
             if (listenerHub_->getCachedPosition(wx, wy, wz)) {
                 receivingBroadcast_->store(true, std::memory_order_relaxed);
                 if (auto* p = apvts.getParameter(ParamID::WALKER_X))
-                    p->setValueNotifyingHost(p->convertTo0to1(wx));
+                    p->setValue(p->convertTo0to1(wx));
                 if (auto* p = apvts.getParameter(ParamID::WALKER_Y))
-                    p->setValueNotifyingHost(p->convertTo0to1(wy));
+                    p->setValue(p->convertTo0to1(wy));
                 if (auto* p = apvts.getParameter(ParamID::WALKER_Z))
-                    p->setValueNotifyingHost(p->convertTo0to1(wz));
+                    p->setValue(p->convertTo0to1(wz));
                 receivingBroadcast_->store(false, std::memory_order_relaxed);
+            } else {
+                listenerHub_->sharedWalkerX.store(walkerXParam->load(), std::memory_order_release);
+                listenerHub_->sharedWalkerY.store(walkerYParam->load(), std::memory_order_release);
+                listenerHub_->sharedWalkerZ.store(walkerZParam->load(), std::memory_order_release);
             }
+            // If restoring from saved state with pilot enabled, reclaim
+            if (listenerPilotParam->load() >= 0.5f)
+                listenerHub_->claimPilot(this);
         } else {
+            listenerHub_->releasePilot(this);
+            if (auto* p = apvts.getParameter(ParamID::LISTENER_PILOT))
+                p->setValue(0.0f);
             listenerHub_->removeLinkedInstance(this);
         }
         return;
     }
 
-    // For orientation params: broadcast if linked and not receiving
+    // Pilot toggle — claim or release pilot role
+    if (parameterID == ParamID::LISTENER_PILOT) {
+        if (newValue >= 0.5f) {
+            if (listenerLinkParam->load() >= 0.5f)
+                listenerHub_->claimPilot(this);
+        } else {
+            listenerHub_->releasePilot(this);
+        }
+        return;
+    }
+
+    // For orientation/walker params: broadcast if linked, pilot, and not receiving
     if (receivingBroadcast_->load(std::memory_order_relaxed))
         return;
     if (listenerLinkParam->load() < 0.5f)
+        return;
+    if (!listenerHub_->isPilot(this))
         return;
 
     // Broadcast orientation for yaw/pitch/roll/headFollows changes
@@ -920,27 +965,48 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
 
 void XYZPanProcessor::listenerOrientationChanged(float yaw, float pitch, float roll,
                                                    bool headFollows) {
+    // Use setValue (not setValueNotifyingHost) — receivers should NOT generate
+    // host automation callbacks. setValue updates the internal atomic and fires
+    // APVTS parameterChanged listeners (for GL head-follows sync) but skips the
+    // host notification that would flood Ableton with N² automation writes.
     receivingBroadcast_->store(true, std::memory_order_relaxed);
     if (auto* p = apvts.getParameter(ParamID::LISTENER_YAW))
-        p->setValueNotifyingHost(p->convertTo0to1(yaw));
+        p->setValue(p->convertTo0to1(yaw));
     if (auto* p = apvts.getParameter(ParamID::LISTENER_PITCH))
-        p->setValueNotifyingHost(p->convertTo0to1(pitch));
+        p->setValue(p->convertTo0to1(pitch));
     if (auto* p = apvts.getParameter(ParamID::LISTENER_ROLL))
-        p->setValueNotifyingHost(p->convertTo0to1(roll));
+        p->setValue(p->convertTo0to1(roll));
     if (auto* p = apvts.getParameter(ParamID::HEAD_FOLLOWS_CAMERA))
-        p->setValueNotifyingHost(headFollows ? 1.0f : 0.0f);
+        p->setValue(headFollows ? 1.0f : 0.0f);
     receivingBroadcast_->store(false, std::memory_order_relaxed);
 }
 
 void XYZPanProcessor::listenerPositionChanged(float x, float y, float z) {
     receivingBroadcast_->store(true, std::memory_order_relaxed);
     if (auto* p = apvts.getParameter(ParamID::WALKER_X))
-        p->setValueNotifyingHost(p->convertTo0to1(x));
+        p->setValue(p->convertTo0to1(x));
     if (auto* p = apvts.getParameter(ParamID::WALKER_Y))
-        p->setValueNotifyingHost(p->convertTo0to1(y));
+        p->setValue(p->convertTo0to1(y));
     if (auto* p = apvts.getParameter(ParamID::WALKER_Z))
-        p->setValueNotifyingHost(p->convertTo0to1(z));
+        p->setValue(p->convertTo0to1(z));
     receivingBroadcast_->store(false, std::memory_order_relaxed);
+}
+
+void XYZPanProcessor::pilotStatusChanged(bool isPilot) {
+    if (auto* p = apvts.getParameter(ParamID::LISTENER_PILOT))
+        p->setValue(isPilot ? 1.0f : 0.0f);
+}
+
+bool XYZPanProcessor::isLinkedPilot() const {
+    return listenerLinkParam->load() >= 0.5f && listenerHub_->isPilot(this);
+}
+
+bool XYZPanProcessor::isLinkedNonPilot() const {
+    return listenerLinkParam->load() >= 0.5f && !listenerHub_->isPilot(this);
+}
+
+juce::String XYZPanProcessor::getPilotName() const {
+    return listenerHub_->getPilotName();
 }
 
 // User-facing params saved in DAW state / user presets.
@@ -969,7 +1035,7 @@ static const std::unordered_set<juce::String> kUserParams = {
     "binaural_enabled", "er_enabled",
     // listener
     "listener_yaw", "listener_pitch", "listener_roll", "head_follows_camera",
-    "listener_link",
+    "listener_link", "listener_pilot",
     // walker
     "walker_x", "walker_y", "walker_z", "walker_enabled",
 };
@@ -1006,13 +1072,22 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
 }
 
 void XYZPanProcessor::updateTrackProperties(const TrackProperties& properties) {
-    if (properties.name.has_value() && !nameManuallySet_)
-        instanceName_ = *properties.name;
+    if (properties.name.has_value()) {
+        trackName_ = *properties.name;
+        if (!nameManuallySet_)
+            instanceName_ = trackName_;
+    }
 }
 
 void XYZPanProcessor::setInstanceName(const juce::String& name) {
-    instanceName_ = name;
-    nameManuallySet_ = name.isNotEmpty();
+    if (name.isEmpty()) {
+        // Clearing custom name — revert to DAW track name
+        nameManuallySet_ = false;
+        instanceName_ = trackName_;
+    } else {
+        instanceName_ = name;
+        nameManuallySet_ = true;
+    }
 }
 
 // ---------------------------------------------------------------------------

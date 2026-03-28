@@ -218,6 +218,9 @@ namespace ParamID {
     // Link listener orientation across instances
     constexpr const char* LISTENER_LINK = "listener_link";
 
+    // Pilot — only the pilot instance can drive shared listener position when linked
+    constexpr const char* LISTENER_PILOT = "listener_pilot";
+
     // Walker — movable listener position (always active)
     constexpr const char* WALKER_X       = "walker_x";
     constexpr const char* WALKER_Y       = "walker_y";

@@ -166,6 +166,19 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     listenerLinkToggle_.setClickingTogglesState(true);
     addAndMakeVisible(listenerLinkToggle_);
     listenerLinkAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_LINK, listenerLinkToggle_);
+    listenerLinkToggle_.onClick = [this] { updateListenerControlsEnabled(); };
+
+    // Pilot toggle — only pilot can drive shared listener position
+    listenerPilotToggle_.setButtonText("Pilot");
+    listenerPilotToggle_.setClickingTogglesState(true);
+    addAndMakeVisible(listenerPilotToggle_);
+    listenerPilotAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_PILOT, listenerPilotToggle_);
+    listenerPilotToggle_.onClick = [this] { updateListenerControlsEnabled(); };
+
+    pilotStatusLabel_.setJustificationType(juce::Justification::centredLeft);
+    pilotStatusLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    pilotStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::grey);
+    addAndMakeVisible(pilotStatusLabel_);
 
     // ----- Walker mode knobs (Listener tab in left column) -----
     for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_}) {
@@ -197,6 +210,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Listener section starts collapsed — mini knobs visible, full controls hidden
     setListenerExpanded(false);
+    updateListenerControlsEnabled();
 
     binauralToggle_.setButtonText("");
     binauralToggle_.setClickingTogglesState(true);
@@ -694,7 +708,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Wire GL view rename callback to update processor instance name
     glView_.onInstanceRenamed = [this](const juce::String& newName) {
         proc_.setInstanceName(newName);
-        glView_.setOwnInstanceName(newName);
+        const auto resolved = proc_.getInstanceNameValue();
+        instanceNameEditor_.setText(resolved, false);
+        glView_.setOwnInstanceName(resolved);
     };
 
     // ----- Remote: instance list + name editor -----
@@ -734,11 +750,15 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     instanceNameEditor_.setText(proc_.getInstanceNameValue(), false);
     instanceNameEditor_.onReturnKey = [this] {
         proc_.setInstanceName(instanceNameEditor_.getText().trim());
-        glView_.setOwnInstanceName(instanceNameEditor_.getText().trim());
+        const auto resolved = proc_.getInstanceNameValue();
+        instanceNameEditor_.setText(resolved, false);
+        glView_.setOwnInstanceName(resolved);
     };
     instanceNameEditor_.onFocusLost = [this] {
         proc_.setInstanceName(instanceNameEditor_.getText().trim());
-        glView_.setOwnInstanceName(instanceNameEditor_.getText().trim());
+        const auto resolved = proc_.getInstanceNameValue();
+        instanceNameEditor_.setText(resolved, false);
+        glView_.setOwnInstanceName(resolved);
     };
     addAndMakeVisible(instanceNameEditor_);
     instanceNameEditor_.setVisible(false);
@@ -1167,8 +1187,13 @@ void XYZPanEditor::resized()
             const int halfW = (kLeftColW - kPadding * 3) / 2;
             wasdToggle_.setBounds(kPadding, toggleY, halfW, toggleH);
             headFollowsToggle_.setBounds(kPadding + halfW + kPadding, toggleY, halfW, toggleH);
-            listenerLinkToggle_.setBounds(kPadding, toggleY + toggleH + 2, halfW, toggleH);
-            remoteBtn_.setBounds(kPadding + halfW + kPadding, toggleY + toggleH + 2, halfW, toggleH);
+            // Bottom row: Link | Pilot | Remote (3 columns)
+            const int thirdW = (kLeftColW - kPadding * 4) / 3;
+            const int row2Y = toggleY + toggleH + 2;
+            listenerLinkToggle_.setBounds(kPadding, row2Y, thirdW, toggleH);
+            listenerPilotToggle_.setBounds(kPadding + thirdW + kPadding, row2Y, thirdW, toggleH);
+            remoteBtn_.setBounds(kPadding + 2 * (thirdW + kPadding), row2Y, thirdW, toggleH);
+            pilotStatusLabel_.setBounds(kPadding, row2Y + toggleH + 1, kLeftColW - kPadding * 2, 14);
         } else {
             // Collapsed: just the header bar, no content (knobs hidden by setListenerExpanded)
         }
@@ -1583,6 +1608,8 @@ void XYZPanEditor::setListenerExpanded(bool expanded)
     wasdToggle_.setVisible(expanded);
     headFollowsToggle_.setVisible(expanded);
     listenerLinkToggle_.setVisible(expanded);
+    listenerPilotToggle_.setVisible(expanded);
+    pilotStatusLabel_.setVisible(expanded);
     remoteBtn_.setVisible(expanded);
 
     // Only trigger relayout if we've been sized (avoid crash during construction)
@@ -1590,6 +1617,39 @@ void XYZPanEditor::setListenerExpanded(bool expanded)
         resized();
         repaint();
     }
+}
+
+void XYZPanEditor::updateListenerControlsEnabled() {
+    const bool linked   = proc_.isLinkedPilot() || proc_.isLinkedNonPilot();
+    const bool isPilot  = proc_.isLinkedPilot();
+    const bool canControl = !linked || isPilot;
+
+    // Pilot toggle only meaningful when linked
+    listenerPilotToggle_.setEnabled(linked);
+
+    // Sync toggle state from hub truth (covers cross-instance pilot revocation)
+    if (listenerPilotToggle_.getToggleState() != isPilot)
+        listenerPilotToggle_.setToggleState(isPilot, juce::dontSendNotification);
+
+    // Pilot status label — show who the pilot is when this instance isn't it
+    if (linked && !isPilot) {
+        auto name = proc_.getPilotName();
+        if (name.isNotEmpty())
+            pilotStatusLabel_.setText(name + " is the pilot", juce::dontSendNotification);
+        else
+            pilotStatusLabel_.setText("No pilot set", juce::dontSendNotification);
+        pilotStatusLabel_.setVisible(listenerExpanded_);
+    } else {
+        pilotStatusLabel_.setText("", juce::dontSendNotification);
+        pilotStatusLabel_.setVisible(false);
+    }
+
+    // Walker + orientation knobs: disabled when linked-non-pilot
+    for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_,
+                       &listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_})
+        knob->setEnabled(canControl);
+    wasdToggle_.setEnabled(canControl);
+    headFollowsToggle_.setEnabled(canControl);
 }
 
 // Options controls are now always visible — no tab switching needed.
@@ -1729,6 +1789,7 @@ void XYZPanEditor::timerCallback()
     if (++selectorRebuildCounter_ >= 10) {
         selectorRebuildCounter_ = 0;
         rebuildInstanceList();
+        updateListenerControlsEnabled();
         // Keep GL view instance name in sync (may change from DAW track rename)
         glView_.setOwnInstanceName(proc_.getInstanceNameValue());
     }

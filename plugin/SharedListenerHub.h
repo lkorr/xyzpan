@@ -30,6 +30,9 @@ public:
         // User-visible instance name (e.g. DAW track name or manual rename).
         virtual juce::String getInstanceName() const { return {}; }
 
+        // Called when this instance gains or loses pilot status.
+        virtual void pilotStatusChanged(bool /*isPilot*/) {}
+
         // Safety flag — cleared by the instance before destruction begins.
         // The hub checks this under the spinlock before dispatching to skip
         // any instance whose destructor is in progress on another thread.
@@ -50,8 +53,17 @@ public:
     // getLinkedSources from calling virtual methods on a dying object. The
     // removal itself then erases the pointer under the lock.
     void removeLinkedInstance(Listener* l) {
-        const juce::SpinLock::ScopedLockType lock(spinLock_);
-        linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
+        Listener* newPilot = nullptr;
+        {
+            const juce::SpinLock::ScopedLockType lock(spinLock_);
+            linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
+            if (pilot_ == l) {
+                pilot_ = linked_.empty() ? nullptr : linked_.front();
+                newPilot = pilot_;
+            }
+        }
+        if (newPilot && newPilot->hubAlive_.load(std::memory_order_acquire))
+            newPilot->pilotStatusChanged(true);
     }
 
     // Convenience: atomically mark dead + remove + fire removal callbacks.
@@ -63,9 +75,14 @@ public:
 
         // Snapshot callbacks and remove from linked list under the lock
         std::vector<std::function<void(Listener*)>> cbSnapshot;
+        Listener* newPilot = nullptr;
         {
             const juce::SpinLock::ScopedLockType lock(spinLock_);
             linked_.erase(std::remove(linked_.begin(), linked_.end(), l), linked_.end());
+            if (pilot_ == l) {
+                pilot_ = linked_.empty() ? nullptr : linked_.front();
+                newPilot = pilot_;
+            }
             cbSnapshot.reserve(removalCallbacks_.size());
             for (auto& cb : removalCallbacks_)
                 cbSnapshot.push_back(cb.fn);
@@ -74,6 +91,10 @@ public:
         // Fire callbacks outside the lock — safe for expensive operations
         for (auto& fn : cbSnapshot)
             fn(l);
+
+        // Notify auto-promoted pilot after removal callbacks
+        if (newPilot && newPilot->hubAlive_.load(std::memory_order_acquire))
+            newPilot->pilotStatusChanged(true);
     }
 
     void broadcastOrientation(Listener* sender, float yaw, float pitch, float roll,
@@ -94,7 +115,12 @@ public:
                     && count < kMaxBroadcast)
                     targets[count++] = l;
         }
-        // Dispatch outside the lock — setValueNotifyingHost may do host work
+        // Update shared atomics (lock-free, audio-thread readable)
+        sharedYaw.store(yaw, std::memory_order_release);
+        sharedPitch.store(pitch, std::memory_order_release);
+        sharedRoll.store(roll, std::memory_order_release);
+
+        // Dispatch outside the lock — setValue may do APVTS listener work
         for (int i = 0; i < count; ++i)
             if (targets[i]->hubAlive_.load(std::memory_order_acquire))
                 targets[i]->listenerOrientationChanged(yaw, pitch, roll, headFollows);
@@ -128,6 +154,10 @@ public:
                     && count < kMaxBroadcast)
                     targets[count++] = l;
         }
+        sharedWalkerX.store(x, std::memory_order_release);
+        sharedWalkerY.store(y, std::memory_order_release);
+        sharedWalkerZ.store(z, std::memory_order_release);
+
         for (int i = 0; i < count; ++i)
             if (targets[i]->hubAlive_.load(std::memory_order_acquire))
                 targets[i]->listenerPositionChanged(x, y, z);
@@ -165,6 +195,44 @@ public:
         for (int i = 0; i < static_cast<int>(linked_.size()); ++i)
             if (linked_[i] == l) return i;
         return -1;
+    }
+
+    // --- Pilot management ---
+    // Only the pilot instance can broadcast listener orientation/position changes.
+    // Mutual exclusion: claiming pilot revokes it from the previous holder.
+
+    void claimPilot(Listener* l) {
+        Listener* oldPilot = nullptr;
+        {
+            const juce::SpinLock::ScopedLockType lock(spinLock_);
+            if (std::find(linked_.begin(), linked_.end(), l) == linked_.end())
+                return;
+            oldPilot = pilot_;
+            pilot_ = l;
+        }
+        // Notify outside lock to avoid deadlocks from APVTS operations
+        if (oldPilot && oldPilot != l && oldPilot->hubAlive_.load(std::memory_order_acquire))
+            oldPilot->pilotStatusChanged(false);
+        if (l->hubAlive_.load(std::memory_order_acquire))
+            l->pilotStatusChanged(true);
+    }
+
+    void releasePilot(Listener* l) {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        if (pilot_ == l)
+            pilot_ = nullptr;
+    }
+
+    bool isPilot(const Listener* l) const {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        return pilot_ == l;
+    }
+
+    juce::String getPilotName() const {
+        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        if (pilot_ && pilot_->hubAlive_.load(std::memory_order_acquire))
+            return pilot_->getInstanceName();
+        return {};
     }
 
     // Register a callback invoked (under lock, on message thread) when any
@@ -212,6 +280,15 @@ public:
         return count;
     }
 
+    // Lock-free shared values — audio threads read these directly when linked.
+    // Written by broadcast methods (message thread) with release semantics.
+    std::atomic<float> sharedYaw{0.0f};
+    std::atomic<float> sharedPitch{0.0f};
+    std::atomic<float> sharedRoll{0.0f};
+    std::atomic<float> sharedWalkerX{0.0f};
+    std::atomic<float> sharedWalkerY{0.0f};
+    std::atomic<float> sharedWalkerZ{0.0f};
+
 private:
     struct RemovalCB {
         void* owner;
@@ -232,4 +309,6 @@ private:
     float cachedPosX_  = 0.0f;
     float cachedPosY_  = 0.0f;
     float cachedPosZ_  = 0.0f;
+
+    Listener* pilot_ = nullptr;  // current pilot, or nullptr if none
 };

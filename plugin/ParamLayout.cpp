@@ -601,11 +601,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_ROLL, 1}, "Listener Roll",
         NR(0.0f, 360.0f, 0.1f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ParamID::HEAD_FOLLOWS_CAMERA, 1}, "Head Follows Camera", false));
+        juce::ParameterID{ParamID::HEAD_FOLLOWS_CAMERA, 1}, "Head Follows Camera", false,
+        juce::AudioParameterBoolAttributes().withAutomatable(false)));
 
     // Link listener orientation across plugin instances
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ParamID::LISTENER_LINK, 1}, "Link Listener", false));
+        juce::ParameterID{ParamID::LISTENER_LINK, 1}, "Link Listener", false,
+        juce::AudioParameterBoolAttributes().withAutomatable(false)));
+
+    // Pilot — only the pilot instance drives shared listener position when linked
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{ParamID::LISTENER_PILOT, 1}, "Listener Pilot", false,
+        juce::AudioParameterBoolAttributes().withAutomatable(false)));
 
     // -------------------------------------------------------------------------
     // Walker — movable listener position (always active; WASD toggle for keyboard control)
@@ -617,7 +624,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::WALKER_Z, 1}, "Walker Z",
         NR(-1.0f, 1.0f, 0.001f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ParamID::WASD_CONTROL, 1}, "WASD Control", false));
+        juce::ParameterID{ParamID::WASD_CONTROL, 1}, "WASD Control", false,
+        juce::AudioParameterBoolAttributes().withAutomatable(false)));
 
     // -------------------------------------------------------------------------
     // Binaural toggle (user-facing)

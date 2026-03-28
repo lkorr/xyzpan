@@ -179,6 +179,13 @@ private:
     juce::ToggleButton listenerLinkToggle_;
     std::unique_ptr<BA> listenerLinkAtt_;
 
+    // Pilot — only the pilot instance drives shared listener position when linked
+    juce::ToggleButton listenerPilotToggle_;
+    std::unique_ptr<BA> listenerPilotAtt_;
+    juce::Label pilotStatusLabel_;  // shows "X is pilot" when linked-non-pilot
+
+    void updateListenerControlsEnabled();
+
     // Remote instance focus — control another linked instance's parameters
     XYZPanProcessor* remoteFocusProc_ = nullptr;  // null = controlling self
     int remoteFocusIndex_ = -1;                    // -1 = self

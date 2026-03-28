@@ -434,12 +434,12 @@ void XYZPanGLView::renderOpenGL()
             glDepthMask(GL_TRUE);
     }
 
-    // Draw audible radius sphere — semi-transparent boundary at origin
+    // Draw audible radius sphere centered on the source node
     // Wireframe grid overlay stays visible from inside the sphere (GL_LINES have no facing).
     {
         glDepthMask(GL_FALSE);
-        drawSphere(glm::vec3(0.0f), sr, theme.glAudibleSphere, 0.08f);
-        drawSphereWireframe(sr, theme.glAudibleSphere, 0.04f);
+        drawSphere(sourcePos, sr, theme.glAudibleSphere, 0.04f);
+        drawSphereWireframe(sr, theme.glAudibleSphere, 0.025f, sourcePos);
 
         // Re-establish sphere shader batch for source/stereo node draws that follow
         sphereShader_->use();
@@ -494,7 +494,7 @@ void XYZPanGLView::renderOpenGL()
         }
     }
 
-    // Foreign (linked instance) source nodes
+    // Foreign (linked instance) source nodes + audible radius spheres
     {
         const auto fp = foreignBridge_.read();
         static constexpr glm::vec3 kPalette[8] = {
@@ -508,6 +508,27 @@ void XYZPanGLView::renderOpenGL()
             {0.45f, 0.45f, 0.70f},  // lavender
         };
         const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
+
+        // Draw audible radius spheres for foreign sources (behind nodes)
+        glDepthMask(GL_FALSE);
+        for (int i = 0; i < fp.count; ++i) {
+            const auto& fs = fp.sources[i];
+            const auto color = kPalette[fs.colorIndex % 8];
+            const glm::vec3 fPos(fs.x, fs.z, -fs.y);
+            const float fsr = fs.sphereRadius * 0.25f;
+            drawSphere(fPos, fsr, color, 0.03f);
+            drawSphereWireframe(fsr, color, 0.02f, fPos);
+            // Re-establish sphere shader after wireframe drew with lineShader
+            sphereShader_->use();
+            sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+            sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+            const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+            sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z);
+            glBindVertexArray(vaoSphere_);
+        }
+        glDepthMask(GL_TRUE);
+
+        // Draw foreign source nodes on top
         for (int i = 0; i < fp.count; ++i) {
             const auto& fs = fp.sources[i];
             const auto color = kPalette[fs.colorIndex % 8];
@@ -1167,11 +1188,13 @@ void XYZPanGLView::drawSphere(const glm::vec3& position, float radius,
 // ---------------------------------------------------------------------------
 // drawSphereWireframe — lat/long grid via GL_LINES using lineShader_
 // ---------------------------------------------------------------------------
-void XYZPanGLView::drawSphereWireframe(float radius, const glm::vec3& color, float opacity)
+void XYZPanGLView::drawSphereWireframe(float radius, const glm::vec3& color, float opacity,
+                                        const glm::vec3& position)
 {
     if (!lineShader_ || vaoSphereWire_ == 0 || sphereWireIndexCount_ == 0) return;
 
-    const glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(radius));
+    const glm::mat4 model = glm::scale(
+        glm::translate(glm::mat4(1.0f), position), glm::vec3(radius));
 
     lineShader_->use();
     lineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);

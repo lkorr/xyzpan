@@ -49,6 +49,11 @@ public:
     void setInstanceName(const juce::String& name);
     juce::String getInstanceNameValue() const { return instanceName_; }
 
+    // Pilot queries — for editor UI to check whether listener controls should be enabled
+    bool isLinkedPilot() const;
+    bool isLinkedNonPilot() const;
+    juce::String getPilotName() const;
+
     // APVTS — public so editor and parameter attachments can access it
     juce::AudioProcessorValueTreeState apvts;
 
@@ -221,10 +226,12 @@ private:
 
     // Instance name (auto-populated from DAW track name, user-editable)
     juce::String instanceName_;
+    juce::String trackName_;           // last DAW-reported track name
     bool nameManuallySet_ = false;
 
     // Listener link across instances
     std::atomic<float>* listenerLinkParam         = nullptr;
+    std::atomic<float>* listenerPilotParam        = nullptr;
     juce::SharedResourcePointer<SharedListenerHub> listenerHub_;
     std::shared_ptr<std::atomic<bool>> receivingBroadcast_ = std::make_shared<std::atomic<bool>>(false);
 
@@ -232,6 +239,7 @@ private:
     void listenerOrientationChanged(float yaw, float pitch, float roll,
                                      bool headFollows) override;
     void listenerPositionChanged(float x, float y, float z) override;
+    void pilotStatusChanged(bool isPilot) override;
     xyzpan::SourceExportBuffer* getSourceExportBuffer() override { return &sourceExport; }
     juce::AudioProcessor* getProcessor() override { return this; }
     juce::String getInstanceName() const override { return instanceName_; }
