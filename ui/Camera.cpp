@@ -103,9 +103,18 @@ void Camera::applyMouseDrag(float dx, float dy)
         activeSnap = SnapView::Orbit;
     }
 
+    // Undo the visual tilt caused by roll so mouse drag stays intuitive.
+    // Positive roll rotates the up vector CCW (Rodrigues around forward),
+    // which makes the image appear rotated CCW. Undo with CW rotation (+roll):
+    const float rollRad = roll * (3.14159265f / 180.0f);
+    const float cosR = std::cos(rollRad);
+    const float sinR = std::sin(rollRad);
+    const float rdx = dx * cosR - dy * sinR;
+    const float rdy = dx * sinR + dy * cosR;
+
     constexpr float kSensitivity = 0.4f;
-    yaw   += dx * kSensitivity;
-    pitch -= dy * kSensitivity;  // subtract: drag up -> camera tilts up (pitch increases)
+    yaw   += rdx * kSensitivity;
+    pitch -= rdy * kSensitivity;  // subtract: drag up -> camera tilts up (pitch increases)
 
     // Clamp pitch to avoid flipping over the poles
     pitch = std::clamp(pitch, -89.0f, 89.0f);

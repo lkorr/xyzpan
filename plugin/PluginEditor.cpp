@@ -137,12 +137,17 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // ----- Listener head orientation knobs (continuous / wrapping) -----
     for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 55, 14);
-        knob->setColour(juce::Slider::rotarySliderFillColourId,
-                        juce::Colour(xyzpan::AlchemyLookAndFeel::kWarmGold));
-        knob->setRotaryParameters(0.0f, juce::MathConstants<float>::twoPi, false);
+        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 63, 16);
         addAndMakeVisible(knob);
     }
+    // Per-axis colours matching source/walker: Yaw=Cinnabar, Pitch=Aqua, Roll=Gold
+    listenerYawKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                               juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    listenerPitchKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                                  juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    listenerRollKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                                 juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
+
     listenerYawAtt_   = std::make_unique<SA>(p.apvts, ParamID::LISTENER_YAW,   listenerYawKnob_);
     listenerPitchAtt_ = std::make_unique<SA>(p.apvts, ParamID::LISTENER_PITCH, listenerPitchKnob_);
     listenerRollAtt_  = std::make_unique<SA>(p.apvts, ParamID::LISTENER_ROLL,  listenerRollKnob_);
@@ -151,7 +156,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     listenerRollLabel_.setText("Roll", juce::dontSendNotification);
     for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_}) {
         lbl->setJustificationType(juce::Justification::centred);
-        lbl->setFont(juce::Font(juce::FontOptions(10.0f)));
+        lbl->setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+        lbl->setColour(juce::Label::textColourId,
+                       juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeafPale));
         addAndMakeVisible(lbl);
     }
 
@@ -192,24 +199,29 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     walkerYAtt_ = std::make_unique<SA>(p.apvts, ParamID::WALKER_Y, walkerYKnob_);
     walkerZAtt_ = std::make_unique<SA>(p.apvts, ParamID::WALKER_Z, walkerZKnob_);
 
-    walkerXLabel_.setText("Walk X", juce::dontSendNotification);
-    walkerYLabel_.setText("Walk Y", juce::dontSendNotification);
-    walkerZLabel_.setText("Walk Z", juce::dontSendNotification);
+    walkerXLabel_.setText("X", juce::dontSendNotification);
+    walkerYLabel_.setText("Y", juce::dontSendNotification);
+    walkerZLabel_.setText("Z", juce::dontSendNotification);
     for (auto* lbl : {&walkerXLabel_, &walkerYLabel_, &walkerZLabel_}) {
         lbl->setJustificationType(juce::Justification::centred);
-        lbl->setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
+        lbl->setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
         lbl->setColour(juce::Label::textColourId,
                        juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeafPale));
         addAndMakeVisible(lbl);
     }
+
+    // Per-axis arc colours for walker knobs (matching source X/Y/Z)
+    walkerXKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    walkerYKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    walkerZKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
 
     wasdToggle_.setButtonText("WASD Control");
     wasdToggle_.setClickingTogglesState(true);
     addAndMakeVisible(wasdToggle_);
     wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
 
-    // Listener section starts collapsed — mini knobs visible, full controls hidden
-    setListenerExpanded(false);
+    // Left column starts on Source tab
+    setActiveLeftTab(LeftTab::Source);
     updateListenerControlsEnabled();
 
     binauralToggle_.setButtonText("");
@@ -826,7 +838,7 @@ XYZPanEditor::~XYZPanEditor()
 // ---------------------------------------------------------------------------
 // Layout::compute — single source of structural geometry used by paint + resized
 // ---------------------------------------------------------------------------
-XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool listenerExpanded)
+XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 {
     Layout l;
     l.contentY    = kPresetBarH;
@@ -840,11 +852,9 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool 
     l.orbitTotalW = l.reverbX;
     l.contentTop  = l.bottomY + kSectionHdrH;
 
-    // Listener section lives at the bottom of the left column.
-    // Collapsed: just the header (24px)
-    // Expanded:  header (24) + walker knobs (70) + perspective (64) + toggles (44) = 202px
-    const int listenerH = listenerExpanded ? 202 : kSectionHdrH;
-    l.listenerHdrY = l.bottomY - listenerH;
+    // Left column content: full height between header and bottom row
+    l.leftContentTop = l.contentY + kSectionHdrH;
+    l.leftContentH   = l.bottomY - l.leftContentTop;
 
     return l;
 }
@@ -855,7 +865,7 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool 
 void XYZPanEditor::paint(juce::Graphics& g)
 {
     const auto& ct = lookAndFeel_.currentTheme();
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
     const int bx = 0;
     const int bw = getWidth() - kMeterW;
 
@@ -886,29 +896,41 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
-    // Left column: "SOURCE" header (always visible)
-    drawHeader(0, lo.contentY, kLeftColW, "SOURCE");
-
-    // Listener section header with collapse indicator (below source section)
+    // Left column: tabbed header "Source | Listener"
     {
-        const int listenerHdrY = lo.listenerHdrY;
-        auto hdrRect = juce::Rectangle<int>(0, listenerHdrY, kLeftColW, kSectionHdrH);
+        auto hdrRect = juce::Rectangle<int>(0, lo.contentY, kLeftColW, kSectionHdrH);
         g.setGradientFill(juce::ColourGradient(
-            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(listenerHdrY),
-            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(listenerHdrY), false));
+            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(lo.contentY),
+            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(lo.contentY), false));
         g.fillRect(hdrRect);
-        g.setColour(juce::Colour(ct.brightGold));
+
+        const int halfW = kLeftColW / 2;
         g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-        // Disclosure triangle + "LISTENER"
-        juce::String listenerTitle = listenerExpanded_ ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc"))
-                                                       : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"));
-        listenerTitle += " LISTENER";
-        g.drawText(listenerTitle, hdrRect.reduced(10, 0), juce::Justification::centredLeft);
+
+        // Source tab
+        g.setColour(activeLeftTab_ == LeftTab::Source
+            ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze));
+        g.drawText("Source", 0, lo.contentY, halfW, kSectionHdrH, juce::Justification::centred);
+
+        // Listener tab
+        g.setColour(activeLeftTab_ == LeftTab::Listener
+            ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze));
+        g.drawText("Listener", halfW, lo.contentY, kLeftColW - halfW, kSectionHdrH, juce::Justification::centred);
+
+        // Gold underline on active tab
+        g.setColour(juce::Colour(ct.brightGold));
+        const int ulH = 2;
+        if (activeLeftTab_ == LeftTab::Source)
+            g.fillRect(halfW / 4, lo.contentY + kSectionHdrH - ulH, halfW / 2, ulH);
+        else
+            g.fillRect(halfW + halfW / 4, lo.contentY + kSectionHdrH - ulH, (kLeftColW - halfW) / 2, ulH);
+
+        // Bottom line
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
-        g.drawHorizontalLine(listenerHdrY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
+        g.drawHorizontalLine(lo.contentY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
     }
 
-    // Remote focus indicator — colored bar below source header
+    // Remote focus indicator — colored bar below left column header
     if (remoteFocusIndex_ >= 0) {
         const int barH = 3;
         const int barY = lo.contentY + kSectionHdrH;
@@ -960,25 +982,39 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // "REVERB" header — bottom row, reverb portion
     drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW, "REVERB");
 
-    // ===== DIVIDERS — SOURCE SECTION (always visible) =====
+    // ===== DIVIDERS — LEFT COLUMN =====
     {
-        // Thin bronze separator above LFO Speed slider row
-        {
+        const int subColW = kLeftColW / 3;
+        const float divTop = static_cast<float>(lo.leftContentTop);
+
+        if (activeLeftTab_ == LeftTab::Source) {
+            // Thin bronze separator above LFO Speed slider row
             const int lfoSpeedRowH = 32;
-            const int lfoSpeedSepY = lo.listenerHdrY - lfoSpeedRowH;
+            const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
             g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
-        }
 
-        // Vertical dividers between X | Y | Z sub-columns (from source header to LFO speed row)
-        {
-            const int subColW = kLeftColW / 3;
-            const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
-            const int lfoSpeedRowH = 32;
-            const float divBot = static_cast<float>(lo.listenerHdrY - lfoSpeedRowH);
+            // Vertical dividers between X | Y | Z sub-columns (down to speed row)
+            const float divBot = static_cast<float>(lfoSpeedSepY);
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
             g.drawVerticalLine(subColW,     divTop, divBot);
             g.drawVerticalLine(subColW * 2, divTop, divBot);
+        } else {
+            // Listener tab: vertical dividers between X | Y | Z columns
+            // Extend through both walker knobs and yaw/pitch/roll knobs
+            const int bigLabelH = 20;
+            const int knobH = 100;
+            const int perspKnobH = 80;
+            const int perspY = lo.leftContentTop + bigLabelH + knobH + 8;
+            const float divBot = static_cast<float>(perspY + bigLabelH + perspKnobH);
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
+            g.drawVerticalLine(subColW,     divTop, divBot);
+            g.drawVerticalLine(subColW * 2, divTop, divBot);
+
+            // Horizontal divider between walker X/Y/Z and Yaw/Pitch/Roll
+            const float sepY = static_cast<float>(perspY - 4);
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+            g.drawHorizontalLine(static_cast<int>(sepY), 0.0f, static_cast<float>(kLeftColW));
         }
     }
 
@@ -1076,7 +1112,7 @@ void XYZPanEditor::resized()
     auto glArea = b;
 
     // Shared structural geometry — used by both left column and bottom row blocks
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
     // Remote instance list is now rendered as GL view overlay — no left column layout needed
 
@@ -1100,17 +1136,17 @@ void XYZPanEditor::resized()
         : defaultPanelW;
     devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
 
-    // ===== LEFT COLUMN — SOURCE (always visible) + LISTENER (collapsible) =====
-    const int leftColTop = leftCol.getY();  // = kPresetBarH after preset bar removed
+    // ===== LEFT COLUMN — SOURCE or LISTENER tab =====
     const int posColW = kLeftColW / 3;
-    const int knobH   = 100;  // slightly reduced from 108 to fit stacked layout
+    const int knobH   = 100;
+    const int perspKnobH = 80;
     const int posPad  = 6;
 
-    // --- SOURCE SECTION (top of left column, down to listener header) ---
-    {
+    if (activeLeftTab_ == LeftTab::Source) {
+        // --- SOURCE TAB: X/Y/Z knobs + LFO strips + speed slider ---
         const int lfoSpeedRowH = 32;
-        const int posSectionBottom = lo.listenerHdrY - lfoSpeedRowH;
-        const int sourceTop = leftColTop + kSectionHdrH;
+        const int posSectionBottom = lo.bottomY - lfoSpeedRowH;
+        const int sourceTop = lo.leftContentTop;
 
         const int bigLabelH = 20;
         auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
@@ -1131,7 +1167,7 @@ void XYZPanEditor::resized()
         layoutPosCol(zKnob_, zLabel_, zLFO_,
                      posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
 
-        // LFO Speed slider row — spans full left column width just above listener header
+        // LFO Speed slider row at bottom of left column
         const int speedY = posSectionBottom;
         const int speedLabelW = 70;
         const int resetBtnW = 44;
@@ -1142,61 +1178,54 @@ void XYZPanEditor::resized()
                                    lfoSpeedRowH - 8);
         resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
                                      resetBtnW, lfoSpeedRowH - 8);
-    }
+    } else {
+        // --- LISTENER TAB: Walker X/Y/Z (big) + Yaw/Pitch/Roll + toggles ---
+        const int listenerTop = lo.leftContentTop;
+        const int bigLabelH = 20;
 
-    // --- LISTENER SECTION (bottom of left column, below source) ---
-    {
-        const int listenerContentY = lo.listenerHdrY + kSectionHdrH;
+        // Walker X/Y/Z knobs — same size and layout as Source X/Y/Z
+        auto layoutWalkerCol = [&](juce::Slider& knob, juce::Label& label,
+                                   int colX, int colW, int top) {
+            label.setBounds(colX, top, colW, bigLabelH);
+            int knobW = juce::jmin(knobH, colW - posPad * 2);
+            int knobX = colX + (colW - knobW) / 2;
+            knob.setBounds(knobX, top + bigLabelH, knobW, knobH);
+        };
 
-        if (listenerExpanded_) {
-            // Expanded: full walker knobs + perspective + toggles
-            const int walkerKnobH = 68;
-            const int bigLabelH = 16;
+        layoutWalkerCol(walkerXKnob_, walkerXLabel_, 0,            posColW, listenerTop);
+        layoutWalkerCol(walkerYKnob_, walkerYLabel_, posColW,      posColW, listenerTop);
+        layoutWalkerCol(walkerZKnob_, walkerZLabel_, posColW * 2,  kLeftColW - posColW * 2, listenerTop);
 
-            auto layoutWalkerCol = [&](juce::Slider& knob, juce::Label& label,
-                                       int colX, int colW, int top) {
-                label.setBounds(colX, top, colW, bigLabelH);
-                int knobW = juce::jmin(walkerKnobH, colW - posPad * 2);
-                int knobX = colX + (colW - knobW) / 2;
-                knob.setBounds(knobX, top + bigLabelH, knobW, walkerKnobH);
-            };
+        // Yaw / Pitch / Roll knobs — same size as walker knobs, below them
+        const int perspY = listenerTop + bigLabelH + knobH + 8;
 
-            layoutWalkerCol(walkerXKnob_, walkerXLabel_, 0,            posColW, listenerContentY);
-            layoutWalkerCol(walkerYKnob_, walkerYLabel_, posColW,      posColW, listenerContentY);
-            layoutWalkerCol(walkerZKnob_, walkerZLabel_, posColW * 2,  kLeftColW - posColW * 2, listenerContentY);
+        auto layoutPerspCol = [&](juce::Slider& knob, juce::Label& label,
+                                   int colX, int colW, int top) {
+            label.setBounds(colX, top, colW, bigLabelH);
+            int knobW = juce::jmin(perspKnobH, colW - posPad * 2);
+            int knobX = colX + (colW - knobW) / 2;
+            knob.setBounds(knobX, top + bigLabelH, knobW, perspKnobH);
+        };
 
-            // Yaw / Pitch / Roll knobs — below walker knobs
-            const int perspY = listenerContentY + bigLabelH + walkerKnobH + 4;
-            const int perspKnobSz = 50;
-            const int perspLabelH = 14;
-            const int perspColW = kLeftColW / 3;
+        layoutPerspCol(listenerYawKnob_,   listenerYawLabel_,   0,            posColW, perspY);
+        layoutPerspCol(listenerPitchKnob_, listenerPitchLabel_, posColW,      posColW, perspY);
+        layoutPerspCol(listenerRollKnob_,  listenerRollLabel_,  posColW * 2,  kLeftColW - posColW * 2, perspY);
 
-            auto layoutPerspCol = [&](juce::Slider& knob, juce::Label& label, int cx, int cw) {
-                int kx = cx + (cw - perspKnobSz) / 2;
-                knob.setBounds(kx, perspY, perspKnobSz, perspKnobSz);
-                label.setBounds(cx, perspY + perspKnobSz, cw, perspLabelH);
-            };
+        // WASD and Head Follows — stacked vertically, full width
+        const int toggleY = perspY + bigLabelH + perspKnobH + 8;
+        const int bigToggleH = 24;
+        const int fullW = kLeftColW - kPadding * 2;
+        wasdToggle_.setBounds(kPadding, toggleY, fullW, bigToggleH);
+        headFollowsToggle_.setBounds(kPadding, toggleY + bigToggleH + 3, fullW, bigToggleH);
 
-            layoutPerspCol(listenerYawKnob_,   listenerYawLabel_,   0, perspColW);
-            layoutPerspCol(listenerPitchKnob_, listenerPitchLabel_, perspColW, perspColW);
-            layoutPerspCol(listenerRollKnob_,  listenerRollLabel_,  perspColW * 2, kLeftColW - perspColW * 2);
-
-            // Toggles + Remote button below perspective knobs
-            const int toggleY = perspY + perspKnobSz + perspLabelH + 2;
-            const int toggleH = 20;
-            const int halfW = (kLeftColW - kPadding * 3) / 2;
-            wasdToggle_.setBounds(kPadding, toggleY, halfW, toggleH);
-            headFollowsToggle_.setBounds(kPadding + halfW + kPadding, toggleY, halfW, toggleH);
-            // Bottom row: Link | Pilot | Remote (3 columns)
-            const int thirdW = (kLeftColW - kPadding * 4) / 3;
-            const int row2Y = toggleY + toggleH + 2;
-            listenerLinkToggle_.setBounds(kPadding, row2Y, thirdW, toggleH);
-            listenerPilotToggle_.setBounds(kPadding + thirdW + kPadding, row2Y, thirdW, toggleH);
-            remoteBtn_.setBounds(kPadding + 2 * (thirdW + kPadding), row2Y, thirdW, toggleH);
-            pilotStatusLabel_.setBounds(kPadding, row2Y + toggleH + 1, kLeftColW - kPadding * 2, 14);
-        } else {
-            // Collapsed: just the header bar, no content (knobs hidden by setListenerExpanded)
-        }
+        // Link / Pilot / Remote row below
+        const int linkY = toggleY + bigToggleH * 2 + 10;
+        const int smallToggleH = 20;
+        const int thirdW = (kLeftColW - kPadding * 4) / 3;
+        listenerLinkToggle_.setBounds(kPadding, linkY, thirdW, smallToggleH);
+        listenerPilotToggle_.setBounds(kPadding + thirdW + kPadding, linkY, thirdW, smallToggleH);
+        remoteBtn_.setBounds(kPadding + 2 * (thirdW + kPadding), linkY, thirdW, smallToggleH);
+        pilotStatusLabel_.setBounds(kPadding, linkY + smallToggleH + 1, kLeftColW - kPadding * 2, 14);
     }
 
     // ===== BOTTOM ROW =====
@@ -1475,17 +1504,27 @@ void XYZPanEditor::applyCurrentTheme()
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(theme.lfoAccentBright));
 
-    // Re-apply listener / reverb / orbit knobs to LFO accent
+    // Re-apply reverb / options knobs to LFO accent
     for (auto* knob : {&sphereRadiusKnob_, &dopplerKnob_, &inputGainKnob_,
-                        &listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_,
                         &verbSize_, &verbDecay_, &verbDamping_, &verbWet_})
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(theme.lfoAccent));
 
-    // Walker knobs — aqua accent
-    for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_})
-        knob->setColour(juce::Slider::rotarySliderFillColourId,
-                         juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    // Yaw/Pitch/Roll knobs — per-axis colors (matching source X/Y/Z)
+    listenerYawKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                                juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    listenerPitchKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                                  juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    listenerRollKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                                 juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
+
+    // Walker knobs — per-axis colors (matching source X/Y/Z)
+    walkerXKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                            juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
+    walkerYKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                            juce::Colour(xyzpan::AlchemyLookAndFeel::kAqua));
+    walkerZKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                            juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
 
     // Update hero label colors to match theme
     for (auto* lbl : {&xLabel_, &yLabel_, &zLabel_})
@@ -1570,47 +1609,47 @@ void XYZPanEditor::setActiveTab(OptionsTab tab)
 }
 
 // ---------------------------------------------------------------------------
-// setListenerExpanded — toggle collapsed/expanded state of listener section
+// setActiveLeftTab — switch left column between Source and Listener
 // ---------------------------------------------------------------------------
-void XYZPanEditor::setListenerExpanded(bool expanded)
+void XYZPanEditor::setActiveLeftTab(LeftTab tab)
 {
-    listenerExpanded_ = expanded;
+    activeLeftTab_ = tab;
+    const bool source   = (tab == LeftTab::Source);
+    const bool listener = (tab == LeftTab::Listener);
 
-    // Source controls: always visible
-    xKnob_.setVisible(true);
-    xLabel_.setVisible(true);
-    yKnob_.setVisible(true);
-    yLabel_.setVisible(true);
-    zKnob_.setVisible(true);
-    zLabel_.setVisible(true);
-    xLFO_.setVisible(true);
-    yLFO_.setVisible(true);
-    zLFO_.setVisible(true);
-    lfoSpeedMulKnob_.setVisible(true);
-    lfoSpeedMulLabel_.setVisible(true);
-    resetXYZPhasesBtn_.setVisible(true);
+    // Source tab components
+    xKnob_.setVisible(source);
+    xLabel_.setVisible(source);
+    yKnob_.setVisible(source);
+    yLabel_.setVisible(source);
+    zKnob_.setVisible(source);
+    zLabel_.setVisible(source);
+    xLFO_.setVisible(source);
+    yLFO_.setVisible(source);
+    zLFO_.setVisible(source);
+    lfoSpeedMulKnob_.setVisible(source);
+    lfoSpeedMulLabel_.setVisible(source);
+    resetXYZPhasesBtn_.setVisible(source);
 
-    // Walker + perspective knobs: only visible when expanded
-    walkerXKnob_.setVisible(expanded);
-    walkerXLabel_.setVisible(expanded);
-    walkerYKnob_.setVisible(expanded);
-    walkerYLabel_.setVisible(expanded);
-    walkerZKnob_.setVisible(expanded);
-    walkerZLabel_.setVisible(expanded);
-    listenerYawKnob_.setVisible(expanded);
-    listenerYawLabel_.setVisible(expanded);
-    listenerPitchKnob_.setVisible(expanded);
-    listenerPitchLabel_.setVisible(expanded);
-    listenerRollKnob_.setVisible(expanded);
-    listenerRollLabel_.setVisible(expanded);
-
-    // Toggles + remote button: only visible when expanded
-    wasdToggle_.setVisible(expanded);
-    headFollowsToggle_.setVisible(expanded);
-    listenerLinkToggle_.setVisible(expanded);
-    listenerPilotToggle_.setVisible(expanded);
-    pilotStatusLabel_.setVisible(expanded);
-    remoteBtn_.setVisible(expanded);
+    // Listener tab components
+    walkerXKnob_.setVisible(listener);
+    walkerXLabel_.setVisible(listener);
+    walkerYKnob_.setVisible(listener);
+    walkerYLabel_.setVisible(listener);
+    walkerZKnob_.setVisible(listener);
+    walkerZLabel_.setVisible(listener);
+    listenerYawKnob_.setVisible(listener);
+    listenerYawLabel_.setVisible(listener);
+    listenerPitchKnob_.setVisible(listener);
+    listenerPitchLabel_.setVisible(listener);
+    listenerRollKnob_.setVisible(listener);
+    listenerRollLabel_.setVisible(listener);
+    wasdToggle_.setVisible(listener);
+    headFollowsToggle_.setVisible(listener);
+    listenerLinkToggle_.setVisible(listener);
+    listenerPilotToggle_.setVisible(listener);
+    pilotStatusLabel_.setVisible(listener);
+    remoteBtn_.setVisible(listener);
 
     // Only trigger relayout if we've been sized (avoid crash during construction)
     if (getWidth() > 0 && getHeight() > 0) {
@@ -1624,11 +1663,13 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     const bool isPilot  = proc_.isLinkedPilot();
     const bool canControl = !linked || isPilot;
 
-    // Pilot toggle only meaningful when linked
+    // Pilot toggle only meaningful when linked — disable and uncheck when not linked
     listenerPilotToggle_.setEnabled(linked);
+    if (!linked && listenerPilotToggle_.getToggleState())
+        listenerPilotToggle_.setToggleState(false, juce::dontSendNotification);
 
     // Sync toggle state from hub truth (covers cross-instance pilot revocation)
-    if (listenerPilotToggle_.getToggleState() != isPilot)
+    if (linked && listenerPilotToggle_.getToggleState() != isPilot)
         listenerPilotToggle_.setToggleState(isPilot, juce::dontSendNotification);
 
     // Pilot status label — show who the pilot is when this instance isn't it
@@ -1638,7 +1679,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
             pilotStatusLabel_.setText(name + " is the pilot", juce::dontSendNotification);
         else
             pilotStatusLabel_.setText("No pilot set", juce::dontSendNotification);
-        pilotStatusLabel_.setVisible(listenerExpanded_);
+        pilotStatusLabel_.setVisible(activeLeftTab_ == LeftTab::Listener);
     } else {
         pilotStatusLabel_.setText("", juce::dontSendNotification);
         pilotStatusLabel_.setVisible(false);
@@ -1668,11 +1709,15 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
     if (zone != RandZone::None)
         lastClickedZone_ = zone;
 
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Hit-test listener section header — toggle collapse/expand
-    if (pos.y >= lo.listenerHdrY && pos.y < lo.listenerHdrY + kSectionHdrH && pos.x < kLeftColW) {
-        setListenerExpanded(!listenerExpanded_);
+    // Hit-test left column tab header — "Source | Listener"
+    if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
+        const int halfW = kLeftColW / 2;
+        if (pos.x < halfW)
+            setActiveLeftTab(LeftTab::Source);
+        else
+            setActiveLeftTab(LeftTab::Listener);
         return;
     }
 
@@ -1718,11 +1763,13 @@ juce::Image XYZPanEditor::generateNoiseTexture(int size)
 // ---------------------------------------------------------------------------
 bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 {
-    // Consume WASD keys when WASD control is active (actual movement in timerCallback)
+    // Consume WASDQE + Space/X keys when WASD control is active (movement in timerCallback)
     if (wasdToggle_.getToggleState()) {
         const int k = key.getKeyCode();
         if (k == 'W' || k == 'w' || k == 'A' || k == 'a' ||
-            k == 'S' || k == 's' || k == 'D' || k == 'd')
+            k == 'S' || k == 's' || k == 'D' || k == 'd' ||
+            k == 'Q' || k == 'q' || k == 'E' || k == 'e' ||
+            k == 'X' || k == 'x' || k == juce::KeyPress::spaceKey)
             return true;
     }
 
@@ -1755,7 +1802,7 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 }
 
 // ---------------------------------------------------------------------------
-// endWasdGestureIfActive — close automation gesture on walker params
+// endWasdGestureIfActive — close automation gesture on walker + roll params
 // ---------------------------------------------------------------------------
 void XYZPanEditor::endWasdGestureIfActive()
 {
@@ -1763,6 +1810,7 @@ void XYZPanEditor::endWasdGestureIfActive()
     if (auto* px = proc_.apvts.getParameter(ParamID::WALKER_X)) px->endChangeGesture();
     if (auto* py = proc_.apvts.getParameter(ParamID::WALKER_Y)) py->endChangeGesture();
     if (auto* pz = proc_.apvts.getParameter(ParamID::WALKER_Z)) pz->endChangeGesture();
+    if (auto* pr = proc_.apvts.getParameter(ParamID::LISTENER_ROLL)) pr->endChangeGesture();
     wasdGestureActive_ = false;
 }
 
@@ -1805,73 +1853,108 @@ void XYZPanEditor::timerCallback()
         return;
     }
 
-    // Check which WASD keys are currently held
+    // Check which WASDQEZX keys are currently held
     const bool w = juce::KeyPress::isKeyCurrentlyDown('W') || juce::KeyPress::isKeyCurrentlyDown('w');
     const bool a = juce::KeyPress::isKeyCurrentlyDown('A') || juce::KeyPress::isKeyCurrentlyDown('a');
     const bool s = juce::KeyPress::isKeyCurrentlyDown('S') || juce::KeyPress::isKeyCurrentlyDown('s');
     const bool d = juce::KeyPress::isKeyCurrentlyDown('D') || juce::KeyPress::isKeyCurrentlyDown('d');
+    const bool q = juce::KeyPress::isKeyCurrentlyDown('Q') || juce::KeyPress::isKeyCurrentlyDown('q');
+    const bool e = juce::KeyPress::isKeyCurrentlyDown('E') || juce::KeyPress::isKeyCurrentlyDown('e');
+    const bool space = juce::KeyPress::isKeyCurrentlyDown(juce::KeyPress::spaceKey);
+    const bool x = juce::KeyPress::isKeyCurrentlyDown('X') || juce::KeyPress::isKeyCurrentlyDown('x');
 
-    if (!w && !a && !s && !d) {
+    if (!w && !a && !s && !d && !q && !e && !space && !x) {
         endWasdGestureIfActive();
         return;
     }
 
-    // Build local-space input: fwd = forward/back, strafe = left/right
-    float fwd = 0.0f, strafe = 0.0f;
-    if (w) fwd    += 1.0f;
-    if (s) fwd    -= 1.0f;
-    if (d) strafe += 1.0f;
-    if (a) strafe -= 1.0f;
-
-    // Read head orientation (degrees → radians)
-    // Engine coordinate system: yaw rotates in X/Y plane, pitch tilts into Z
-    constexpr float kDeg2Rad = 3.14159265358979323846f / 180.0f;
-    const float yaw   = proc_.apvts.getRawParameterValue(ParamID::LISTENER_YAW)->load()   * kDeg2Rad;
-    const float pitch = proc_.apvts.getRawParameterValue(ParamID::LISTENER_PITCH)->load() * kDeg2Rad;
-
-    // Forward vector from yaw + pitch (engine: yaw in XY plane, pitch tilts Z)
-    const float cosY = std::cos(yaw);
-    const float sinY = std::sin(yaw);
-    const float cosP = std::cos(pitch);
-    const float sinP = std::sin(pitch);
-
-    // Forward direction the head is looking
-    const float fwdX = -sinY * cosP;
-    const float fwdY =  cosY * cosP;
-    const float fwdZ =  sinP;
-
-    // Right vector: perpendicular to forward in the horizontal (XY) plane
-    const float rightX =  cosY;
-    const float rightY =  sinY;
-    // rightZ = 0 (strafe stays horizontal)
-
-    // Combine into world-space delta
-    const float dx = fwd * fwdX + strafe * rightX;
-    const float dy = fwd * fwdY + strafe * rightY;
-    const float dz = fwd * fwdZ;
-
-    // Movement speed: ~0.5 units/sec at 60 Hz → 0.008 per tick
-    constexpr float speed = 0.008f;
-
     auto* px = proc_.apvts.getParameter(ParamID::WALKER_X);
     auto* py = proc_.apvts.getParameter(ParamID::WALKER_Y);
     auto* pz = proc_.apvts.getParameter(ParamID::WALKER_Z);
+    auto* pr = proc_.apvts.getParameter(ParamID::LISTENER_ROLL);
     if (px == nullptr || py == nullptr || pz == nullptr) return;
 
-    const float newX = juce::jlimit(-1.0f, 1.0f, px->convertFrom0to1(px->getValue()) + dx * speed);
-    const float newY = juce::jlimit(-1.0f, 1.0f, py->convertFrom0to1(py->getValue()) + dy * speed);
-    const float newZ = juce::jlimit(-1.0f, 1.0f, pz->convertFrom0to1(pz->getValue()) + dz * speed);
-
+    // Begin gesture for all movement params at once (ended together in endWasdGestureIfActive)
     if (!wasdGestureActive_) {
         px->beginChangeGesture();
         py->beginChangeGesture();
         pz->beginChangeGesture();
+        if (pr) pr->beginChangeGesture();
         wasdGestureActive_ = true;
     }
 
-    px->setValueNotifyingHost(px->convertTo0to1(newX));
-    py->setValueNotifyingHost(py->convertTo0to1(newY));
-    pz->setValueNotifyingHost(pz->convertTo0to1(newZ));
+    // --- Q/E: Roll control ---
+    if ((q || e) && pr != nullptr) {
+        constexpr float rollSpeed = 1.5f;  // degrees per 60Hz tick (~90°/sec)
+        float rollDelta = 0.0f;
+        if (e) rollDelta += rollSpeed;
+        if (q) rollDelta -= rollSpeed;
+
+        float curRoll = pr->convertFrom0to1(pr->getValue());
+        float newRoll = curRoll + rollDelta;
+        if (newRoll > 180.0f)  newRoll -= 360.0f;
+        if (newRoll < -180.0f) newRoll += 360.0f;
+        pr->setValueNotifyingHost(pr->convertTo0to1(newRoll));
+    }
+
+    // --- WASD + Space/X: Position movement ---
+    if (w || a || s || d || space || x) {
+        float fwd = 0.0f, strafe = 0.0f, vert = 0.0f;
+        if (w) fwd      += 1.0f;
+        if (s) fwd      -= 1.0f;
+        if (d) strafe   += 1.0f;
+        if (a) strafe   -= 1.0f;
+        if (space) vert += 1.0f;   // Space = up
+        if (x) vert     -= 1.0f;   // X = down
+
+        constexpr float kDeg2Rad = 3.14159265358979323846f / 180.0f;
+        const float yaw   = proc_.apvts.getRawParameterValue(ParamID::LISTENER_YAW)->load()   * kDeg2Rad;
+        const float pitch = proc_.apvts.getRawParameterValue(ParamID::LISTENER_PITCH)->load() * kDeg2Rad;
+        const float roll  = proc_.apvts.getRawParameterValue(ParamID::LISTENER_ROLL)->load()  * kDeg2Rad;
+
+        const float cosY = std::cos(yaw);
+        const float sinY = std::sin(yaw);
+        const float cosP = std::cos(pitch);
+        const float sinP = std::sin(pitch);
+        const float cosR = std::cos(roll);
+        const float sinR = std::sin(roll);
+
+        // Forward direction the head is looking
+        const float fwdX = -sinY * cosP;
+        const float fwdY =  cosY * cosP;
+        const float fwdZ =  sinP;
+
+        // Right and up vectors before roll
+        const float r0X =  cosY;
+        const float r0Y =  sinY;
+        const float r0Z =  0.0f;
+
+        const float u0X =  sinY * sinP;
+        const float u0Y = -cosY * sinP;
+        const float u0Z =  cosP;
+
+        // Apply roll: rotate right and up around the forward axis
+        const float rightX = r0X * cosR + u0X * sinR;
+        const float rightY = r0Y * cosR + u0Y * sinR;
+        const float rightZ = r0Z * cosR + u0Z * sinR;
+
+        const float upX = -r0X * sinR + u0X * cosR;
+        const float upY = -r0Y * sinR + u0Y * cosR;
+        const float upZ = -r0Z * sinR + u0Z * cosR;
+
+        const float dx = fwd * fwdX + strafe * rightX + vert * upX;
+        const float dy = fwd * fwdY + strafe * rightY + vert * upY;
+        const float dz = fwd * fwdZ + strafe * rightZ + vert * upZ;
+
+        constexpr float speed = 0.008f;
+        const float newX = juce::jlimit(-1.0f, 1.0f, px->convertFrom0to1(px->getValue()) + dx * speed);
+        const float newY = juce::jlimit(-1.0f, 1.0f, py->convertFrom0to1(py->getValue()) + dy * speed);
+        const float newZ = juce::jlimit(-1.0f, 1.0f, pz->convertFrom0to1(pz->getValue()) + dz * speed);
+
+        px->setValueNotifyingHost(px->convertTo0to1(newX));
+        py->setValueNotifyingHost(py->convertTo0to1(newY));
+        pz->setValueNotifyingHost(pz->convertTo0to1(newZ));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1879,13 +1962,16 @@ void XYZPanEditor::timerCallback()
 // ---------------------------------------------------------------------------
 XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) const
 {
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
     const int x = pos.x;
     const int y = pos.y;
 
-    // Left column: source section or listener section
+    // Left column: depends on active tab
     if (x >= 0 && x < kLeftColW && y >= kPresetBarH && y < lo.bottomY) {
-        // Check individual LFO strips by testing component bounds
+        if (activeLeftTab_ == LeftTab::Listener)
+            return RandZone::Perspective;
+
+        // Source tab — check individual LFO strips
         auto inBounds = [&](const LFOStrip& strip) {
             auto b = strip.getBounds();
             return b.contains(x, y);
@@ -1893,10 +1979,6 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
         if (inBounds(xLFO_)) return RandZone::LfoX;
         if (inBounds(yLFO_)) return RandZone::LfoY;
         if (inBounds(zLFO_)) return RandZone::LfoZ;
-
-        // Listener section = perspective randomization zone
-        if (y >= lo.listenerHdrY)
-            return RandZone::Perspective;
 
         return RandZone::Position;
     }
@@ -2035,9 +2117,9 @@ void XYZPanEditor::randomizeReverb()
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizePerspective()
 {
-    randomizeAPVTSParam(ParamID::LISTENER_YAW,   0.0f, 360.0f);
-    randomizeAPVTSParam(ParamID::LISTENER_PITCH,  0.0f, 360.0f);
-    randomizeAPVTSParam(ParamID::LISTENER_ROLL,   0.0f, 360.0f);
+    randomizeAPVTSParam(ParamID::LISTENER_YAW,   -180.0f, 180.0f);
+    randomizeAPVTSParam(ParamID::LISTENER_PITCH,  -180.0f, 180.0f);
+    randomizeAPVTSParam(ParamID::LISTENER_ROLL,   -180.0f, 180.0f);
 }
 
 // ---------------------------------------------------------------------------

@@ -611,11 +611,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     // Listener head orientation (user-facing)
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_YAW, 1}, "Listener Yaw",
-        NR(0.0f, 360.0f, 0.1f), 0.0f));
+        NR(-180.0f, 180.0f, 0.1f), 0.0f));
     layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_PITCH, 1}, "Listener Pitch",
-        NR(0.0f, 360.0f, 0.1f), 0.0f));
+        NR(-180.0f, 180.0f, 0.1f), 0.0f));
     layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_ROLL, 1}, "Listener Roll",
-        NR(0.0f, 360.0f, 0.1f), 0.0f));
+        NR(-180.0f, 180.0f, 0.1f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ParamID::HEAD_FOLLOWS_CAMERA, 1}, "Head Follows Camera", false,
         juce::AudioParameterBoolAttributes().withAutomatable(false)));

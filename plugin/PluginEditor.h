@@ -204,9 +204,10 @@ private:
     juce::Label instanceNameLabel_;             // "Name:" label
     juce::TextEditor instanceNameEditor_;       // editable own-instance name
 
-    // Collapsible listener section in left column
-    bool listenerExpanded_ = false;
-    void setListenerExpanded(bool expanded);
+    // Left column tab: Source (X/Y/Z + LFOs) vs Listener (Walker + orientation + toggles)
+    enum class LeftTab { Source, Listener };
+    LeftTab activeLeftTab_ = LeftTab::Source;
+    void setActiveLeftTab(LeftTab tab);
 
     // Remote popup button (visible when linked instances >= 2)
     juce::TextButton remoteBtn_{"Remote"};
@@ -314,9 +315,10 @@ private:
         int lfoX;           // = left edge of orbit LFO strips (after cap)
         int lfoTotalW;      // = capped width of orbit LFO strips
         int contentTop;     // = bottomY + kSectionHdrH
-        int listenerHdrY;   // = Y position of listener section header in left column
+        int leftContentTop; // = contentY + kSectionHdrH (top of left column content)
+        int leftContentH;   // = bottomY - leftContentTop (left column content height)
 
-        static Layout compute(int totalW, int totalH, bool listenerExpanded);
+        static Layout compute(int totalW, int totalH);
     };
 
     void updateOrbitEnabled();

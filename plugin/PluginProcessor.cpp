@@ -1085,6 +1085,7 @@ void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
         xml->setAttribute("nameManuallySet", nameManuallySet_ ? 1 : 0);
     }
 
+    xml->setAttribute("stateVersion", 2);
     copyXmlToBinary(*xml, destData);
 }
 
@@ -1094,6 +1095,27 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
         // Restore instance name before replacing state
         instanceName_     = xml->getStringAttribute("instanceName", "");
         nameManuallySet_  = xml->getIntAttribute("nameManuallySet", 0) != 0;
+
+        // Migrate v1 presets: yaw/pitch/roll were 0–360, now -180–180.
+        // APVTS stores normalized 0–1 values. Old: norm = deg/360.
+        // Convert: oldDeg = norm * 360; if > 180 then oldDeg -= 360;
+        // newNorm = (oldDeg + 180) / 360.
+        if (xml->getIntAttribute("stateVersion", 1) < 2) {
+            for (int i = 0; i < xml->getNumChildElements(); ++i) {
+                auto* child = xml->getChildElement(i);
+                if (child->hasTagName("PARAM")) {
+                    auto id = child->getStringAttribute("id");
+                    if (id == "listener_yaw" || id == "listener_pitch" || id == "listener_roll") {
+                        float norm = static_cast<float>(child->getDoubleAttribute("value", 0.0));
+                        float oldDeg = norm * 360.0f;           // old range 0–360
+                        if (oldDeg > 180.0f) oldDeg -= 360.0f;  // now -180–180
+                        float newNorm = (oldDeg + 180.0f) / 360.0f;
+                        child->setAttribute("value", static_cast<double>(newNorm));
+                    }
+                }
+            }
+        }
+
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
     }
 }

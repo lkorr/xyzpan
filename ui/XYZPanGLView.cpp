@@ -149,16 +149,9 @@ void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
         return;
 
     if (id == "listener_yaw")
-        camera_.yaw = newValue;              // both use 0–360°
-    else if (id == "listener_pitch") {
-        // Param is 0–360° (negated + wrapped from camera pitch).
-        // Reverse: negate, then normalize to [-180, 180) so the camera
-        // stays in its expected [-89, 89] range.
-        float p = -newValue;
-        if (p < -180.0f) p += 360.0f;
-        else if (p > 180.0f) p -= 360.0f;
-        camera_.pitch = p;
-    }
+        camera_.yaw = newValue;              // both use -180..180°
+    else if (id == "listener_pitch")
+        camera_.pitch = -newValue;           // negate: param and camera pitch conventions differ
     else if (id == "listener_roll")
         camera_.roll = newValue;
 }
@@ -320,12 +313,14 @@ void XYZPanGLView::renderOpenGL()
         }
 
         if (headFollowsActive_ && toggleOn) {
-            // Map camera yaw/pitch/roll to listener params (wrap to 0–360°)
+            // Map camera yaw/pitch/roll to listener params (wrap to -180..180°)
             // camera_.yaw, camera_.pitch, and camera_.roll are already in degrees
             float camYawDeg = std::fmod(camera_.yaw, 360.0f);
-            if (camYawDeg < 0.0f) camYawDeg += 360.0f;
+            if (camYawDeg > 180.0f)  camYawDeg -= 360.0f;
+            if (camYawDeg < -180.0f) camYawDeg += 360.0f;
             float camPitchDeg = std::fmod(-camera_.pitch, 360.0f);
-            if (camPitchDeg < 0.0f) camPitchDeg += 360.0f;
+            if (camPitchDeg > 180.0f)  camPitchDeg -= 360.0f;
+            if (camPitchDeg < -180.0f) camPitchDeg += 360.0f;
             // Guard: suppress parameterChanged echoes from our own writes.
             // shared_ptr captured by value so lambda is safe if GLView is destroyed first.
             auto flag = drivingParamsFromCamera_;
