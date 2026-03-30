@@ -1919,28 +1919,24 @@ void XYZPanEditor::timerCallback()
         const float cosR = std::cos(roll);
         const float sinR = std::sin(roll);
 
-        // Forward direction the head is looking
+        // Rotation matrix R = Rz(yaw) * Rx(pitch) * Ry(roll)
+        // Engine coords: X=right, Y=forward, Z=up
+        // Yaw around Z, pitch around X, roll around Y (forward axis)
+
+        // Forward (Y-axis column of R — roll doesn't change gaze direction)
         const float fwdX = -sinY * cosP;
         const float fwdY =  cosY * cosP;
         const float fwdZ =  sinP;
 
-        // Right and up vectors before roll
-        const float r0X =  cosY;
-        const float r0Y =  sinY;
-        const float r0Z =  0.0f;
+        // Right (X-axis column of R)
+        const float rightX =  cosY * cosR - sinY * sinP * sinR;
+        const float rightY =  sinY * cosR + cosY * sinP * sinR;
+        const float rightZ = -cosP * sinR;
 
-        const float u0X =  sinY * sinP;
-        const float u0Y = -cosY * sinP;
-        const float u0Z =  cosP;
-
-        // Apply roll: rotate right and up around the forward axis
-        const float rightX = r0X * cosR + u0X * sinR;
-        const float rightY = r0Y * cosR + u0Y * sinR;
-        const float rightZ = r0Z * cosR + u0Z * sinR;
-
-        const float upX = -r0X * sinR + u0X * cosR;
-        const float upY = -r0Y * sinR + u0Y * cosR;
-        const float upZ = -r0Z * sinR + u0Z * cosR;
+        // Up (Z-axis column of R)
+        const float upX = cosY * sinR + sinY * sinP * cosR;
+        const float upY = sinY * sinR - cosY * sinP * cosR;
+        const float upZ = cosP * cosR;
 
         const float dx = fwd * fwdX + strafe * rightX + vert * upX;
         const float dy = fwd * fwdY + strafe * rightY + vert * upY;
