@@ -208,8 +208,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(wasdToggle_);
     wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
 
-    // Listener section starts collapsed — mini knobs visible, full controls hidden
-    setListenerExpanded(false);
+    // All controls visible by default in two-zone layout
     updateListenerControlsEnabled();
 
     binauralToggle_.setButtonText("");
@@ -800,7 +799,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Window sizing
     setResizable(true, true);
-    setResizeLimits(915, 650, 1800, 1600);
+    setResizeLimits(900, 500, 1800, 1600);
     setSize(kDefaultW, kDefaultH);
 }
 
@@ -826,25 +825,32 @@ XYZPanEditor::~XYZPanEditor()
 // ---------------------------------------------------------------------------
 // Layout::compute — single source of structural geometry used by paint + resized
 // ---------------------------------------------------------------------------
-XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool listenerExpanded)
+XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 {
     Layout l;
-    l.contentY    = kPresetBarH;
-    l.leftColH    = totalH - kBottomH - kPresetBarH;
-    l.bottomY     = totalH - kBottomH;
-    const int maxStripW = 185;
-    const int availLfoW = totalW - kMeterW - kOrbitCtrlW - kReverbSectionW;
-    l.lfoTotalW   = juce::jmin(availLfoW, maxStripW * 3);
-    l.lfoX        = kOrbitCtrlW;
-    l.reverbX     = l.lfoX + l.lfoTotalW;
-    l.orbitTotalW = l.reverbX;
-    l.contentTop  = l.bottomY + kSectionHdrH;
+    l.contentW   = totalW - kMeterW;
 
-    // Listener section lives at the bottom of the left column.
-    // Collapsed: just the header (24px)
-    // Expanded:  header (24) + walker knobs (70) + perspective (64) + toggles (44) = 202px
-    const int listenerH = listenerExpanded ? 202 : kSectionHdrH;
-    l.listenerHdrY = l.bottomY - listenerH;
+    // Two-zone split: top = GL viewport, bottom = control columns
+    l.viewportH  = juce::jmax(kMinViewportH,
+                     static_cast<int>(totalH * kViewportFrac));
+    l.bottomH    = juce::jmax(kMinBottomH, totalH - l.viewportH);
+    l.viewportH  = totalH - l.bottomH;  // re-derive after clamping bottomH
+    l.bottomY    = l.viewportH;
+
+    // Tab bar sits at the very bottom of the window
+    l.tabBarY    = totalH - kTabBarH;
+
+    // Column content area: below section headers, above tab bar
+    l.contentY   = l.bottomY + kSectionHdrH;
+    l.contentH   = l.tabBarY - l.contentY;
+
+    // Three equal columns (with separators eaten from center)
+    const int availW = l.contentW - kColSepW * 2;  // 2 vertical separators
+    l.leftColW   = availW / 3;
+    l.centerColW = availW / 3;
+    l.rightColW  = availW - l.leftColW - l.centerColW;  // absorb rounding
+    l.centerColX = l.leftColW + kColSepW;
+    l.rightColX  = l.centerColX + l.centerColW + kColSepW;
 
     return l;
 }
@@ -855,24 +861,16 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool 
 void XYZPanEditor::paint(juce::Graphics& g)
 {
     const auto& ct = lookAndFeel_.currentTheme();
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
-    const int bx = 0;
-    const int bw = getWidth() - kMeterW;
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
     // ===== BACKGROUNDS =====
     g.fillAll(juce::Colour(ct.background));
 
-    // Left column background (below preset bar)
+    // Bottom zone background
     g.setColour(juce::Colour(ct.darkIron));
-    g.fillRect(0, lo.contentY, kLeftColW, lo.leftColH);
+    g.fillRect(0, lo.bottomY, lo.contentW, lo.bottomH);
 
-    // Bottom row background
-    g.setColour(juce::Colour(ct.darkIron));
-    g.fillRect(0, lo.bottomY, bw, kBottomH);
-
-    // ===== SECTION HEADERS =====
-
-    // Helper lambda for section headers
+    // ===== SECTION HEADERS (one per column) =====
     auto drawHeader = [&](int x, int y, int w, const juce::String& text) {
         auto hdrRect = juce::Rectangle<int>(x, y, w, kSectionHdrH);
         g.setGradientFill(juce::ColourGradient(
@@ -880,146 +878,115 @@ void XYZPanEditor::paint(juce::Graphics& g)
             juce::Colour(ct.darkIron), static_cast<float>(x + w), static_cast<float>(y), false));
         g.fillRect(hdrRect);
         g.setColour(juce::Colour(ct.brightGold));
-        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-        g.drawText(text, hdrRect.reduced(10, 0), juce::Justification::centredLeft);
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText(text, hdrRect.reduced(8, 0), juce::Justification::centredLeft);
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
-    // Left column: "SOURCE" header (always visible)
-    drawHeader(0, lo.contentY, kLeftColW, "SOURCE");
+    if (activeViewTab_ == ViewTab::Source) {
+        // Column headers
+        drawHeader(0,             lo.bottomY, lo.leftColW,   "STEREO");
+        drawHeader(lo.centerColX, lo.bottomY, lo.centerColW, "SOURCE");
+        drawHeader(lo.rightColX,  lo.bottomY, lo.rightColW,  "LISTENER");
 
-    // Listener section header with collapse indicator (below source section)
-    {
-        const int listenerHdrY = lo.listenerHdrY;
-        auto hdrRect = juce::Rectangle<int>(0, listenerHdrY, kLeftColW, kSectionHdrH);
-        g.setGradientFill(juce::ColourGradient(
-            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(listenerHdrY),
-            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(listenerHdrY), false));
-        g.fillRect(hdrRect);
-        g.setColour(juce::Colour(ct.brightGold));
-        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-        // Disclosure triangle + "LISTENER"
-        juce::String listenerTitle = listenerExpanded_ ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc"))
-                                                       : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"));
-        listenerTitle += " LISTENER";
-        g.drawText(listenerTitle, hdrRect.reduced(10, 0), juce::Justification::centredLeft);
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
-        g.drawHorizontalLine(listenerHdrY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
+        // Remote focus indicator — colored bar below source header
+        if (remoteFocusIndex_ >= 0) {
+            const int barH = 3;
+            const int barY = lo.bottomY + kSectionHdrH;
+            g.setColour(kPaletteColours[remoteFocusIndex_ % 8]);
+            g.fillRect(lo.centerColX, barY, lo.centerColW, barH);
+        }
+
+        // ===== COLUMN DIVIDERS =====
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+        // Left | Center separator
+        g.drawVerticalLine(lo.centerColX - 1,
+                           static_cast<float>(lo.bottomY),
+                           static_cast<float>(lo.tabBarY));
+        // Center | Right separator
+        g.drawVerticalLine(lo.rightColX - 1,
+                           static_cast<float>(lo.bottomY),
+                           static_cast<float>(lo.tabBarY));
+
+        // Horizontal separator between STEREO and REVERB in left column (midpoint)
+        {
+            const int midY = lo.contentY + lo.contentH / 2;
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.3f));
+            g.drawHorizontalLine(midY, 0.0f, static_cast<float>(lo.leftColW));
+            // "REVERB" sub-header
+            g.setColour(juce::Colour(ct.brightGold).withAlpha(0.8f));
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("REVERB", 8, midY + 2, lo.leftColW - 16, 14, juce::Justification::centredLeft);
+        }
+
+        // Horizontal separator between SOURCE and OPTIONS in center column
+        {
+            const int midY = lo.contentY + lo.contentH / 2;
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.3f));
+            g.drawHorizontalLine(midY, static_cast<float>(lo.centerColX),
+                                 static_cast<float>(lo.centerColX + lo.centerColW));
+            // "OPTIONS" sub-header
+            g.setColour(juce::Colour(ct.brightGold).withAlpha(0.8f));
+            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.drawText("OPTIONS", lo.centerColX + 8, midY + 2, lo.centerColW - 16, 14,
+                       juce::Justification::centredLeft);
+        }
+    } else {
+        // Customize tab — single header
+        drawHeader(0, lo.bottomY, lo.contentW, "CUSTOMIZE");
     }
 
-    // Remote focus indicator — colored bar below source header
-    if (remoteFocusIndex_ >= 0) {
-        const int barH = 3;
-        const int barY = lo.contentY + kSectionHdrH;
-        g.setColour(kPaletteColours[remoteFocusIndex_ % 8]);
-        g.fillRect(0, barY, kLeftColW, barH);
-    }
+    // ===== MAIN STRUCTURAL DIVIDERS =====
+    // Horizontal separator between viewport and bottom zone
+    g.setColour(juce::Colour(ct.bronze));
+    g.fillRect(0, lo.bottomY, lo.contentW, 2);
 
-    // Bottom row header — "OPTIONS" + orbit LFO plane labels (XY / XZ / YZ)
+    // ===== TAB BAR =====
     {
-        const int hdrY = lo.bottomY;
-        const int fullW = kOrbitCtrlW + lo.lfoTotalW;
+        const int ty = lo.tabBarY;
+        // Tab bar background
+        g.setColour(juce::Colour(ct.darkIron).darker(0.15f));
+        g.fillRect(0, ty, lo.contentW, kTabBarH);
 
-        // Background gradient for full header width
-        auto hdrRect = juce::Rectangle<int>(bx, hdrY, fullW, kSectionHdrH);
-        g.setGradientFill(juce::ColourGradient(
-            juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(bx), static_cast<float>(hdrY),
-            juce::Colour(ct.darkIron), static_cast<float>(bx + fullW), static_cast<float>(hdrY), false));
-        g.fillRect(hdrRect);
+        // Separator above tab bar
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+        g.drawHorizontalLine(ty, 0.0f, static_cast<float>(lo.contentW));
 
-        // Bottom line
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
-        g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(bx), static_cast<float>(bx + fullW));
-
-        // Tab labels — "Options" | "Customize"
-        const int halfTab = kOrbitCtrlW / 2;
+        // Tab labels
         g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        const int tabW = lo.contentW / 2;
 
-        auto tabColor = [&](OptionsTab t) {
-            return activeTab_ == t
+        auto tabColor = [&](ViewTab t) {
+            return activeViewTab_ == t
                 ? juce::Colour(ct.brightGold)
                 : juce::Colour(ct.bronze);
         };
 
-        g.setColour(tabColor(OptionsTab::Options));
-        g.drawText("Options", bx, hdrY, halfTab, kSectionHdrH, juce::Justification::centred);
+        g.setColour(tabColor(ViewTab::Source));
+        g.drawText("Source", 0, ty, tabW, kTabBarH, juce::Justification::centred);
 
-        g.setColour(tabColor(OptionsTab::Customize));
-        g.drawText("Customize", bx + halfTab, hdrY, kOrbitCtrlW - halfTab, kSectionHdrH, juce::Justification::centred);
+        g.setColour(tabColor(ViewTab::Customize));
+        g.drawText("Customize", tabW, ty, lo.contentW - tabW, kTabBarH, juce::Justification::centred);
 
-        // Orbit LFO plane labels (XY / XZ / YZ) in the right portion
-        const int lfoX = lo.lfoX;
-        const int stripW = lo.lfoTotalW / 3;
-        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-        g.drawText("XY", lfoX,              hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
-        g.drawText("XZ", lfoX + stripW,     hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
-        g.drawText("YZ", lfoX + stripW * 2, hdrY, stripW,     kSectionHdrH, juce::Justification::centred);
-    }
-
-    // "REVERB" header — bottom row, reverb portion
-    drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW, "REVERB");
-
-    // ===== DIVIDERS — SOURCE SECTION (always visible) =====
-    {
-        // Thin bronze separator above LFO Speed slider row
+        // Gold underline on active tab
         {
-            const int lfoSpeedRowH = 32;
-            const int lfoSpeedSepY = lo.listenerHdrY - lfoSpeedRowH;
-            g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-            g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
-        }
-
-        // Vertical dividers between X | Y | Z sub-columns (from source header to LFO speed row)
-        {
-            const int subColW = kLeftColW / 3;
-            const float divTop = static_cast<float>(lo.contentY + kSectionHdrH);
-            const int lfoSpeedRowH = 32;
-            const float divBot = static_cast<float>(lo.listenerHdrY - lfoSpeedRowH);
-            g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-            g.drawVerticalLine(subColW,     divTop, divBot);
-            g.drawVerticalLine(subColW * 2, divTop, divBot);
+            const int ulH = 2;
+            g.setColour(juce::Colour(ct.brightGold));
+            if (activeViewTab_ == ViewTab::Source)
+                g.fillRect(tabW / 4, ty + kTabBarH - ulH, tabW / 2, ulH);
+            else
+                g.fillRect(tabW + tabW / 4, ty + kTabBarH - ulH, (lo.contentW - tabW) / 2, ulH);
         }
     }
 
-    // ===== DIVIDERS — BOTTOM ROW =====
-    // Vertical divider between orbit controls and orbit LFO strips
+    // ===== PRESET BAR BACKGROUND (semi-transparent overlay at top of viewport) =====
+    g.setColour(juce::Colour(ct.darkIron).withAlpha(0.75f));
+    g.fillRect(0, 0, lo.contentW, kPresetBarH);
     g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-    g.drawVerticalLine(lo.lfoX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
-
-    // Vertical dividers between orbit LFO strips (XY | XZ | YZ)
-    // and thin horizontal separator above orbit speed row
-    {
-        const int lfoX = lo.lfoX;
-        const int lfoTotalW = lo.lfoTotalW;
-        const int stripW = lfoTotalW / 3;
-        const int speedRowH = 32;
-        const int speedSepY = lo.bottomY + kBottomH - speedRowH;
-        g.drawVerticalLine(lfoX + stripW,     static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
-        g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
-        // Thin bronze separator above orbit speed slider row
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(speedSepY, static_cast<float>(lfoX), static_cast<float>(lfoX + lfoTotalW));
-    }
-
-    // Vertical divider between orbit section and reverb section
-    g.setColour(juce::Colour(ct.bronze));
-    g.fillRect(lo.reverbX - 1, lo.bottomY, 2, kBottomH);
-
-    // ===== MAIN STRUCTURAL DIVIDERS =====
-    // Vertical separator (left column | GL view), from below preset bar
-    g.setColour(juce::Colour(ct.bronze));
-    g.fillRect(kLeftColW - 1, lo.contentY, 2, lo.leftColH);
-
-    // Horizontal separator (above bottom row)
-    g.fillRect(0, lo.bottomY, bw, 2);
-
-    // Thin separator below preset bar
-    g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-    g.drawHorizontalLine(kPresetBarH - 1, 0.0f, static_cast<float>(bw));
+    g.drawHorizontalLine(kPresetBarH - 1, 0.0f, static_cast<float>(lo.contentW));
 
     // ===== NOISE TEXTURE OVERLAY =====
-    // Tile procedural noise at low opacity over left column and bottom row panels
     if (noiseTexture_.isValid()) {
         const int nw = noiseTexture_.getWidth();
         const int nh = noiseTexture_.getHeight();
@@ -1027,20 +994,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.saveState();
         g.setOpacity(0.04f);
 
-        // Left column
-        g.reduceClipRegion(0, lo.contentY, kLeftColW, lo.leftColH);
-        for (int ty = lo.contentY; ty < lo.contentY + lo.leftColH; ty += nh)
-            for (int tx = 0; tx < kLeftColW; tx += nw)
-                g.drawImageAt(noiseTexture_, tx, ty);
-
-        g.restoreState();
-        g.saveState();
-        g.setOpacity(0.04f);
-
-        // Bottom row
-        g.reduceClipRegion(0, lo.bottomY, bw, kBottomH);
-        for (int ty = lo.bottomY; ty < lo.bottomY + kBottomH; ty += nh)
-            for (int tx = 0; tx < bw; tx += nw)
+        // Bottom zone only
+        g.reduceClipRegion(0, lo.bottomY, lo.contentW, lo.bottomH);
+        for (int ty = lo.bottomY; ty < lo.bottomY + lo.bottomH; ty += nh)
+            for (int tx = 0; tx < lo.contentW; tx += nw)
                 g.drawImageAt(noiseTexture_, tx, ty);
 
         g.restoreState();
@@ -1052,11 +1009,17 @@ void XYZPanEditor::paint(juce::Graphics& g)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::resized()
 {
-    auto b = getLocalBounds();
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Preset bar at the very top (full width)
+    // Output meter strip — full height right edge
+    outputMeter_.setBounds(lo.contentW, 0, kMeterW, getHeight());
+
+    // ===== GL VIEW (full width, top zone) =====
+    glView_.setBounds(0, 0, lo.contentW, lo.viewportH);
+
+    // Preset bar overlays top of GL view (stays as editor child, z-ordered on top)
     {
-        auto presetBar = b.removeFromTop(kPresetBarH);
+        auto presetBar = juce::Rectangle<int>(0, 0, lo.contentW, kPresetBarH);
         auto saveBtnArea = presetBar.removeFromRight(60);
         auto loadBtnArea = presetBar.removeFromRight(60);
         presetCombo_.setBounds(presetBar.reduced(kPadding, 2));
@@ -1064,28 +1027,9 @@ void XYZPanEditor::resized()
         presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
     }
 
-    // Output meter strip — full height right edge (below preset bar)
-    auto meterStrip = b.removeFromRight(kMeterW);
-    outputMeter_.setBounds(meterStrip);
-
-    // Carve out bottom row
-    auto bottomRow = b.removeFromBottom(kBottomH);
-    // Carve out left column (from what remains above bottom row)
-    auto leftCol = b.removeFromLeft(kLeftColW);
-    // Remainder = GL view area
-    auto glArea = b;
-
-    // Shared structural geometry — used by both left column and bottom row blocks
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
-
-    // Remote instance list is now rendered as GL view overlay — no left column layout needed
-
-    // ===== GL VIEW =====
-    glView_.setBounds(glArea);
-
     // Snap buttons: top-right corner of GL area (children of glView_, so use local coords)
     {
-        auto snapRow = juce::Rectangle<int>(0, 0, glArea.getWidth(), glArea.getHeight());
+        auto snapRow = juce::Rectangle<int>(0, 0, lo.contentW, lo.viewportH);
         snapRow = snapRow.removeFromTop(kSnapBtnH + 4)
                          .removeFromRight(3 * (kSnapBtnW + 4));
         snapXY_.setBounds(snapRow.removeFromLeft(kSnapBtnW + 4).reduced(2));
@@ -1094,335 +1038,338 @@ void XYZPanEditor::resized()
     }
 
     // Dev panel: child of glView_, right 30% of GL area (or user-dragged width)
-    const int defaultPanelW = static_cast<int>(glArea.getWidth() * 0.30f);
-    const int panelW = devPanel_.getCustomWidth() > 0
-        ? juce::jlimit(200, glArea.getWidth() - 50, devPanel_.getCustomWidth())
-        : defaultPanelW;
-    devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
-
-    // ===== LEFT COLUMN — SOURCE (always visible) + LISTENER (collapsible) =====
-    const int leftColTop = leftCol.getY();  // = kPresetBarH after preset bar removed
-    const int posColW = kLeftColW / 3;
-    const int knobH   = 100;  // slightly reduced from 108 to fit stacked layout
-    const int posPad  = 6;
-
-    // --- SOURCE SECTION (top of left column, down to listener header) ---
     {
-        const int lfoSpeedRowH = 32;
-        const int posSectionBottom = lo.listenerHdrY - lfoSpeedRowH;
-        const int sourceTop = leftColTop + kSectionHdrH;
+        const int defaultPanelW = static_cast<int>(lo.contentW * 0.30f);
+        const int panelW = devPanel_.getCustomWidth() > 0
+            ? juce::jlimit(200, lo.contentW - 50, devPanel_.getCustomWidth())
+            : defaultPanelW;
+        devPanel_.setBounds(lo.contentW - panelW, 0, panelW, lo.viewportH);
+    }
 
-        const int bigLabelH = 20;
-        auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
-                                int colX, int colW, int colTop, int colBottom) {
-            label.setBounds(colX, colTop, colW, bigLabelH);
-            int knobW = juce::jmin(knobH, colW - posPad * 2);
-            int knobX = colX + (colW - knobW) / 2;
-            knob.setBounds(knobX, colTop + bigLabelH, knobW, knobH);
-            int lfoTop = colTop + bigLabelH + knobH + 2;
-            int lfoH = juce::jmax(0, colBottom - lfoTop);
-            lfo.setBounds(colX, lfoTop, colW, lfoH);
+    // ===== BOTTOM ZONE — 3-column layout or Customize tab =====
+    if (activeViewTab_ == ViewTab::Source) {
+        auto leftArea   = juce::Rectangle<int>(0,             lo.contentY, lo.leftColW,   lo.contentH);
+        auto centerArea = juce::Rectangle<int>(lo.centerColX, lo.contentY, lo.centerColW, lo.contentH);
+        auto rightArea  = juce::Rectangle<int>(lo.rightColX,  lo.contentY, lo.rightColW,  lo.contentH);
+
+        layoutLeftCol(leftArea);
+        layoutCenterCol(centerArea);
+        layoutRightCol(rightArea);
+    } else {
+        auto custArea = juce::Rectangle<int>(0, lo.contentY, lo.contentW, lo.contentH);
+        layoutCustomizeTab(custArea);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// layoutLeftCol — STEREO (top half) + REVERB (bottom half)
+// ---------------------------------------------------------------------------
+void XYZPanEditor::layoutLeftCol(juce::Rectangle<int> area)
+{
+    const int pad = kPadding;
+    const int knobSz = kSmallKnobSz;
+    const int labelH = 13;
+    const int sliderH = 20;
+    const int gap = 3;
+
+    // Split into top (stereo) and bottom (reverb) halves
+    const int halfH = area.getHeight() / 2;
+    auto stereoArea = area.removeFromTop(halfH);
+    auto reverbArea = area;  // remaining
+
+    // --- STEREO SECTION ---
+    {
+        const int sx = stereoArea.getX() + pad;
+        const int sw = stereoArea.getWidth() - pad * 2;
+        int sy = stereoArea.getY() + 2;
+
+        // Stereo Width / Offset / Phase as horizontal sliders
+        const int labelW = 46;
+        auto placeSlider = [&](juce::Slider& slider, juce::Label& label) {
+            label.setBounds(sx, sy, labelW, sliderH);
+            slider.setBounds(sx + labelW, sy, sw - labelW, sliderH);
+            sy += sliderH + gap;
+        };
+        placeSlider(stereoWidthKnob_, stereoWidthLabel_);
+        placeSlider(orbitOffsetKnob_, orbitOffsetLabel_);
+        placeSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
+
+        // Face Listener toggle
+        faceListenerToggle_.setBounds(sx, sy, sw, 20);
+        sy += 22;
+
+        // Orbit LFO strips — stack remaining space among 3 strips
+        const int lfoTop = sy;
+        const int lfoAvail = stereoArea.getBottom() - lfoTop;
+        const int speedRowH = 26;
+        const int stripH = juce::jmax(0, (lfoAvail - speedRowH) / 3);
+
+        orbitXYLFO_.setBounds(stereoArea.getX(), lfoTop,                stereoArea.getWidth(), stripH);
+        orbitXZLFO_.setBounds(stereoArea.getX(), lfoTop + stripH,      stereoArea.getWidth(), stripH);
+        orbitYZLFO_.setBounds(stereoArea.getX(), lfoTop + stripH * 2,  stereoArea.getWidth(), stripH);
+
+        // Orbit Speed + Reset row
+        const int speedY = lfoTop + stripH * 3;
+        const int speedLabelW = 48;
+        const int resetBtnW = 40;
+        orbitSpeedMulLabel_.setBounds(sx, speedY + 2, speedLabelW, speedRowH - 4);
+        orbitSpeedMulKnob_.setBounds(sx + speedLabelW, speedY + 2,
+                                      sw - speedLabelW - resetBtnW - 4, speedRowH - 4);
+        resetOrbitPhasesBtn_.setBounds(sx + sw - resetBtnW, speedY + 2, resetBtnW, speedRowH - 4);
+    }
+
+    // --- REVERB SECTION (below midpoint separator — skip sub-header space) ---
+    {
+        const int rx = reverbArea.getX() + pad;
+        const int rw = reverbArea.getWidth() - pad * 2;
+        int ry = reverbArea.getY() + 18;  // skip "REVERB" sub-header painted in paint()
+
+        // 2×2 knob grid
+        const int colW = rw / 2;
+        const int cellH = knobSz + labelH + 2;
+
+        auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col, int row) {
+            int kx = rx + col * colW + (colW - knobSz) / 2;
+            int ky = ry + row * cellH;
+            knob.setBounds(kx, ky, knobSz, knobSz);
+            label.setBounds(rx + col * colW, ky + knobSz, colW, labelH);
+        };
+        placeKnob(verbSize_,    verbSizeL_,    0, 0);
+        placeKnob(verbDecay_,   verbDecayL_,   1, 0);
+        placeKnob(verbDamping_, verbDampingL_, 0, 1);
+        placeKnob(verbWet_,     verbWetL_,     1, 1);
+
+        // Early Reflections toggle + Binaural toggle below reverb knobs
+        const int toggleY = ry + cellH * 2 + 2;
+        const int toggleH = 18;
+        earlyReflToggle_.setBounds(rx, toggleY, 20, toggleH);
+        earlyReflLabel_.setBounds(rx + 22, toggleY, rw - 22, toggleH);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// layoutCenterCol — SOURCE (X/Y/Z knobs + LFOs, top) + OPTIONS (bottom)
+// ---------------------------------------------------------------------------
+void XYZPanEditor::layoutCenterCol(juce::Rectangle<int> area)
+{
+    const int pad = kPadding;
+    const int knobSz = 68;  // slightly larger for hero X/Y/Z knobs
+    const int labelH = 18;
+
+    // Split into top (source) and bottom (options) halves
+    const int halfH = area.getHeight() / 2;
+    auto sourceArea = area.removeFromTop(halfH);
+    auto optionsArea = area;
+
+    // --- SOURCE: X / Y / Z knobs in a row ---
+    {
+        const int colW = sourceArea.getWidth() / 3;
+        int sy = sourceArea.getY() + 2;
+
+        auto layoutKnobCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
+                                  int colIdx) {
+            int cx = sourceArea.getX() + colIdx * colW;
+            label.setBounds(cx, sy, colW, labelH);
+            int kx = cx + (colW - knobSz) / 2;
+            knob.setBounds(kx, sy + labelH, knobSz, knobSz);
+
+            // LFO strip fills remaining space below knob
+            int lfoTop = sy + labelH + knobSz + 2;
+            int lfoH = juce::jmax(0, sourceArea.getBottom() - lfoTop - 26);  // reserve speed row
+            lfo.setBounds(cx, lfoTop, colW, lfoH);
         };
 
-        layoutPosCol(xKnob_, xLabel_, xLFO_,
-                     0,            posColW, sourceTop, posSectionBottom);
-        layoutPosCol(yKnob_, yLabel_, yLFO_,
-                     posColW,      posColW, sourceTop, posSectionBottom);
-        layoutPosCol(zKnob_, zLabel_, zLFO_,
-                     posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
+        layoutKnobCol(xKnob_, xLabel_, xLFO_, 0);
+        layoutKnobCol(yKnob_, yLabel_, yLFO_, 1);
+        layoutKnobCol(zKnob_, zLabel_, zLFO_, 2);
 
-        // LFO Speed slider row — spans full left column width just above listener header
-        const int speedY = posSectionBottom;
-        const int speedLabelW = 70;
-        const int resetBtnW = 44;
-        const int resetBtnGap = 4;
-        lfoSpeedMulLabel_.setBounds(kPadding, speedY + 4, speedLabelW, lfoSpeedRowH - 8);
-        lfoSpeedMulKnob_.setBounds(kPadding + speedLabelW, speedY + 4,
-                                   kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                   lfoSpeedRowH - 8);
-        resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
-                                     resetBtnW, lfoSpeedRowH - 8);
+        // LFO Speed + Reset row at bottom of source area
+        const int speedRowH = 24;
+        const int speedY = sourceArea.getBottom() - speedRowH;
+        const int speedLabelW = 56;
+        const int resetBtnW = 40;
+        const int sx = sourceArea.getX() + pad;
+        const int sw = sourceArea.getWidth() - pad * 2;
+        lfoSpeedMulLabel_.setBounds(sx, speedY + 2, speedLabelW, speedRowH - 4);
+        lfoSpeedMulKnob_.setBounds(sx + speedLabelW, speedY + 2,
+                                    sw - speedLabelW - resetBtnW - 4, speedRowH - 4);
+        resetXYZPhasesBtn_.setBounds(sx + sw - resetBtnW, speedY + 2, resetBtnW, speedRowH - 4);
     }
 
-    // --- LISTENER SECTION (bottom of left column, below source) ---
+    // --- OPTIONS (below midpoint) ---
     {
-        const int listenerContentY = lo.listenerHdrY + kSectionHdrH;
+        const int ox = optionsArea.getX() + pad;
+        const int ow = optionsArea.getWidth() - pad * 2;
+        int oy = optionsArea.getY() + 18;  // skip "OPTIONS" sub-header
 
-        if (listenerExpanded_) {
-            // Expanded: full walker knobs + perspective + toggles
-            const int walkerKnobH = 68;
-            const int bigLabelH = 16;
+        const int optKnobSz = kSmallKnobSz;
+        const int optLabelH = 13;
+        const int colW = ow / 3;
 
-            auto layoutWalkerCol = [&](juce::Slider& knob, juce::Label& label,
-                                       int colX, int colW, int top) {
-                label.setBounds(colX, top, colW, bigLabelH);
-                int knobW = juce::jmin(walkerKnobH, colW - posPad * 2);
-                int knobX = colX + (colW - knobW) / 2;
-                knob.setBounds(knobX, top + bigLabelH, knobW, walkerKnobH);
-            };
+        // Sphere Radius | Doppler | Input Gain — three knobs in a row
+        auto placeOptKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
+            int kx = ox + col * colW + (colW - optKnobSz) / 2;
+            knob.setBounds(kx, oy, optKnobSz, optKnobSz);
+            label.setBounds(ox + col * colW, oy + optKnobSz, colW, optLabelH);
+        };
+        placeOptKnob(sphereRadiusKnob_, sphereRadiusLabel_, 0);
+        placeOptKnob(dopplerKnob_,      dopplerLabel_,      1);
+        placeOptKnob(inputGainKnob_,    inputGainLabel_,    2);
 
-            layoutWalkerCol(walkerXKnob_, walkerXLabel_, 0,            posColW, listenerContentY);
-            layoutWalkerCol(walkerYKnob_, walkerYLabel_, posColW,      posColW, listenerContentY);
-            layoutWalkerCol(walkerZKnob_, walkerZLabel_, posColW * 2,  kLeftColW - posColW * 2, listenerContentY);
+        // Doppler sub-label
+        dopplerSubLabel_.setBounds(ox + colW, oy + optKnobSz + optLabelH, colW, 10);
 
-            // Yaw / Pitch / Roll knobs — below walker knobs
-            const int perspY = listenerContentY + bigLabelH + walkerKnobH + 4;
-            const int perspKnobSz = 50;
-            const int perspLabelH = 14;
-            const int perspColW = kLeftColW / 3;
+        // Binaural toggle below knobs
+        const int cbY = oy + optKnobSz + optLabelH + 14;
+        binauralToggle_.setBounds(ox, cbY, 20, 18);
+        binauralLabel_.setBounds(ox + 22, cbY, 80, 18);
 
-            auto layoutPerspCol = [&](juce::Slider& knob, juce::Label& label, int cx, int cw) {
-                int kx = cx + (cw - perspKnobSz) / 2;
-                knob.setBounds(kx, perspY, perspKnobSz, perspKnobSz);
-                label.setBounds(cx, perspY + perspKnobSz, cw, perspLabelH);
-            };
-
-            layoutPerspCol(listenerYawKnob_,   listenerYawLabel_,   0, perspColW);
-            layoutPerspCol(listenerPitchKnob_, listenerPitchLabel_, perspColW, perspColW);
-            layoutPerspCol(listenerRollKnob_,  listenerRollLabel_,  perspColW * 2, kLeftColW - perspColW * 2);
-
-            // Toggles + Remote button below perspective knobs
-            const int toggleY = perspY + perspKnobSz + perspLabelH + 2;
-            const int toggleH = 20;
-            const int halfW = (kLeftColW - kPadding * 3) / 2;
-            wasdToggle_.setBounds(kPadding, toggleY, halfW, toggleH);
-            headFollowsToggle_.setBounds(kPadding + halfW + kPadding, toggleY, halfW, toggleH);
-            // Bottom row: Link | Pilot | Remote (3 columns)
-            const int thirdW = (kLeftColW - kPadding * 4) / 3;
-            const int row2Y = toggleY + toggleH + 2;
-            listenerLinkToggle_.setBounds(kPadding, row2Y, thirdW, toggleH);
-            listenerPilotToggle_.setBounds(kPadding + thirdW + kPadding, row2Y, thirdW, toggleH);
-            remoteBtn_.setBounds(kPadding + 2 * (thirdW + kPadding), row2Y, thirdW, toggleH);
-            pilotStatusLabel_.setBounds(kPadding, row2Y + toggleH + 1, kLeftColW - kPadding * 2, 14);
-        } else {
-            // Collapsed: just the header bar, no content (knobs hidden by setListenerExpanded)
-        }
+        // DEV toggle
+        devToggle_.setBounds(ox + ow - 48, cbY, 48, 18);
     }
+}
 
-    // ===== BOTTOM ROW =====
+// ---------------------------------------------------------------------------
+// layoutRightCol — LISTENER (Walker + Yaw/Pitch/Roll + toggles)
+// ---------------------------------------------------------------------------
+void XYZPanEditor::layoutRightCol(juce::Rectangle<int> area)
+{
+    const int pad = kPadding;
+    const int knobSz = 52;
+    const int labelH = 13;
+    const int toggleH = 18;
+
+    const int rx = area.getX() + pad;
+    const int rw = area.getWidth() - pad * 2;
+    int ry = area.getY() + 2;
+
+    // Walker X / Y / Z knobs — top row
     {
-        const int bx = bottomRow.getX();
-        const int contentH = kBottomH - kSectionHdrH;  // 216
-
-        // Use shared Layout for structural geometry (reverb/orbit split)
-        const int contentTop = lo.contentTop;
-        const int reverbX    = lo.reverbX;
-
-        // --- OPTIONS CONTROLS (fixed 240px left portion, always visible) ---
-        {
-            const int ox = bx;
-            const int ow = kOrbitCtrlW;
-            const int pad = 4;
-            const int knobSz = 58;
-            const int labelH_b = 14;
-
-            // Top row: Sphere | Doppler | In Gain — three knobs in equal columns
-            {
-                const int colW = ow / 3;
-                const int doppSubLabelH = 12;
-
-                int sKnobX = ox + (colW - knobSz) / 2;
-                sphereRadiusKnob_.setBounds(sKnobX, contentTop + 2, knobSz, knobSz);
-                sphereRadiusLabel_.setBounds(ox, contentTop + 60, colW, labelH_b);
-
-                int dKnobX = ox + colW + (colW - knobSz) / 2;
-                dopplerKnob_.setBounds(dKnobX, contentTop + 2, knobSz, knobSz);
-                dopplerLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
-                dopplerSubLabel_.setBounds(ox + colW, contentTop + 74, colW, doppSubLabelH);
-
-                int gKnobX = ox + colW * 2 + (colW - knobSz) / 2;
-                inputGainKnob_.setBounds(gKnobX, contentTop + 2, knobSz, knobSz);
-                inputGainLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
-            }
-
-            // Checkbox row: Binaural | Early Reflections
-            {
-                const int cbY = contentTop + 87;
-                const int boxSz = 22;
-                const int cbLabelW = 90;
-                const int cbGap = 4;
-                const int pairW = boxSz + cbGap + cbLabelW;
-                const int halfW = ow / 2;
-
-                int binPairX = ox + (halfW - pairW) / 2;
-                binauralToggle_.setBounds(binPairX, cbY, boxSz, boxSz);
-                binauralLabel_.setBounds(binPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
-
-                int erPairX = ox + halfW + (halfW - pairW) / 2;
-                earlyReflToggle_.setBounds(erPairX, cbY, boxSz, boxSz);
-                earlyReflLabel_.setBounds(erPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
-            }
-
-            // Orbit sliders + Face Listener + Customize button below checkbox row
-            {
-                const int labelW = 46;
-                const int sliderH = 22;
-                const int gap = 4;
-                const int btnH = 22;
-
-                int sy = contentTop + 118;
-                auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
-                    label.setBounds(ox + pad, sy, labelW, sliderH);
-                    slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
-                    sy += sliderH + gap;
-                };
-
-                placeOrbitSlider(stereoWidthKnob_, stereoWidthLabel_);
-                placeOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_);
-                placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
-
-                faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
-            }
-
-            // === CUSTOMIZE VIEWPORT (overlays Options area when visible) ===
-            {
-                const int sliderH  = 20;
-                const int comboH   = 22;
-                const int labelW   = 68;
-                const int gap      = 4;
-                const int headerH  = 16;
-
-                // Viewport fills the tab content area
-                customizeViewport_.setBounds(ox, contentTop, ow, contentH);
-
-                // All coordinates are LOCAL to customizeContent_ (start at 0)
-                int cy = 2;
-
-                // --- General section ---
-                // Theme label + combo
-                themeLabel_.setBounds(pad, cy, labelW, comboH);
-                themeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-
-                auto placeAvatarSlider = [&](juce::Slider& slider, juce::Label& label) {
-                    label.setBounds(pad, cy, labelW, sliderH);
-                    slider.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-                    cy += sliderH + gap;
-                };
-
-                auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
-                    label.setBounds(pad, cy, labelW, sliderH);
-                    swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
-                    cy += sliderH + gap;
-                };
-
-                // --- General head controls ---
-                placeColorSwatch(headColorSwatch_,  headColorLabel_);
-                placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
-                placeAvatarSlider(headElongationSlider_, headElongationLabel_);
-
-                // --- EYES section header ---
-                eyesSectionHeaderY_ = cy;
-                cy += headerH + gap;
-
-                // Eye Type combo (includes "None" option)
-                eyeTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                eyeTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-
-                // Eye Size, Eye Space, Pupil Size sliders
-                placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
-                placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
-                placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
-                placeAvatarSlider(googlySlider_,          googlyLabel_);
-                placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
-
-                // --- EARS section header ---
-                earsSectionHeaderY_ = cy;
-                cy += headerH + gap;
-
-                // Ear Type combo
-                earTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                earTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-
-                // Ear Size, Ear Rot sliders
-                placeAvatarSlider(earSizeSlider_,        earSizeLabel_);
-                placeAvatarSlider(earRotationSlider_,    earRotationLabel_);
-
-                // --- NOSE section header ---
-                noseSectionHeaderY_ = cy;
-                cy += headerH + gap;
-
-                // Nose Type combo
-                noseTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                noseTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-
-                // Nose Size slider
-                placeAvatarSlider(noseSizeSlider_, noseSizeLabel_);
-                placeColorSwatch(noseColorSwatch_,  noseColorLabel_);
-
-                // --- HATS section header ---
-                hatsSectionHeaderY_ = cy;
-                cy += headerH + gap;
-
-                // Hat Type combo
-                hatTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                hatTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-
-                // Hat Size slider
-                placeAvatarSlider(hatSizeSlider_, hatSizeLabel_);
-                placeColorSwatch(hatColorSwatch_,   hatColorLabel_);
-
-                // Set content size (width matches viewport, height = total content)
-                customizeContent_.setSize(ow, cy + 2);
-            }
-        }
-
-        // --- ORBIT LFO STRIPS + SPEED/RESET ROW (capped width, right-aligned against reverb) ---
-        {
-            const int lfoX = lo.lfoX;
-            const int lfoTotalW = lo.lfoTotalW;
-            const int speedRowH = 32;
-            const int lfoH = contentH - speedRowH;
-            const int stripW = lfoTotalW / 3;
-            const int lastStripW = lfoTotalW - stripW * 2;
-
-            orbitXYLFO_.setBounds(lfoX,              contentTop, stripW,     lfoH);
-            orbitXZLFO_.setBounds(lfoX + stripW,     contentTop, stripW,     lfoH);
-            orbitYZLFO_.setBounds(lfoX + stripW * 2, contentTop, lastStripW, lfoH);
-
-            // Speed slider + Reset button row below orbit LFO strips
-            const int speedY = contentTop + lfoH;
-            const int speedLabelW = 70;
-            const int resetBtnW = 44;
-            const int resetBtnGap = 4;
-            const int pad = 6;
-            orbitSpeedMulLabel_.setBounds(lfoX + pad, speedY + 4, speedLabelW, speedRowH - 8);
-            orbitSpeedMulKnob_.setBounds(lfoX + pad + speedLabelW, speedY + 4,
-                                          lfoTotalW - pad * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                          speedRowH - 8);
-            resetOrbitPhasesBtn_.setBounds(lfoX + lfoTotalW - pad - resetBtnW, speedY + 4,
-                                           resetBtnW, speedRowH - 8);
-        }
-
-        // --- REVERB KNOBS (2×2 grid in 120px column) ---
-        {
-            const int knobSz = 58;
-            const int labelH_b = 12;
-            const int cellH = knobSz + labelH_b;  // 84px per row
-            const int colW = kReverbSectionW / 2;  // 60px per column
-
-            auto placeVerbKnob = [&](juce::Slider& knob, juce::Label& label, int col, int row) {
-                int cx = reverbX + col * colW;
-                int ky = contentTop + row * cellH;
-                knob.setBounds(cx + (colW - knobSz) / 2, ky, knobSz, knobSz);
-                label.setBounds(cx, ky + knobSz, colW, labelH_b);
-            };
-            placeVerbKnob(verbSize_,    verbSizeL_,    0, 0);
-            placeVerbKnob(verbDecay_,   verbDecayL_,   1, 0);
-            placeVerbKnob(verbDamping_, verbDampingL_, 0, 1);
-            placeVerbKnob(verbWet_,     verbWetL_,     1, 1);
-
-            // DEV toggle below 2×2 grid
-            const int devY = contentTop + 2 * cellH;
-            const int devBtnW = 48;
-            const int devBtnH = 20;
-            devToggle_.setBounds(reverbX + (kReverbSectionW - devBtnW) / 2, devY + 4, devBtnW, devBtnH);
-        }
+        const int colW = rw / 3;
+        auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
+            int kx = rx + col * colW + (colW - knobSz) / 2;
+            knob.setBounds(kx, ry, knobSz, knobSz);
+            label.setBounds(rx + col * colW, ry + knobSz, colW, labelH);
+        };
+        placeKnob(walkerXKnob_, walkerXLabel_, 0);
+        placeKnob(walkerYKnob_, walkerYLabel_, 1);
+        placeKnob(walkerZKnob_, walkerZLabel_, 2);
     }
+    ry += knobSz + labelH + 4;
+
+    // Yaw / Pitch / Roll knobs — second row
+    {
+        const int colW = rw / 3;
+        auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
+            int kx = rx + col * colW + (colW - knobSz) / 2;
+            knob.setBounds(kx, ry, knobSz, knobSz);
+            label.setBounds(rx + col * colW, ry + knobSz, colW, labelH);
+        };
+        placeKnob(listenerYawKnob_,   listenerYawLabel_,   0);
+        placeKnob(listenerPitchKnob_, listenerPitchLabel_, 1);
+        placeKnob(listenerRollKnob_,  listenerRollLabel_,  2);
+    }
+    ry += knobSz + labelH + 6;
+
+    // Toggles — 2 per row
+    const int halfW = (rw - pad) / 2;
+    wasdToggle_.setBounds(rx, ry, halfW, toggleH);
+    headFollowsToggle_.setBounds(rx + halfW + pad, ry, halfW, toggleH);
+    ry += toggleH + 3;
+
+    listenerLinkToggle_.setBounds(rx, ry, halfW, toggleH);
+    listenerPilotToggle_.setBounds(rx + halfW + pad, ry, halfW, toggleH);
+    ry += toggleH + 3;
+
+    // Remote button + pilot status
+    remoteBtn_.setBounds(rx, ry, halfW, toggleH);
+    pilotStatusLabel_.setBounds(rx + halfW + pad, ry, halfW, toggleH);
+}
+
+// ---------------------------------------------------------------------------
+// layoutCustomizeTab — full-width customize/avatar panel
+// ---------------------------------------------------------------------------
+void XYZPanEditor::layoutCustomizeTab(juce::Rectangle<int> area)
+{
+    const int pad = 6;
+    const int sliderH  = 20;
+    const int comboH   = 22;
+    const int labelW   = 68;
+    const int gap      = 4;
+    const int headerH  = 16;
+
+    // Viewport fills the entire content area
+    customizeViewport_.setBounds(area);
+
+    // Content width matches viewport (use area width for layout)
+    const int cw = area.getWidth();
+    int cy = 2;
+
+    // Theme label + combo
+    themeLabel_.setBounds(pad, cy, labelW, comboH);
+    themeCombo_.setBounds(pad + labelW, cy, cw - pad * 2 - labelW, comboH);
+    cy += comboH + gap;
+
+    auto placeAvatarSlider = [&](juce::Slider& slider, juce::Label& label) {
+        label.setBounds(pad, cy, labelW, sliderH);
+        slider.setBounds(pad + labelW, cy, cw - pad * 2 - labelW, sliderH);
+        cy += sliderH + gap;
+    };
+
+    auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
+        label.setBounds(pad, cy, labelW, sliderH);
+        swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
+        cy += sliderH + gap;
+    };
+
+    placeColorSwatch(headColorSwatch_,  headColorLabel_);
+    placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
+    placeAvatarSlider(headElongationSlider_, headElongationLabel_);
+
+    eyesSectionHeaderY_ = cy;
+    cy += headerH + gap;
+
+    eyeTypeLabel_.setBounds(pad, cy, labelW, comboH);
+    eyeTypeCombo_.setBounds(pad + labelW, cy, cw - pad * 2 - labelW, comboH);
+    cy += comboH + gap;
+
+    placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
+    placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
+    placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
+    placeAvatarSlider(googlySlider_,          googlyLabel_);
+    placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
+
+    earsSectionHeaderY_ = cy;
+    cy += headerH + gap;
+
+    earTypeLabel_.setBounds(pad, cy, labelW, comboH);
+    earTypeCombo_.setBounds(pad + labelW, cy, cw - pad * 2 - labelW, comboH);
+    cy += comboH + gap;
+
+    placeAvatarSlider(earSizeSlider_,        earSizeLabel_);
+    placeAvatarSlider(earRotationSlider_,    earRotationLabel_);
+
+    noseSectionHeaderY_ = cy;
+    cy += headerH + gap;
+
+    noseTypeLabel_.setBounds(pad, cy, labelW, comboH);
+    noseTypeCombo_.setBounds(pad + labelW, cy, cw - pad * 2 - labelW, comboH);
+    cy += comboH + gap;
+
+    placeAvatarSlider(noseSizeSlider_, noseSizeLabel_);
+    placeColorSwatch(noseColorSwatch_,  noseColorLabel_);
+
+    hatsSectionHeaderY_ = cy;
+    cy += headerH + gap;
+
+    hatTypeLabel_.setBounds(pad, cy, labelW, comboH);
+    hatTypeCombo_.setBounds(pad + labelW, cy, cw - pad * 2 - labelW, comboH);
+    cy += comboH + gap;
+
+    placeAvatarSlider(hatSizeSlider_, hatSizeLabel_);
+    placeColorSwatch(hatColorSwatch_,   hatColorLabel_);
+
+    customizeContent_.setSize(cw, cy + 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1535,84 +1482,87 @@ void XYZPanEditor::syncEyeSpacingSliderMode(bool isCyclops)
 }
 
 // ---------------------------------------------------------------------------
-// setActiveTab — show/hide components for Options vs Customize tab
+// setActiveViewTab — switch between Source (3-column) and Customize views
 // ---------------------------------------------------------------------------
-void XYZPanEditor::setActiveTab(OptionsTab tab)
+void XYZPanEditor::setActiveViewTab(ViewTab tab)
 {
-    activeTab_ = tab;
-    const bool options   = (tab == OptionsTab::Options);
-    const bool customize = (tab == OptionsTab::Customize);
+    activeViewTab_ = tab;
+    const bool source    = (tab == ViewTab::Source);
+    const bool customize = (tab == ViewTab::Customize);
 
-    // Options-only components
-    sphereRadiusKnob_.setVisible(options);
-    sphereRadiusLabel_.setVisible(options);
-    dopplerKnob_.setVisible(options);
-    dopplerLabel_.setVisible(options);
-    dopplerSubLabel_.setVisible(options);
-    inputGainKnob_.setVisible(options);
-    inputGainLabel_.setVisible(options);
-    binauralToggle_.setVisible(options);
-    binauralLabel_.setVisible(options);
-    earlyReflToggle_.setVisible(options);
-    earlyReflLabel_.setVisible(options);
-    stereoWidthKnob_.setVisible(options);
-    stereoWidthLabel_.setVisible(options);
-    orbitOffsetKnob_.setVisible(options);
-    orbitOffsetLabel_.setVisible(options);
-    orbitPhaseKnob_.setVisible(options);
-    orbitPhaseLabel_.setVisible(options);
-    faceListenerToggle_.setVisible(options);
+    // Source-tab components (3-column layout)
+    // Left column: stereo + reverb
+    stereoWidthKnob_.setVisible(source);
+    stereoWidthLabel_.setVisible(source);
+    orbitOffsetKnob_.setVisible(source);
+    orbitOffsetLabel_.setVisible(source);
+    orbitPhaseKnob_.setVisible(source);
+    orbitPhaseLabel_.setVisible(source);
+    faceListenerToggle_.setVisible(source);
+    orbitXYLFO_.setVisible(source);
+    orbitXZLFO_.setVisible(source);
+    orbitYZLFO_.setVisible(source);
+    orbitSpeedMulKnob_.setVisible(source);
+    orbitSpeedMulLabel_.setVisible(source);
+    resetOrbitPhasesBtn_.setVisible(source);
+    verbSize_.setVisible(source);
+    verbSizeL_.setVisible(source);
+    verbDecay_.setVisible(source);
+    verbDecayL_.setVisible(source);
+    verbDamping_.setVisible(source);
+    verbDampingL_.setVisible(source);
+    verbWet_.setVisible(source);
+    verbWetL_.setVisible(source);
+    earlyReflToggle_.setVisible(source);
+    earlyReflLabel_.setVisible(source);
 
-    // Customize-only components (all children of viewport content)
+    // Center column: source + options
+    xKnob_.setVisible(source);
+    xLabel_.setVisible(source);
+    yKnob_.setVisible(source);
+    yLabel_.setVisible(source);
+    zKnob_.setVisible(source);
+    zLabel_.setVisible(source);
+    xLFO_.setVisible(source);
+    yLFO_.setVisible(source);
+    zLFO_.setVisible(source);
+    lfoSpeedMulKnob_.setVisible(source);
+    lfoSpeedMulLabel_.setVisible(source);
+    resetXYZPhasesBtn_.setVisible(source);
+    sphereRadiusKnob_.setVisible(source);
+    sphereRadiusLabel_.setVisible(source);
+    dopplerKnob_.setVisible(source);
+    dopplerLabel_.setVisible(source);
+    dopplerSubLabel_.setVisible(source);
+    inputGainKnob_.setVisible(source);
+    inputGainLabel_.setVisible(source);
+    binauralToggle_.setVisible(source);
+    binauralLabel_.setVisible(source);
+    devToggle_.setVisible(source);
+
+    // Right column: listener
+    walkerXKnob_.setVisible(source);
+    walkerXLabel_.setVisible(source);
+    walkerYKnob_.setVisible(source);
+    walkerYLabel_.setVisible(source);
+    walkerZKnob_.setVisible(source);
+    walkerZLabel_.setVisible(source);
+    listenerYawKnob_.setVisible(source);
+    listenerYawLabel_.setVisible(source);
+    listenerPitchKnob_.setVisible(source);
+    listenerPitchLabel_.setVisible(source);
+    listenerRollKnob_.setVisible(source);
+    listenerRollLabel_.setVisible(source);
+    wasdToggle_.setVisible(source);
+    headFollowsToggle_.setVisible(source);
+    listenerLinkToggle_.setVisible(source);
+    listenerPilotToggle_.setVisible(source);
+    pilotStatusLabel_.setVisible(source);
+    remoteBtn_.setVisible(source);
+
+    // Customize-only components
     customizeViewport_.setVisible(customize);
 
-    repaint();
-}
-
-// ---------------------------------------------------------------------------
-// setListenerExpanded — toggle collapsed/expanded state of listener section
-// ---------------------------------------------------------------------------
-void XYZPanEditor::setListenerExpanded(bool expanded)
-{
-    listenerExpanded_ = expanded;
-
-    // Source controls: always visible
-    xKnob_.setVisible(true);
-    xLabel_.setVisible(true);
-    yKnob_.setVisible(true);
-    yLabel_.setVisible(true);
-    zKnob_.setVisible(true);
-    zLabel_.setVisible(true);
-    xLFO_.setVisible(true);
-    yLFO_.setVisible(true);
-    zLFO_.setVisible(true);
-    lfoSpeedMulKnob_.setVisible(true);
-    lfoSpeedMulLabel_.setVisible(true);
-    resetXYZPhasesBtn_.setVisible(true);
-
-    // Walker + perspective knobs: only visible when expanded
-    walkerXKnob_.setVisible(expanded);
-    walkerXLabel_.setVisible(expanded);
-    walkerYKnob_.setVisible(expanded);
-    walkerYLabel_.setVisible(expanded);
-    walkerZKnob_.setVisible(expanded);
-    walkerZLabel_.setVisible(expanded);
-    listenerYawKnob_.setVisible(expanded);
-    listenerYawLabel_.setVisible(expanded);
-    listenerPitchKnob_.setVisible(expanded);
-    listenerPitchLabel_.setVisible(expanded);
-    listenerRollKnob_.setVisible(expanded);
-    listenerRollLabel_.setVisible(expanded);
-
-    // Toggles + remote button: only visible when expanded
-    wasdToggle_.setVisible(expanded);
-    headFollowsToggle_.setVisible(expanded);
-    listenerLinkToggle_.setVisible(expanded);
-    listenerPilotToggle_.setVisible(expanded);
-    pilotStatusLabel_.setVisible(expanded);
-    remoteBtn_.setVisible(expanded);
-
-    // Only trigger relayout if we've been sized (avoid crash during construction)
     if (getWidth() > 0 && getHeight() > 0) {
         resized();
         repaint();
@@ -1638,7 +1588,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
             pilotStatusLabel_.setText(name + " is the pilot", juce::dontSendNotification);
         else
             pilotStatusLabel_.setText("No pilot set", juce::dontSendNotification);
-        pilotStatusLabel_.setVisible(listenerExpanded_);
+        pilotStatusLabel_.setVisible(activeViewTab_ == ViewTab::Source);
     } else {
         pilotStatusLabel_.setText("", juce::dontSendNotification);
         pilotStatusLabel_.setVisible(false);
@@ -1652,11 +1602,10 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     headFollowsToggle_.setEnabled(canControl);
 }
 
-// Options controls are now always visible — no tab switching needed.
-// Customize viewport toggled by customizeBtn_.onClick callback.
+// Source/Customize tab switching handled by setActiveViewTab().
 
 // ---------------------------------------------------------------------------
-// mouseDown — tab header click detection + last-clicked zone tracking
+// mouseDown — tab bar click detection + last-clicked zone tracking
 // ---------------------------------------------------------------------------
 void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
 {
@@ -1668,21 +1617,15 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
     if (zone != RandZone::None)
         lastClickedZone_ = zone;
 
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Hit-test listener section header — toggle collapse/expand
-    if (pos.y >= lo.listenerHdrY && pos.y < lo.listenerHdrY + kSectionHdrH && pos.x < kLeftColW) {
-        setListenerExpanded(!listenerExpanded_);
-        return;
-    }
-
-    // Hit-test bottom tab header area — "Options" | "Customize"
-    if (pos.y >= lo.bottomY && pos.y < lo.bottomY + kSectionHdrH && pos.x < kOrbitCtrlW) {
-        const int halfTab = kOrbitCtrlW / 2;
-        if (pos.x < halfTab)
-            setActiveTab(OptionsTab::Options);
+    // Hit-test tab bar at bottom — "Source" | "Customize"
+    if (pos.y >= lo.tabBarY && pos.y < lo.tabBarY + kTabBarH && pos.x < lo.contentW) {
+        const int halfW = lo.contentW / 2;
+        if (pos.x < halfW)
+            setActiveViewTab(ViewTab::Source);
         else
-            setActiveTab(OptionsTab::Customize);
+            setActiveViewTab(ViewTab::Customize);
         return;
     }
 
@@ -1879,67 +1822,63 @@ void XYZPanEditor::timerCallback()
 // ---------------------------------------------------------------------------
 XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) const
 {
-    const auto lo = Layout::compute(getWidth(), getHeight(), listenerExpanded_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
     const int x = pos.x;
     const int y = pos.y;
 
-    // Left column: source section or listener section
-    if (x >= 0 && x < kLeftColW && y >= kPresetBarH && y < lo.bottomY) {
-        // Check individual LFO strips by testing component bounds
-        auto inBounds = [&](const LFOStrip& strip) {
-            auto b = strip.getBounds();
-            return b.contains(x, y);
-        };
-        if (inBounds(xLFO_)) return RandZone::LfoX;
-        if (inBounds(yLFO_)) return RandZone::LfoY;
-        if (inBounds(zLFO_)) return RandZone::LfoZ;
+    // Only bottom zone has randomizable regions
+    if (y < lo.bottomY || y >= lo.tabBarY)
+        return RandZone::None;
 
-        // Listener section = perspective randomization zone
-        if (y >= lo.listenerHdrY)
-            return RandZone::Perspective;
-
-        return RandZone::Position;
+    if (activeViewTab_ == ViewTab::Customize) {
+        // Customize tab — classify by section
+        int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
+        if (localY < eyesSectionHeaderY_)
+            return RandZone::CustColors;
+        if (localY < earsSectionHeaderY_)
+            return RandZone::CustEyes;
+        if (localY < noseSectionHeaderY_)
+            return RandZone::CustEars;
+        if (localY < hatsSectionHeaderY_)
+            return RandZone::CustNose;
+        return RandZone::CustHats;
     }
 
-    // Bottom row zones (below bottomY)
-    if (y >= lo.bottomY) {
-        // Reverb column (right side of bottom row)
-        if (x >= lo.reverbX && x < lo.reverbX + kReverbSectionW)
-            return RandZone::Reverb;
-
-        // Orbit LFO strips (between orbit controls and reverb)
-        {
+    // Source tab — classify by column
+    if (x < lo.centerColX) {
+        // Left column: stereo or reverb
+        const int midY = lo.contentY + lo.contentH / 2;
+        if (y < midY) {
+            // Check orbit LFO strips
             auto inBounds = [&](const LFOStrip& strip) {
-                auto b = strip.getBounds();
-                return b.contains(x, y);
+                return strip.getBounds().contains(x, y);
             };
             if (inBounds(orbitXYLFO_)) return RandZone::OrbitLfoXY;
             if (inBounds(orbitXZLFO_)) return RandZone::OrbitLfoXZ;
             if (inBounds(orbitYZLFO_)) return RandZone::OrbitLfoYZ;
+            return RandZone::StereoOrbit;
         }
-
-        // Left 240px of bottom row — depends on active tab
-        if (x >= 0 && x < kOrbitCtrlW && y >= lo.contentTop) {
-            if (activeTab_ == OptionsTab::Options)
-                return RandZone::StereoOrbit;
-
-            if (activeTab_ == OptionsTab::Customize) {
-                // Convert mouse Y to customizeContent_ local coords
-                int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
-                if (localY < eyesSectionHeaderY_)
-                    return RandZone::CustColors;
-                if (localY < earsSectionHeaderY_)
-                    return RandZone::CustEyes;
-                if (localY < noseSectionHeaderY_)
-                    return RandZone::CustEars;
-                if (localY < hatsSectionHeaderY_)
-                    return RandZone::CustNose;
-                return RandZone::CustHats;
-            }
-        }
+        return RandZone::Reverb;
     }
 
-    return RandZone::None;
+    if (x < lo.rightColX) {
+        // Center column: source or options
+        const int midY = lo.contentY + lo.contentH / 2;
+        if (y < midY) {
+            // Check position LFO strips
+            auto inBounds = [&](const LFOStrip& strip) {
+                return strip.getBounds().contains(x, y);
+            };
+            if (inBounds(xLFO_)) return RandZone::LfoX;
+            if (inBounds(yLFO_)) return RandZone::LfoY;
+            if (inBounds(zLFO_)) return RandZone::LfoZ;
+            return RandZone::Position;
+        }
+        return RandZone::Position;  // options area is still position-adjacent
+    }
+
+    // Right column: listener
+    return RandZone::Perspective;
 }
 
 // ---------------------------------------------------------------------------

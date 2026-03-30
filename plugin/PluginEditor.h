@@ -71,18 +71,17 @@ private:
 // ---------------------------------------------------------------------------
 // XYZPanEditor — custom plugin editor.
 //
-// Layout:
-//   Left column (420px) — stacked, no tabs:
-//     SOURCE section (always visible): X/Y/Z knobs + LFO strips + Speed slider
-//     LISTENER section (collapsible): collapsed = mini knobs row; expanded = full knobs
-//   Main area: XYZPanGLView (OpenGL 3D spatial view)
-//     Top-right corner: three snap buttons (XY, XZ, YZ)
-//     GL overlay (right 30%): DevPanelComponent — hidden by default
-//   Bottom row (240px), left-to-right:
-//     "Options" | "Customize" tabs (240px) — clickable header switches content
-//     ORBIT LFOs — XY/XZ/YZ strips (always visible) + Speed/Reset
-//     REVERB — Size/Decay/Damp/Wet knobs + DEV toggle
-//   Remote: popup button in listener section (visible when linked instances >= 2)
+// Layout: Two-zone split
+//   Top zone (~62%): Full-width XYZPanGLView (OpenGL 3D spatial view)
+//     Preset bar overlays top edge
+//     Snap buttons (XY/XZ/YZ) top-right
+//     DevPanelComponent overlay (right 30%, hidden by default)
+//   Bottom zone (~38%): 3-column control strip, always visible
+//     Left column:  STEREO (Width/Offset/Phase + orbit LFOs) + REVERB (Size/Decay/Damp/Wet)
+//     Center column: SOURCE (X/Y/Z knobs + position LFOs) + OPTIONS (Radius/Gain/Doppler)
+//     Right column:  LISTENER (Walker + Yaw/Pitch/Roll + toggles)
+//   Tab bar at bottom: "Source" (default 3-col view) | "Customize" (avatar)
+//   Output meter: right edge vertical strip
 // ---------------------------------------------------------------------------
 class XYZPanEditor : public juce::AudioProcessorEditor,
                      public juce::KeyListener,
@@ -110,20 +109,21 @@ private:
     SnapState currentSnap_ = SnapState::None;
     void updateSnapButtonStates();
 
-    // Layout constants
-    static constexpr int kLeftColW      = 420;     // position column width
-    static constexpr int kBottomH       = 240;     // was 400 — orbit moved here
-    static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
+    // Layout constants — two-zone split
+    static constexpr float kViewportFrac = 0.62f;   // top zone = 62% of total height
+    static constexpr int kPresetBarH    = 32;       // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
     static constexpr int kDefaultW      = 1000;
-    static constexpr int kDefaultH      = 650;
-    static constexpr int kSectionHdrH   = 24;      // section header height
-    static constexpr int kDividerW      = 1;       // vertical divider width
-    static constexpr int kPadding       = 6;       // general inner padding
-    static constexpr int kOrbitCtrlW    = 240;     // orbit sliders+buttons width in bottom row
-    static constexpr int kReverbSectionW = 120;     // vertical reverb column
-    static constexpr int kMeterW         = 24;       // output meter strip width
+    static constexpr int kDefaultH      = 700;
+    static constexpr int kSectionHdrH   = 22;       // section header height
+    static constexpr int kTabBarH       = 26;       // tab bar height at bottom
+    static constexpr int kPadding       = 10;       // general inner padding (increased from 6)
+    static constexpr int kColSepW       = 1;        // vertical column separator width
+    static constexpr int kMeterW        = 24;       // output meter strip width
+    static constexpr int kSmallKnobSz   = 62;       // knob size in bottom zone
+    static constexpr int kMinViewportH  = 200;      // minimum GL viewport height
+    static constexpr int kMinBottomH    = 220;      // minimum bottom zone height
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -204,18 +204,14 @@ private:
     juce::Label instanceNameLabel_;             // "Name:" label
     juce::TextEditor instanceNameEditor_;       // editable own-instance name
 
-    // Collapsible listener section in left column
-    bool listenerExpanded_ = false;
-    void setListenerExpanded(bool expanded);
-
     // Remote popup button (visible when linked instances >= 2)
     juce::TextButton remoteBtn_{"Remote"};
     juce::Label remoteStatusLabel_;
 
-    // Tab state for Options / Customize split in bottom row
-    enum class OptionsTab { Options, Customize };
-    OptionsTab activeTab_ = OptionsTab::Options;
-    void setActiveTab(OptionsTab tab);
+    // Tab state — Source (3-column default) vs Customize (avatar panel)
+    enum class ViewTab { Source, Customize };
+    ViewTab activeViewTab_ = ViewTab::Source;
+    void setActiveViewTab(ViewTab tab);
 
     // Walker knobs (always active)
     juce::Slider walkerXKnob_, walkerYKnob_, walkerZKnob_;
@@ -306,18 +302,27 @@ private:
 
     // Shared geometry: computed once per paint/resized call to avoid drift
     struct Layout {
-        int contentY;       // = kPresetBarH
-        int leftColH;       // = totalH - kBottomH - kPresetBarH
-        int bottomY;        // = totalH - kBottomH
-        int reverbX;        // = totalW - kReverbSectionW
-        int orbitTotalW;    // = reverbX
-        int lfoX;           // = left edge of orbit LFO strips (after cap)
-        int lfoTotalW;      // = capped width of orbit LFO strips
-        int contentTop;     // = bottomY + kSectionHdrH
-        int listenerHdrY;   // = Y position of listener section header in left column
+        int viewportH;      // GL viewport height (top zone)
+        int bottomY;        // Y where bottom zone starts
+        int bottomH;        // bottom zone total height
+        int tabBarY;        // Y where tab bar starts
+        int contentY;       // Y where column content starts (below tab bar... wait, tab is at bottom)
+        int contentH;       // available height for column content
+        int contentW;       // total width minus meter
+        int leftColW;       // left column width
+        int centerColW;     // center column width
+        int rightColW;      // right column width
+        int centerColX;     // X where center column starts
+        int rightColX;      // X where right column starts
 
-        static Layout compute(int totalW, int totalH, bool listenerExpanded);
+        static Layout compute(int totalW, int totalH);
     };
+
+    // Column layout helpers — each lays out its section within the given area
+    void layoutLeftCol(juce::Rectangle<int> area);
+    void layoutCenterCol(juce::Rectangle<int> area);
+    void layoutRightCol(juce::Rectangle<int> area);
+    void layoutCustomizeTab(juce::Rectangle<int> area);
 
     void updateOrbitEnabled();
 
