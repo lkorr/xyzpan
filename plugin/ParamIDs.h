@@ -227,6 +227,14 @@ namespace ParamID {
     constexpr const char* WALKER_Z       = "walker_z";
     constexpr const char* WASD_CONTROL   = "walker_enabled";  // reused ID for DAW compat
 
+    // Sound wave visualization (dev panel)
+    constexpr const char* WAVE_INTENSITY = "wave_intensity";
+    constexpr const char* WAVE_OPACITY   = "wave_opacity";
+    constexpr const char* WAVE_SPEED     = "wave_speed";
+    constexpr const char* WAVE_COUNT     = "wave_count";
+    constexpr const char* SHOW_AUDIBLE_SPHERE = "show_audible_sphere";
+    constexpr const char* SOURCE_SPHERE_OPACITY = "source_sphere_opacity";
+
     // Binaural toggle (user-facing)
     constexpr const char* BINAURAL_ENABLED   = "binaural_enabled";
 

@@ -117,6 +117,7 @@ in vec3 vFragPos;
 uniform vec3  nodeColor;
 uniform float opacity;
 uniform vec3  lightDir;   // normalized; comes from camera direction
+uniform float edgeFade;   // 0.0 = no edge fade (solid), 1.0 = full rim-to-transparent fade
 
 out vec4 outColor;
 
@@ -126,7 +127,13 @@ void main()
     float diff    = max(dot(norm, normalize(lightDir)), 0.0);
     float ambient = 0.35;
     float light   = ambient + (1.0 - ambient) * diff;
-    outColor = vec4(nodeColor * light, opacity);
+
+    // Edge fade: fragments at the silhouette (normal perpendicular to view)
+    // fade to transparent, producing soft-edged spheres for sound waves.
+    float rim = abs(dot(norm, normalize(-vFragPos)));
+    float fade = mix(1.0, rim, edgeFade);
+
+    outColor = vec4(nodeColor * light, opacity * fade);
 }
 )";
 

@@ -90,6 +90,23 @@ std::vector<unsigned> buildSphereWireframe(int stacks, int slices)
 }
 
 // ---------------------------------------------------------------------------
+// buildSphereLatitudeRings — latitude rings only (no longitude meridians)
+// ---------------------------------------------------------------------------
+std::vector<unsigned> buildSphereLatitudeRings(int stacks, int slices)
+{
+    std::vector<unsigned> idx;
+    for (int s = 0; s <= stacks; ++s) {
+        for (int sl = 0; sl < slices; ++sl) {
+            const unsigned a = static_cast<unsigned>(s * (slices + 1) + sl);
+            const unsigned b = static_cast<unsigned>(s * (slices + 1) + sl + 1);
+            idx.push_back(a);
+            idx.push_back(b);
+        }
+    }
+    return idx;
+}
+
+// ---------------------------------------------------------------------------
 // buildCone — solid cone along +Y axis (base at Y=0, tip at Y=height)
 // ---------------------------------------------------------------------------
 SphereGeometry buildCone(float baseRadius, float height, int slices)

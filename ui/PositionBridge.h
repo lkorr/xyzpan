@@ -24,6 +24,9 @@ struct SourcePositionSnapshot {
     // Audible sphere boundary radius (for GL rendering)
     float sphereRadius = 1.732f;
 
+    // Input RMS level (linear, 0–1 range) for GL sound wave visualization
+    float inputRms = 0.0f;
+
     // Walker listener position (for GL rendering)
     float listenerPosX = 0.0f;
     float listenerPosY = 0.0f;
@@ -64,6 +67,7 @@ struct ForeignSourceSnapshot {
     float lNodeX = 0.0f, lNodeY = 0.0f, lNodeZ = 0.0f;
     float rNodeX = 0.0f, rNodeY = 0.0f, rNodeZ = 0.0f;
     float sphereRadius = 1.732f;  // audible boundary radius
+    float inputRms     = 0.0f;   // input RMS level for sound wave visualization
     int   colorIndex  = 0;
     char  name[32]    = {};  // null-terminated instance name for GL labels
 };
@@ -74,7 +78,7 @@ class SourceExportBuffer {
 public:
     void write(float x, float y, float z, float distance, float stereoWidth,
                float lx, float ly, float lz, float rx, float ry, float rz,
-               float sphereRadius) {
+               float sphereRadius, float inputRms) {
         const int idx = 1 - writeIdx_.load(std::memory_order_relaxed);
         auto& b = buf_[idx];
         b.x = x;  b.y = y;  b.z = z;
@@ -83,6 +87,7 @@ public:
         b.lNodeX = lx;  b.lNodeY = ly;  b.lNodeZ = lz;
         b.rNodeX = rx;  b.rNodeY = ry;  b.rNodeZ = rz;
         b.sphereRadius = sphereRadius;
+        b.inputRms = inputRms;
         writeIdx_.store(idx, std::memory_order_release);
     }
 

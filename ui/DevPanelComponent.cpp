@@ -13,6 +13,14 @@ namespace {
     constexpr const char* kSMOOTH_FILTER_MS = "smooth_filter_ms";
     constexpr const char* kSMOOTH_GAIN_MS   = "smooth_gain_ms";
 
+    // Visualization
+    constexpr const char* kWAVE_INTENSITY    = "wave_intensity";
+    constexpr const char* kWAVE_OPACITY      = "wave_opacity";
+    constexpr const char* kWAVE_SPEED        = "wave_speed";
+    constexpr const char* kWAVE_COUNT        = "wave_count";
+    constexpr const char* kSHOW_AUDIBLE_SPHERE = "show_audible_sphere";
+    constexpr const char* kSOURCE_SPHERE_OPACITY = "source_sphere_opacity";
+
     // Comb
     constexpr const char* kCOMB_DELAY[10] = {
         "comb_delay_0", "comb_delay_1", "comb_delay_2", "comb_delay_3", "comb_delay_4",
@@ -245,6 +253,13 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "section:Comb Filters",        "10-line pinna comb filter bank. Models complex interference patterns of the outer ear at different elevations." },
         { "section:Distance",          "Distance rendering: propagation delay, air absorption low-pass, gain attenuation, and aux reverb send." },
         { "section:Smoothing",         "Parameter smoothing time constants. Control how quickly DSP coefficients update during source motion to balance responsiveness vs. artefacts." },
+        { "wave_intensity",            "Overall multiplier for sound wave visibility. 0 = disabled, 1 = default, 5 = maximum. Scales with input level — louder audio produces more visible waves." },
+        { "wave_opacity",              "Base opacity of each expanding sound wave sphere at its origin. 0 = invisible, 0.1 = default (10% opacity). Multiple waves overlap and visually stack." },
+        { "wave_speed",                "Speed of expanding sound waves. Fraction of sphere radius per second. 0.3 = default, higher = faster expansion." },
+        { "wave_count",                "Number of simultaneous wave spheres. 6 = default. More waves = denser visual effect." },
+        { "show_audible_sphere",       "Show or hide the audible radius sphere around the source node." },
+        { "source_sphere_opacity",     "Opacity of the main source node sphere. 0 = invisible, 1 = full opacity. Multiplied into the distance-based fade." },
+        { "section:Visualization",     "Visual-only controls for the 3D GL view. These do not affect audio processing." },
         // Readout descriptions
         { "readout:ITD Samples",   "Current interaural time difference in samples. Positive = right ear delayed. Derived from azimuth angle and itd_max_ms." },
         { "readout:Shadow Cutoff", "Current head-shadow low-pass cutoff in Hz. Varies with azimuth — lower when source is far to one side." },
@@ -432,6 +447,17 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kSMOOTH_ITD_MS,    apvts);
     addDevSlider(kSMOOTH_FILTER_MS, apvts);
     addDevSlider(kSMOOTH_GAIN_MS,   apvts);
+
+    // -------------------------------------------------------------------
+    // Section 10: Visualization
+    // -------------------------------------------------------------------
+    beginSection("Visualization");
+    addDevSlider(kWAVE_INTENSITY,    apvts);
+    addDevSlider(kWAVE_OPACITY,      apvts);
+    addDevSlider(kWAVE_SPEED,        apvts);
+    addDevSlider(kWAVE_COUNT,        apvts);
+    addDevToggle(kSHOW_AUDIBLE_SPHERE, apvts);
+    addDevSlider(kSOURCE_SPHERE_OPACITY, apvts);
 
     // -------------------------------------------------------------------
     // Status (non-collapsible, always visible at bottom)

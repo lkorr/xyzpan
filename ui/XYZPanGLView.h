@@ -206,6 +206,15 @@ private:
     void drawSphereWireframe(float radius, const glm::vec3& color, float opacity,
                              const glm::vec3& position = glm::vec3(0.0f));
 
+    // Draw latitude-only sphere rings (no longitude meridians) for sound waves
+    void drawSphereRings(float radius, const glm::vec3& color, float opacity,
+                         const glm::vec3& position);
+
+    // Draw expanding sound wave pulses radiating from a source node
+    void drawSoundWaves(const glm::vec3& center, float sphereRadius,
+                        float inputRms, const glm::vec3& color, double nowSeconds,
+                        float intensity, float baseOpacity, float speed, int numWaves);
+
     // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
     void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
 
@@ -251,6 +260,8 @@ private:
     GLuint vaoSphere_ = 0, vboSphere_ = 0, iboSphere_ = 0;
     GLuint vaoSphereWire_ = 0, iboSphereWire_ = 0;
     int    sphereWireIndexCount_ = 0;
+    GLuint vaoSphereRings_ = 0, iboSphereRings_ = 0;
+    int    sphereRingsIndexCount_ = 0;
 
     GLuint vaoCone_ = 0, vboCone_ = 0, iboCone_ = 0;
     GLuint vaoArrow2D_ = 0, vboArrow2D_ = 0;
@@ -317,6 +328,12 @@ private:
     ColorTheme         glTheme_;
     AvatarParams       avatarParams_;
     std::atomic<int>   focusedForeignIndex_{-1};
+    std::atomic<float>* waveIntensityParam_ = nullptr;
+    std::atomic<float>* waveOpacityParam_   = nullptr;
+    std::atomic<float>* waveSpeedParam_     = nullptr;
+    std::atomic<float>* waveCountParam_     = nullptr;
+    std::atomic<float>* showAudibleSphereParam_ = nullptr;
+    std::atomic<float>* sourceSphereOpacityParam_ = nullptr;
 
     // Ear/eye type draw dispatchers
     // Nose type draw dispatchers
@@ -397,6 +414,20 @@ private:
         int linkedIndex;  // -1 = self, 0+ = foreign source index
     };
     std::vector<InstanceListEntry> instanceListHitBoxes_;
+
+    // Smoothed input RMS for sound wave visualization (own + foreign sources)
+    float smoothedRms_ = 0.0f;
+    float foreignSmoothedRms_[kMaxLinkedSources] = {};
+
+    // Smoothed foreign source positions for per-frame interpolation (GL thread only)
+    struct SmoothedForeignPos {
+        float x = 0.f, y = 0.f, z = 0.f;
+        float lx = 0.f, ly = 0.f, lz = 0.f;
+        float rx = 0.f, ry = 0.f, rz = 0.f;
+        float sphereRadius = 1.732f;
+    };
+    SmoothedForeignPos foreignSmoothedPos_[kMaxLinkedSources];
+    int foreignPrevCount_ = 0;
 
     // Inline rename editor for own instance name
     std::unique_ptr<juce::TextEditor> renameEditor_;

@@ -781,6 +781,22 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         numIn > 1 ? buffer.getReadPointer(1) : nullptr
     };
 
+    // Input RMS for GL sound wave visualization (computed before engine.process
+    // in case input/output buffers alias on mono-in/stereo-out layouts)
+    float inputRmsValue = 0.0f;
+    {
+        const int n = buffer.getNumSamples();
+        float sum = 0.0f;
+        for (int ch = 0; ch < numIn; ++ch) {
+            const float* in = inputs[ch];
+            if (!in) continue;
+            for (int i = 0; i < n; ++i)
+                sum += in[i] * in[i];
+        }
+        if (numIn > 0 && n > 0)
+            inputRmsValue = std::sqrt(sum / static_cast<float>(n * numIn));
+    }
+
     // Output channel pointers (buffer has stereo output per bus layout)
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getWritePointer(1);
@@ -824,6 +840,17 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     snap.listenerPosZ = params.listenerZ;
 
     snap.sphereRadius = sphereRadiusParam->load();
+    // Estimate dry (pre-distance) RMS: use input RMS for external audio,
+    // and output RMS / distance gain for internal test tone.
+    // This ensures waves reflect source loudness regardless of distance.
+    {
+        auto dspState = engine.getLastDSPState();
+        const float distGain = std::max(dspState.distGainLinear, 0.001f);
+        const float outputRms = std::max(outputRmsL.load(std::memory_order_relaxed),
+                                         outputRmsR.load(std::memory_order_relaxed));
+        const float dryFromOutput = outputRms / distGain;
+        snap.inputRms = std::max(inputRmsValue, dryFromOutput);
+    }
 
     positionBridge.write(snap);
 
@@ -832,7 +859,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                        snap.stereoWidth,
                        snap.lNodeX, snap.lNodeY, snap.lNodeZ,
                        snap.rNodeX, snap.rNodeY, snap.rNodeZ,
-                       snap.sphereRadius);
+                       snap.sphereRadius, snap.inputRms);
 
     // DSP state bridge for dev panel readouts
     dspStateBridge.write(engine.getLastDSPState());

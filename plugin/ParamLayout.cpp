@@ -592,6 +592,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         juce::ParameterID{ParamID::BYPASS_ER, 1}, "Bypass ER", false));
 
     // -------------------------------------------------------------------------
+    // Visualization — sound wave intensity
+    // -------------------------------------------------------------------------
+    layout.add(std::make_unique<APF>(PID{ParamID::WAVE_INTENSITY, 1}, "Wave Intensity",
+        NR(0.0f, 5.0f, 0.01f), 3.5f));
+    layout.add(std::make_unique<APF>(PID{ParamID::WAVE_OPACITY, 1}, "Wave Base Opacity",
+        NR(0.0f, 0.25f, 0.001f), 0.02f));
+    layout.add(std::make_unique<APF>(PID{ParamID::WAVE_SPEED, 1}, "Wave Speed",
+        NR(0.05f, 2.0f, 0.01f), 0.3f));
+    layout.add(std::make_unique<APF>(PID{ParamID::WAVE_COUNT, 1}, "Wave Count",
+        NR(1.0f, 30.0f, 1.0f), 3.0f));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        PID{ParamID::SHOW_AUDIBLE_SPHERE, 1}, "Show Audible Sphere", true));
+    layout.add(std::make_unique<APF>(PID{ParamID::SOURCE_SPHERE_OPACITY, 1}, "Source Sphere Opacity",
+        NR(0.0f, 1.0f, 0.01f), 1.0f));
+
+    // -------------------------------------------------------------------------
     // Listener head orientation (user-facing)
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<APF>(PID{ParamID::LISTENER_YAW, 1}, "Listener Yaw",

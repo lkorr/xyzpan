@@ -26,6 +26,10 @@ SphereGeometry buildUnitSphere(int stacks, int slices);
 // on the unit sphere.  Uses the same vertex indexing as buildUnitSphere.
 std::vector<unsigned> buildSphereWireframe(int stacks, int slices);
 
+// Build index pairs (GL_LINES) for latitude rings only (no longitude meridians).
+// Used for sound wave pulses where full lat/long grid is too busy.
+std::vector<unsigned> buildSphereLatitudeRings(int stacks, int slices);
+
 // Build a cone (for forward direction indicator) along +Y axis.
 // baseRadius = radius at Y=0, height = extent along +Y.
 // Returns same format as SphereGeometry (interleaved pos+normal, indexed).

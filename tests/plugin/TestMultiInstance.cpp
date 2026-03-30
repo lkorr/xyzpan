@@ -606,7 +606,8 @@ TEST_CASE("SourceExportBuffer: write/read round-trip", "[multi][bridge]") {
     xyzpan::SourceExportBuffer buf;
     buf.write(0.1f, 0.2f, 0.3f, 1.5f, 0.7f,
               -0.1f, 0.0f, 0.1f,   // L node
-               0.1f, 0.0f, -0.1f); // R node
+               0.1f, 0.0f, -0.1f,  // R node
+               1.732f, 0.0f);      // sphereRadius, inputRms
 
     auto snap = buf.read();
     REQUIRE(snap.x == Approx(0.1f));
@@ -623,7 +624,7 @@ TEST_CASE("SourceExportBuffer: concurrent write/read stress", "[multi][bridge][s
     std::thread writer([&]() {
         for (int i = 0; i < 50000; ++i) {
             float v = static_cast<float>(i) * 0.001f;
-            buf.write(v, v, v, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            buf.write(v, v, v, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.732f, 0.0f);
         }
         running.store(false, std::memory_order_relaxed);
     });

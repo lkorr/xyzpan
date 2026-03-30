@@ -43,6 +43,13 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
     apvts_.addParameterListener("listener_yaw",   this);
     apvts_.addParameterListener("listener_pitch",  this);
     apvts_.addParameterListener("listener_roll",   this);
+
+    waveIntensityParam_    = apvts_.getRawParameterValue("wave_intensity");
+    waveOpacityParam_      = apvts_.getRawParameterValue("wave_opacity");
+    waveSpeedParam_        = apvts_.getRawParameterValue("wave_speed");
+    waveCountParam_        = apvts_.getRawParameterValue("wave_count");
+    showAudibleSphereParam_ = apvts_.getRawParameterValue("show_audible_sphere");
+    sourceSphereOpacityParam_ = apvts_.getRawParameterValue("source_sphere_opacity");
 }
 
 XYZPanGLView::~XYZPanGLView()
@@ -232,6 +239,18 @@ void XYZPanGLView::renderOpenGL()
     // Sphere radius from bridge — quartered for visual scaling so the rendered
     // boundary better matches perceived distance cues (DSP uses full value).
     const float sr = snap.sphereRadius * 0.25f;
+
+    // Smooth input RMS for sound wave visualization (~60Hz GL thread)
+    constexpr float kRmsAttack = 0.3f;   // fast attack
+    constexpr float kRmsRelease = 0.05f; // slow release
+    const float rmsCoeff = (snap.inputRms > smoothedRms_) ? kRmsAttack : kRmsRelease;
+    smoothedRms_ += rmsCoeff * (snap.inputRms - smoothedRms_);
+
+    // Wave visualization params from dev panel
+    const float waveIntensity = waveIntensityParam_ ? waveIntensityParam_->load(std::memory_order_relaxed) : 3.5f;
+    const float waveBaseOpacity = waveOpacityParam_ ? waveOpacityParam_->load(std::memory_order_relaxed) : 0.02f;
+    const float waveSpeed = waveSpeedParam_ ? waveSpeedParam_->load(std::memory_order_relaxed) : 0.3f;
+    const int   waveCount = waveCountParam_ ? static_cast<int>(waveCountParam_->load(std::memory_order_relaxed)) : 3;
 
     // Compute source opacity: full at close range, ~10% at sphere boundary
     const float distFrac = std::clamp(snap.distance / sr, 0.0f, 1.0f);
@@ -434,20 +453,27 @@ void XYZPanGLView::renderOpenGL()
             glDepthMask(GL_TRUE);
     }
 
-    // Draw audible radius sphere centered on the source node
-    // Wireframe grid overlay stays visible from inside the sphere (GL_LINES have no facing).
+    // Draw audible radius sphere + wireframe centered on the source node
     {
+        const bool showSphere = showAudibleSphereParam_ == nullptr
+                                || showAudibleSphereParam_->load(std::memory_order_relaxed) >= 0.5f;
         glDepthMask(GL_FALSE);
-        drawSphere(sourcePos, sr, theme.glAudibleSphere, 0.04f);
-        drawSphereWireframe(sr, theme.glAudibleSphere, 0.025f, sourcePos);
+        if (showSphere) {
+            drawSphere(sourcePos, sr, theme.glAudibleSphere, 0.04f);
+            drawSphereWireframe(sr, theme.glAudibleSphere, 0.025f, sourcePos);
+        }
 
-        // Re-establish sphere shader batch for source/stereo node draws that follow
+        // Re-establish sphere shader for sound wave filled spheres
         sphereShader_->use();
         sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
         sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
         const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
         sphereShader_->setUniform("lightDir", lightDir.x, lightDir.y, lightDir.z);
         glBindVertexArray(vaoSphere_);
+
+        // Sound wave pulses — filled transparent spheres expanding outward
+        drawSoundWaves(sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+
         glDepthMask(GL_TRUE);
     }
 
@@ -456,14 +482,18 @@ void XYZPanGLView::renderOpenGL()
     // When stereo is active, skip depth write so the ghost center doesn't
     // occlude the L/R nodes orbiting behind it.
     {
+        const float sphereOpacityMul = sourceSphereOpacityParam_
+            ? sourceSphereOpacityParam_->load(std::memory_order_relaxed) : 1.0f;
         const glm::vec3 sourceColor = isSourceHovered_
             ? theme.glSourceHover
             : theme.glSourceNormal;
-        const float mainOpacity = stereoActive ? 0.1f : sourceOpacity;
+        const float mainOpacity = (stereoActive ? 0.1f : sourceOpacity) * sphereOpacityMul;
         const float mainRadius = stereoActive ? 0.0375f : 0.048f;
-        if (stereoActive) glDepthMask(GL_FALSE);
-        drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
-        if (stereoActive) glDepthMask(GL_TRUE);
+        if (mainOpacity > 0.0f) {
+            if (stereoActive) glDepthMask(GL_FALSE);
+            drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
+            if (stereoActive) glDepthMask(GL_TRUE);
+        }
     }
 
     // Draw L/R stereo node spheres (smaller than center, only when stereo active)
@@ -495,8 +525,21 @@ void XYZPanGLView::renderOpenGL()
     }
 
     // Foreign (linked instance) source nodes + audible radius spheres
+    const auto fp = foreignBridge_.read();
+    // Snap smoothed positions for newly appeared sources (avoid fly-in from origin)
+    if (fp.count > foreignPrevCount_) {
+        for (int i = foreignPrevCount_; i < fp.count; ++i) {
+            const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
+            const auto& fs = fp.sources[i];
+            foreignSmoothedPos_[ri] = { fs.x, fs.y, fs.z,
+                                        fs.lNodeX, fs.lNodeY, fs.lNodeZ,
+                                        fs.rNodeX, fs.rNodeY, fs.rNodeZ,
+                                        fs.sphereRadius };
+        }
+    }
+    foreignPrevCount_ = fp.count;
+
     {
-        const auto fp = foreignBridge_.read();
         static constexpr glm::vec3 kPalette[8] = {
             {0.60f, 0.40f, 0.80f},  // purple
             {0.30f, 0.70f, 0.50f},  // teal-green
@@ -508,23 +551,45 @@ void XYZPanGLView::renderOpenGL()
             {0.45f, 0.45f, 0.70f},  // lavender
         };
         const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
+        constexpr float kForeignPosSmooth = 0.35f;
 
-        // Draw audible radius spheres for foreign sources (behind nodes)
+        // Draw audible radius spheres + sound waves for foreign sources (behind nodes)
         glDepthMask(GL_FALSE);
         for (int i = 0; i < fp.count; ++i) {
             const auto& fs = fp.sources[i];
             const auto color = kPalette[fs.colorIndex % 8];
-            const glm::vec3 fPos(fs.x, fs.z, -fs.y);
-            const float fsr = fs.sphereRadius * 0.25f;
+            const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
+
+            // Per-frame exponential smoothing of foreign source positions
+            auto& sp = foreignSmoothedPos_[ri];
+            sp.x  += kForeignPosSmooth * (fs.x - sp.x);
+            sp.y  += kForeignPosSmooth * (fs.y - sp.y);
+            sp.z  += kForeignPosSmooth * (fs.z - sp.z);
+            sp.lx += kForeignPosSmooth * (fs.lNodeX - sp.lx);
+            sp.ly += kForeignPosSmooth * (fs.lNodeY - sp.ly);
+            sp.lz += kForeignPosSmooth * (fs.lNodeZ - sp.lz);
+            sp.rx += kForeignPosSmooth * (fs.rNodeX - sp.rx);
+            sp.ry += kForeignPosSmooth * (fs.rNodeY - sp.ry);
+            sp.rz += kForeignPosSmooth * (fs.rNodeZ - sp.rz);
+            sp.sphereRadius += kForeignPosSmooth * (fs.sphereRadius - sp.sphereRadius);
+
+            const glm::vec3 fPos(sp.x, sp.z, -sp.y);
+            const float fsr = sp.sphereRadius * 0.25f;
             drawSphere(fPos, fsr, color, 0.03f);
             drawSphereWireframe(fsr, color, 0.02f, fPos);
-            // Re-establish sphere shader after wireframe drew with lineShader
+
+            // Re-establish sphere shader for sound wave filled spheres
             sphereShader_->use();
             sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
             sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
             const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
             sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z);
             glBindVertexArray(vaoSphere_);
+
+            // Smooth foreign source RMS and draw sound waves
+            const float fRmsCoeff = (fs.inputRms > foreignSmoothedRms_[ri]) ? kRmsAttack : kRmsRelease;
+            foreignSmoothedRms_[ri] += fRmsCoeff * (fs.inputRms - foreignSmoothedRms_[ri]);
+            drawSoundWaves(fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
         }
         glDepthMask(GL_TRUE);
 
@@ -532,14 +597,16 @@ void XYZPanGLView::renderOpenGL()
         for (int i = 0; i < fp.count; ++i) {
             const auto& fs = fp.sources[i];
             const auto color = kPalette[fs.colorIndex % 8];
-            const glm::vec3 fPos(fs.x, fs.z, -fs.y);  // XYZPan → GL
+            const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
+            const auto& sp = foreignSmoothedPos_[ri];
+            const glm::vec3 fPos(sp.x, sp.z, -sp.y);
             drawSphere(fPos, 0.035f, color, 0.6f);
             // Highlight ring around focused foreign source
             if (fs.colorIndex == focusIdx)
                 drawSphere(fPos, 0.050f, color, 0.25f);
             if (fs.stereoWidth > 0.0f) {
-                const glm::vec3 fL(fs.lNodeX, fs.lNodeZ, -fs.lNodeY);
-                const glm::vec3 fR(fs.rNodeX, fs.rNodeZ, -fs.rNodeY);
+                const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
+                const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);
                 drawSphere(fL, 0.028f, color * 0.8f, 0.45f);
                 drawSphere(fR, 0.028f, color * 0.8f, 0.45f);
             }
@@ -586,25 +653,41 @@ void XYZPanGLView::renderOpenGL()
         if (ownInstanceName_.isNotEmpty()) {
             const juce::Colour goldCol(theme.brightGold);
             const glm::vec3 goldVec(goldCol.getFloatRed(), goldCol.getFloatGreen(), goldCol.getFloatBlue());
-            drawBillboardLabel(sourcePos, ownInstanceName_.toStdString(),
-                               goldVec, 0.85f);
+            if (stereoActive) {
+                drawBillboardLabel(lNodePos, ownInstanceName_.toStdString() + " L",
+                                   goldVec, 0.85f);
+                drawBillboardLabel(rNodePos, ownInstanceName_.toStdString() + " R",
+                                   goldVec, 0.85f);
+            } else {
+                drawBillboardLabel(sourcePos, ownInstanceName_.toStdString(),
+                                   goldVec, 0.85f);
+            }
         }
 
-        // Foreign source labels
+        // Foreign source labels (use smoothed positions so labels track nodes)
         {
-            const auto fp2 = foreignBridge_.read();
             static constexpr glm::vec3 kLabelPalette[8] = {
                 {0.60f, 0.40f, 0.80f}, {0.30f, 0.70f, 0.50f},
                 {0.80f, 0.45f, 0.30f}, {0.40f, 0.55f, 0.85f},
                 {0.75f, 0.35f, 0.55f}, {0.50f, 0.70f, 0.35f},
                 {0.85f, 0.65f, 0.30f}, {0.45f, 0.45f, 0.70f},
             };
-            for (int i = 0; i < fp2.count; ++i) {
-                const auto& fs = fp2.sources[i];
+            for (int i = 0; i < fp.count; ++i) {
+                const auto& fs = fp.sources[i];
                 if (fs.name[0] == '\0') continue;
-                const glm::vec3 fPos(fs.x, fs.z, -fs.y);
-                drawBillboardLabel(fPos, std::string(fs.name),
-                                   kLabelPalette[fs.colorIndex % 8], 0.85f);
+                const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
+                const auto& sp = foreignSmoothedPos_[ri];
+                const auto labelColor = kLabelPalette[fs.colorIndex % 8];
+                const std::string name(fs.name);
+                if (fs.stereoWidth > 0.0f) {
+                    const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
+                    const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);
+                    drawBillboardLabel(fL, name + " L", labelColor, 0.85f);
+                    drawBillboardLabel(fR, name + " R", labelColor, 0.85f);
+                } else {
+                    const glm::vec3 fPos(sp.x, sp.z, -sp.y);
+                    drawBillboardLabel(fPos, name, labelColor, 0.85f);
+                }
             }
         }
     }
@@ -633,6 +716,8 @@ void XYZPanGLView::openGLContextClosing()
     if (iboSphere_) { glDeleteBuffers(1, &iboSphere_);      iboSphere_ = 0; }
     if (vaoSphereWire_) { glDeleteVertexArrays(1, &vaoSphereWire_); vaoSphereWire_ = 0; }
     if (iboSphereWire_) { glDeleteBuffers(1, &iboSphereWire_);      iboSphereWire_ = 0; }
+    if (vaoSphereRings_) { glDeleteVertexArrays(1, &vaoSphereRings_); vaoSphereRings_ = 0; }
+    if (iboSphereRings_) { glDeleteBuffers(1, &iboSphereRings_);      iboSphereRings_ = 0; }
     if (vaoCone_)   { glDeleteVertexArrays(1, &vaoCone_);   vaoCone_   = 0; }
     if (vboCone_)   { glDeleteBuffers(1, &vboCone_);        vboCone_   = 0; }
     if (iboCone_)   { glDeleteBuffers(1, &iboCone_);        iboCone_   = 0; }
@@ -1140,6 +1225,32 @@ void XYZPanGLView::uploadSphereVAO()
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    // --- Latitude-only rings VAO: shares vboSphere_ data, latitude lines only ---
+    if (vaoSphereRings_) glDeleteVertexArrays(1, &vaoSphereRings_);
+    if (iboSphereRings_) glDeleteBuffers(1, &iboSphereRings_);
+
+    auto ringsIdx = buildSphereLatitudeRings(16, 16);
+    sphereRingsIndexCount_ = static_cast<int>(ringsIdx.size());
+
+    glGenVertexArrays(1, &vaoSphereRings_);
+    glGenBuffers(1, &iboSphereRings_);
+
+    glBindVertexArray(vaoSphereRings_);
+    glBindBuffer(GL_ARRAY_BUFFER, vboSphere_);
+
+    const GLsizei ringsStride = 6 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, ringsStride, nullptr);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, iboSphereRings_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(ringsIdx.size() * sizeof(unsigned)),
+                 ringsIdx.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1293,7 @@ void XYZPanGLView::drawSphere(const glm::vec3& position, float radius,
     sphereShader_->setUniformMat4("model",     glm::value_ptr(model), 1, GL_FALSE);
     sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
     sphereShader_->setUniform("opacity",   opacity);
+    sphereShader_->setUniform("edgeFade",  0.0f);
     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
 }
 
@@ -1209,6 +1321,74 @@ void XYZPanGLView::drawSphereWireframe(float radius, const glm::vec3& color, flo
 }
 
 // ---------------------------------------------------------------------------
+// drawSphereRings — latitude rings only (no longitude meridians)
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawSphereRings(float radius, const glm::vec3& color, float opacity,
+                                    const glm::vec3& position)
+{
+    if (!lineShader_ || vaoSphereRings_ == 0 || sphereRingsIndexCount_ == 0) return;
+
+    const glm::mat4 model = glm::scale(
+        glm::translate(glm::mat4(1.0f), position), glm::vec3(radius));
+
+    lineShader_->use();
+    lineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+    lineShader_->setUniform("lineColor", color.r, color.g, color.b);
+    lineShader_->setUniform("opacity",   opacity);
+
+    glBindVertexArray(vaoSphereRings_);
+    glDrawElements(GL_LINES, sphereRingsIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// drawSoundWaves — expanding filled sphere pulses radiating outward from source.
+// Each wave is a semi-transparent filled sphere. Opacity fades from baseOpacity
+// near the source to 0 at the audible radius boundary. Multiple overlapping
+// spheres visually stack, making the center appear denser.
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawSoundWaves(const glm::vec3& center, float sphereRadius,
+                                   float inputRms, const glm::vec3& color,
+                                   double nowSeconds, float intensity,
+                                   float baseOpacity, float speed, int numWaves)
+{
+    if (inputRms < 0.001f || sphereRadius < 0.001f || intensity < 0.001f
+        || baseOpacity < 0.0001f || numWaves < 1) return;
+
+    // Volume-based opacity multiplier: 0dB (rms=1.0) → 2x, -6dB → 1x, -12dB → 0.5x
+    const float rmsMul = std::clamp(inputRms * 2.0f, 0.0f, 2.0f);
+
+    const float waveSpacing = 1.0f / static_cast<float>(numWaves);
+
+    for (int i = 0; i < numWaves; ++i) {
+        float phase = static_cast<float>(std::fmod(nowSeconds * speed + i * waveSpacing, 1.0));
+
+        float waveRadius = phase * sphereRadius;
+        if (waveRadius < 0.005f) continue;
+
+        // Opacity: starts at baseOpacity near center, fades linearly to 0 at boundary.
+        // Volume (rmsMul) scales opacity — louder = more visible, quieter = more transparent
+        float fadeIn  = std::clamp(phase * 5.0f, 0.0f, 1.0f);  // quick ramp-in
+        float fadeOut = 1.0f - phase;                             // linear fade to edge
+        float waveOpacity = fadeIn * fadeOut * baseOpacity * intensity * rmsMul;
+
+        if (waveOpacity < 0.001f) continue;
+
+        // Inline sphere draw with edgeFade=1.0 for soft-edged wave shells
+        const glm::mat4 model = glm::scale(
+            glm::translate(glm::mat4(1.0f), center),
+            glm::vec3(waveRadius));
+        sphereShader_->setUniformMat4("model", glm::value_ptr(model), 1, GL_FALSE);
+        sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
+        sphereShader_->setUniform("opacity",   waveOpacity);
+        sphereShader_->setUniform("edgeFade",  1.0f);
+        glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // drawSphereWithModel — draw sphere VAO with arbitrary model matrix
 // ---------------------------------------------------------------------------
 void XYZPanGLView::drawSphereWithModel(const glm::mat4& model,
@@ -1220,6 +1400,7 @@ void XYZPanGLView::drawSphereWithModel(const glm::mat4& model,
     sphereShader_->setUniformMat4("model",     glm::value_ptr(model), 1, GL_FALSE);
     sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
     sphereShader_->setUniform("opacity",   opacity);
+    sphereShader_->setUniform("edgeFade",  0.0f);
     glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
 }
 
@@ -1274,6 +1455,7 @@ void XYZPanGLView::drawCone(const glm::mat4& model,
     sphereShader_->setUniformMat4("model",     glm::value_ptr(model), 1, GL_FALSE);
     sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
     sphereShader_->setUniform("opacity",   opacity);
+    sphereShader_->setUniform("edgeFade",  0.0f);
     glDrawElements(GL_TRIANGLES, coneIndexCount_, GL_UNSIGNED_INT, nullptr);
     // Restore sphere VAO since cone is drawn mid-batch
     glBindVertexArray(vaoSphere_);
