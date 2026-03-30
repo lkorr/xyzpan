@@ -116,8 +116,9 @@ void Camera::applyMouseDrag(float dx, float dy)
     yaw   += rdx * kSensitivity;
     pitch -= rdy * kSensitivity;  // subtract: drag up -> camera tilts up (pitch increases)
 
-    // Clamp pitch to avoid flipping over the poles
-    pitch = std::clamp(pitch, -89.0f, 89.0f);
+    // Wrap pitch at ±180° for full rotation
+    if (pitch > 180.0f)  pitch -= 360.0f;
+    if (pitch < -180.0f) pitch += 360.0f;
 }
 
 } // namespace xyzpan
