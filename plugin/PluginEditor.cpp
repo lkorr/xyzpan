@@ -844,10 +844,10 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
     l.contentY   = l.bottomY + kSectionHdrH;
     l.contentH   = l.tabBarY - l.contentY;
 
-    // Three equal columns (with separators eaten from center)
+    // Center column gets 40%, sides get 30% each
     const int availW = l.contentW - kColSepW * 2;  // 2 vertical separators
-    l.leftColW   = availW / 3;
-    l.centerColW = availW / 3;
+    l.leftColW   = static_cast<int>(availW * 0.27f);
+    l.centerColW = static_cast<int>(availW * 0.46f);
     l.rightColW  = availW - l.leftColW - l.centerColW;  // absorb rounding
     l.centerColX = l.leftColW + kColSepW;
     l.rightColX  = l.centerColX + l.centerColW + kColSepW;
@@ -909,27 +909,29 @@ void XYZPanEditor::paint(juce::Graphics& g)
                            static_cast<float>(lo.bottomY),
                            static_cast<float>(lo.tabBarY));
 
-        // Horizontal separator between STEREO and REVERB in left column (midpoint)
+        // Horizontal separator between STEREO and REVERB in left column
         {
-            const int midY = lo.contentY + lo.contentH / 2;
+            const int reverbH = 80;
+            const int sepY = lo.tabBarY - reverbH;
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.3f));
-            g.drawHorizontalLine(midY, 0.0f, static_cast<float>(lo.leftColW));
+            g.drawHorizontalLine(sepY, 0.0f, static_cast<float>(lo.leftColW));
             // "REVERB" sub-header
             g.setColour(juce::Colour(ct.brightGold).withAlpha(0.8f));
             g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText("REVERB", 8, midY + 2, lo.leftColW - 16, 14, juce::Justification::centredLeft);
+            g.drawText("REVERB", 8, sepY + 2, lo.leftColW - 16, 14, juce::Justification::centredLeft);
         }
 
         // Horizontal separator between SOURCE and OPTIONS in center column
         {
-            const int midY = lo.contentY + lo.contentH / 2;
+            const int optionsH = 80;
+            const int sepY = lo.tabBarY - optionsH;
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.3f));
-            g.drawHorizontalLine(midY, static_cast<float>(lo.centerColX),
+            g.drawHorizontalLine(sepY, static_cast<float>(lo.centerColX),
                                  static_cast<float>(lo.centerColX + lo.centerColW));
             // "OPTIONS" sub-header
             g.setColour(juce::Colour(ct.brightGold).withAlpha(0.8f));
             g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-            g.drawText("OPTIONS", lo.centerColX + 8, midY + 2, lo.centerColW - 16, 14,
+            g.drawText("OPTIONS", lo.centerColX + 8, sepY + 2, lo.centerColW - 16, 14,
                        juce::Justification::centredLeft);
         }
     } else {
@@ -1062,20 +1064,19 @@ void XYZPanEditor::resized()
 }
 
 // ---------------------------------------------------------------------------
-// layoutLeftCol — STEREO (top half) + REVERB (bottom half)
+// layoutLeftCol — STEREO (top ~65%) + REVERB (bottom ~35%)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::layoutLeftCol(juce::Rectangle<int> area)
 {
     const int pad = kPadding;
-    const int knobSz = kSmallKnobSz;
-    const int labelH = 13;
-    const int sliderH = 20;
-    const int gap = 3;
+    const int sliderH = 19;
+    const int gap = 2;
 
-    // Split into top (stereo) and bottom (reverb) halves
-    const int halfH = area.getHeight() / 2;
-    auto stereoArea = area.removeFromTop(halfH);
-    auto reverbArea = area;  // remaining
+    // Stereo gets more space (sliders + LFOs), reverb is compact (one row of small knobs)
+    const int reverbH = 80;  // enough for one row of small knobs + toggle
+    auto stereoArea = area.removeFromBottom(0);  // we'll carve from bottom
+    auto reverbArea = area.removeFromBottom(reverbH);
+    stereoArea = area;  // remainder = stereo
 
     // --- STEREO SECTION ---
     {
@@ -1084,7 +1085,7 @@ void XYZPanEditor::layoutLeftCol(juce::Rectangle<int> area)
         int sy = stereoArea.getY() + 2;
 
         // Stereo Width / Offset / Phase as horizontal sliders
-        const int labelW = 46;
+        const int labelW = 44;
         auto placeSlider = [&](juce::Slider& slider, juce::Label& label) {
             label.setBounds(sx, sy, labelW, sliderH);
             slider.setBounds(sx + labelW, sy, sw - labelW, sliderH);
@@ -1095,14 +1096,14 @@ void XYZPanEditor::layoutLeftCol(juce::Rectangle<int> area)
         placeSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
 
         // Face Listener toggle
-        faceListenerToggle_.setBounds(sx, sy, sw, 20);
-        sy += 22;
+        faceListenerToggle_.setBounds(sx, sy, sw, 18);
+        sy += 20;
 
         // Orbit LFO strips — stack remaining space among 3 strips
         const int lfoTop = sy;
-        const int lfoAvail = stereoArea.getBottom() - lfoTop;
-        const int speedRowH = 26;
-        const int stripH = juce::jmax(0, (lfoAvail - speedRowH) / 3);
+        const int speedRowH = 22;
+        const int lfoAvail = stereoArea.getBottom() - lfoTop - speedRowH;
+        const int stripH = juce::jmax(0, lfoAvail / 3);
 
         orbitXYLFO_.setBounds(stereoArea.getX(), lfoTop,                stereoArea.getWidth(), stripH);
         orbitXZLFO_.setBounds(stereoArea.getX(), lfoTop + stripH,      stereoArea.getWidth(), stripH);
@@ -1110,61 +1111,61 @@ void XYZPanEditor::layoutLeftCol(juce::Rectangle<int> area)
 
         // Orbit Speed + Reset row
         const int speedY = lfoTop + stripH * 3;
-        const int speedLabelW = 48;
-        const int resetBtnW = 40;
-        orbitSpeedMulLabel_.setBounds(sx, speedY + 2, speedLabelW, speedRowH - 4);
-        orbitSpeedMulKnob_.setBounds(sx + speedLabelW, speedY + 2,
-                                      sw - speedLabelW - resetBtnW - 4, speedRowH - 4);
-        resetOrbitPhasesBtn_.setBounds(sx + sw - resetBtnW, speedY + 2, resetBtnW, speedRowH - 4);
+        const int speedLabelW = 42;
+        const int resetBtnW = 36;
+        orbitSpeedMulLabel_.setBounds(sx, speedY + 1, speedLabelW, speedRowH - 2);
+        orbitSpeedMulKnob_.setBounds(sx + speedLabelW, speedY + 1,
+                                      sw - speedLabelW - resetBtnW - 4, speedRowH - 2);
+        resetOrbitPhasesBtn_.setBounds(sx + sw - resetBtnW, speedY + 1, resetBtnW, speedRowH - 2);
     }
 
-    // --- REVERB SECTION (below midpoint separator — skip sub-header space) ---
+    // --- REVERB SECTION (compact — 4 small knobs in a row + toggle) ---
     {
         const int rx = reverbArea.getX() + pad;
         const int rw = reverbArea.getWidth() - pad * 2;
-        int ry = reverbArea.getY() + 18;  // skip "REVERB" sub-header painted in paint()
+        int ry = reverbArea.getY() + 16;  // skip "REVERB" sub-header painted in paint()
 
-        // 2×2 knob grid
-        const int colW = rw / 2;
-        const int cellH = knobSz + labelH + 2;
+        const int verbKnobSz = 42;
+        const int verbLabelH = 11;
+        const int colW = rw / 4;
 
-        auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col, int row) {
-            int kx = rx + col * colW + (colW - knobSz) / 2;
-            int ky = ry + row * cellH;
-            knob.setBounds(kx, ky, knobSz, knobSz);
-            label.setBounds(rx + col * colW, ky + knobSz, colW, labelH);
+        auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
+            int kx = rx + col * colW + (colW - verbKnobSz) / 2;
+            knob.setBounds(kx, ry, verbKnobSz, verbKnobSz);
+            label.setBounds(rx + col * colW, ry + verbKnobSz, colW, verbLabelH);
         };
-        placeKnob(verbSize_,    verbSizeL_,    0, 0);
-        placeKnob(verbDecay_,   verbDecayL_,   1, 0);
-        placeKnob(verbDamping_, verbDampingL_, 0, 1);
-        placeKnob(verbWet_,     verbWetL_,     1, 1);
+        placeKnob(verbSize_,    verbSizeL_,    0);
+        placeKnob(verbDecay_,   verbDecayL_,   1);
+        placeKnob(verbDamping_, verbDampingL_, 2);
+        placeKnob(verbWet_,     verbWetL_,     3);
 
-        // Early Reflections toggle + Binaural toggle below reverb knobs
-        const int toggleY = ry + cellH * 2 + 2;
-        const int toggleH = 18;
-        earlyReflToggle_.setBounds(rx, toggleY, 20, toggleH);
-        earlyReflLabel_.setBounds(rx + 22, toggleY, rw - 22, toggleH);
+        // Early Reflections toggle below knobs
+        const int toggleY = ry + verbKnobSz + verbLabelH + 2;
+        earlyReflToggle_.setBounds(rx, toggleY, 18, 16);
+        earlyReflLabel_.setBounds(rx + 20, toggleY, rw - 20, 16);
     }
 }
 
 // ---------------------------------------------------------------------------
-// layoutCenterCol — SOURCE (X/Y/Z knobs + LFOs, top) + OPTIONS (bottom)
+// layoutCenterCol — SOURCE (X/Y/Z knobs + LFOs, top ~70%) + OPTIONS (bottom ~30%)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::layoutCenterCol(juce::Rectangle<int> area)
 {
     const int pad = kPadding;
-    const int knobSz = 68;  // slightly larger for hero X/Y/Z knobs
+    const int knobSz = 78;  // hero X/Y/Z knobs — larger for presence
     const int labelH = 18;
 
-    // Split into top (source) and bottom (options) halves
-    const int halfH = area.getHeight() / 2;
-    auto sourceArea = area.removeFromTop(halfH);
-    auto optionsArea = area;
+    // Options section is compact: 3 small knobs in a row + toggles ≈ 80px
+    const int optionsH = 80;
+    auto optionsArea = area.removeFromBottom(optionsH);
+    auto sourceArea = area;  // remainder = source (gets majority of space)
 
-    // --- SOURCE: X / Y / Z knobs in a row ---
+    // --- SOURCE: X / Y / Z knobs in a row with LFO strips below ---
     {
         const int colW = sourceArea.getWidth() / 3;
         int sy = sourceArea.getY() + 2;
+
+        const int speedRowH = 22;
 
         auto layoutKnobCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
                                   int colIdx) {
@@ -1175,7 +1176,7 @@ void XYZPanEditor::layoutCenterCol(juce::Rectangle<int> area)
 
             // LFO strip fills remaining space below knob
             int lfoTop = sy + labelH + knobSz + 2;
-            int lfoH = juce::jmax(0, sourceArea.getBottom() - lfoTop - 26);  // reserve speed row
+            int lfoH = juce::jmax(0, sourceArea.getBottom() - lfoTop - speedRowH);
             lfo.setBounds(cx, lfoTop, colW, lfoH);
         };
 
@@ -1184,29 +1185,28 @@ void XYZPanEditor::layoutCenterCol(juce::Rectangle<int> area)
         layoutKnobCol(zKnob_, zLabel_, zLFO_, 2);
 
         // LFO Speed + Reset row at bottom of source area
-        const int speedRowH = 24;
         const int speedY = sourceArea.getBottom() - speedRowH;
-        const int speedLabelW = 56;
-        const int resetBtnW = 40;
+        const int speedLabelW = 52;
+        const int resetBtnW = 38;
         const int sx = sourceArea.getX() + pad;
         const int sw = sourceArea.getWidth() - pad * 2;
-        lfoSpeedMulLabel_.setBounds(sx, speedY + 2, speedLabelW, speedRowH - 4);
-        lfoSpeedMulKnob_.setBounds(sx + speedLabelW, speedY + 2,
-                                    sw - speedLabelW - resetBtnW - 4, speedRowH - 4);
-        resetXYZPhasesBtn_.setBounds(sx + sw - resetBtnW, speedY + 2, resetBtnW, speedRowH - 4);
+        lfoSpeedMulLabel_.setBounds(sx, speedY + 1, speedLabelW, speedRowH - 2);
+        lfoSpeedMulKnob_.setBounds(sx + speedLabelW, speedY + 1,
+                                    sw - speedLabelW - resetBtnW - 4, speedRowH - 2);
+        resetXYZPhasesBtn_.setBounds(sx + sw - resetBtnW, speedY + 1, resetBtnW, speedRowH - 2);
     }
 
-    // --- OPTIONS (below midpoint) ---
+    // --- OPTIONS (compact bottom strip) ---
     {
         const int ox = optionsArea.getX() + pad;
         const int ow = optionsArea.getWidth() - pad * 2;
-        int oy = optionsArea.getY() + 18;  // skip "OPTIONS" sub-header
+        int oy = optionsArea.getY() + 16;  // skip "OPTIONS" sub-header
 
-        const int optKnobSz = kSmallKnobSz;
-        const int optLabelH = 13;
+        const int optKnobSz = 46;
+        const int optLabelH = 11;
         const int colW = ow / 3;
 
-        // Sphere Radius | Doppler | Input Gain — three knobs in a row
+        // Sphere Radius | Doppler | Input Gain — three small knobs in a row
         auto placeOptKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
             int kx = ox + col * colW + (colW - optKnobSz) / 2;
             knob.setBounds(kx, oy, optKnobSz, optKnobSz);
@@ -1219,13 +1219,12 @@ void XYZPanEditor::layoutCenterCol(juce::Rectangle<int> area)
         // Doppler sub-label
         dopplerSubLabel_.setBounds(ox + colW, oy + optKnobSz + optLabelH, colW, 10);
 
-        // Binaural toggle below knobs
-        const int cbY = oy + optKnobSz + optLabelH + 14;
-        binauralToggle_.setBounds(ox, cbY, 20, 18);
-        binauralLabel_.setBounds(ox + 22, cbY, 80, 18);
+        // Binaural toggle + DEV toggle below knobs
+        const int cbY = oy + optKnobSz + optLabelH + 2;
+        binauralToggle_.setBounds(ox, cbY, 18, 16);
+        binauralLabel_.setBounds(ox + 20, cbY, 70, 16);
 
-        // DEV toggle
-        devToggle_.setBounds(ox + ow - 48, cbY, 48, 18);
+        devToggle_.setBounds(ox + ow - 44, cbY, 44, 16);
     }
 }
 
@@ -1235,17 +1234,19 @@ void XYZPanEditor::layoutCenterCol(juce::Rectangle<int> area)
 void XYZPanEditor::layoutRightCol(juce::Rectangle<int> area)
 {
     const int pad = kPadding;
-    const int knobSz = 52;
-    const int labelH = 13;
-    const int toggleH = 18;
+    const int labelH = 12;
+    const int toggleH = 17;
 
     const int rx = area.getX() + pad;
     const int rw = area.getWidth() - pad * 2;
     int ry = area.getY() + 2;
 
+    // Dynamically size knobs based on available width (3 per row)
+    const int colW = rw / 3;
+    const int knobSz = juce::jmin(50, colW - 6);
+
     // Walker X / Y / Z knobs — top row
     {
-        const int colW = rw / 3;
         auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
             int kx = rx + col * colW + (colW - knobSz) / 2;
             knob.setBounds(kx, ry, knobSz, knobSz);
@@ -1255,11 +1256,10 @@ void XYZPanEditor::layoutRightCol(juce::Rectangle<int> area)
         placeKnob(walkerYKnob_, walkerYLabel_, 1);
         placeKnob(walkerZKnob_, walkerZLabel_, 2);
     }
-    ry += knobSz + labelH + 4;
+    ry += knobSz + labelH + 3;
 
     // Yaw / Pitch / Roll knobs — second row
     {
-        const int colW = rw / 3;
         auto placeKnob = [&](juce::Slider& knob, juce::Label& label, int col) {
             int kx = rx + col * colW + (colW - knobSz) / 2;
             knob.setBounds(kx, ry, knobSz, knobSz);
@@ -1269,21 +1269,21 @@ void XYZPanEditor::layoutRightCol(juce::Rectangle<int> area)
         placeKnob(listenerPitchKnob_, listenerPitchLabel_, 1);
         placeKnob(listenerRollKnob_,  listenerRollLabel_,  2);
     }
-    ry += knobSz + labelH + 6;
+    ry += knobSz + labelH + 4;
 
-    // Toggles — 2 per row
-    const int halfW = (rw - pad) / 2;
+    // Toggles — 2 per row, compact
+    const int halfW = (rw - 4) / 2;
     wasdToggle_.setBounds(rx, ry, halfW, toggleH);
-    headFollowsToggle_.setBounds(rx + halfW + pad, ry, halfW, toggleH);
-    ry += toggleH + 3;
+    headFollowsToggle_.setBounds(rx + halfW + 4, ry, halfW, toggleH);
+    ry += toggleH + 2;
 
     listenerLinkToggle_.setBounds(rx, ry, halfW, toggleH);
-    listenerPilotToggle_.setBounds(rx + halfW + pad, ry, halfW, toggleH);
-    ry += toggleH + 3;
+    listenerPilotToggle_.setBounds(rx + halfW + 4, ry, halfW, toggleH);
+    ry += toggleH + 2;
 
     // Remote button + pilot status
     remoteBtn_.setBounds(rx, ry, halfW, toggleH);
-    pilotStatusLabel_.setBounds(rx + halfW + pad, ry, halfW, toggleH);
+    pilotStatusLabel_.setBounds(rx + halfW + 4, ry, halfW, toggleH);
 }
 
 // ---------------------------------------------------------------------------
@@ -1847,8 +1847,8 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
     // Source tab — classify by column
     if (x < lo.centerColX) {
         // Left column: stereo or reverb
-        const int midY = lo.contentY + lo.contentH / 2;
-        if (y < midY) {
+        const int reverbSepY = lo.tabBarY - 80;
+        if (y < reverbSepY) {
             // Check orbit LFO strips
             auto inBounds = [&](const LFOStrip& strip) {
                 return strip.getBounds().contains(x, y);
@@ -1863,8 +1863,8 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
 
     if (x < lo.rightColX) {
         // Center column: source or options
-        const int midY = lo.contentY + lo.contentH / 2;
-        if (y < midY) {
+        const int optionsSepY = lo.tabBarY - 80;
+        if (y < optionsSepY) {
             // Check position LFO strips
             auto inBounds = [&](const LFOStrip& strip) {
                 return strip.getBounds().contains(x, y);

@@ -110,20 +110,19 @@ private:
     void updateSnapButtonStates();
 
     // Layout constants — two-zone split
-    static constexpr float kViewportFrac = 0.62f;   // top zone = 62% of total height
+    static constexpr float kViewportFrac = 0.55f;   // top zone = 55% of total height
     static constexpr int kPresetBarH    = 32;       // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
     static constexpr int kDefaultW      = 1000;
     static constexpr int kDefaultH      = 700;
     static constexpr int kSectionHdrH   = 22;       // section header height
-    static constexpr int kTabBarH       = 26;       // tab bar height at bottom
-    static constexpr int kPadding       = 10;       // general inner padding (increased from 6)
+    static constexpr int kTabBarH       = 24;       // tab bar height at bottom
+    static constexpr int kPadding       = 8;        // general inner padding
     static constexpr int kColSepW       = 1;        // vertical column separator width
     static constexpr int kMeterW        = 24;       // output meter strip width
-    static constexpr int kSmallKnobSz   = 62;       // knob size in bottom zone
-    static constexpr int kMinViewportH  = 200;      // minimum GL viewport height
-    static constexpr int kMinBottomH    = 220;      // minimum bottom zone height
+    static constexpr int kMinViewportH  = 180;      // minimum GL viewport height
+    static constexpr int kMinBottomH    = 280;      // minimum bottom zone height
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
