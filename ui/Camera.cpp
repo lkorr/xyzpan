@@ -103,15 +103,27 @@ void Camera::applyMouseDrag(float dx, float dy)
 
     constexpr float kSensitivity = 0.4f;
 
-    // Compensate mouse deltas for visual roll so screen-space drag stays intuitive.
-    const float rollRad = glm::radians(roll);
+    // Map screen-space mouse deltas to Euler increments accounting for both
+    // roll AND pitch.  The forward mapping (Euler → screen motion) is:
+    //   screenDx =  dYaw·cosP·cosR + dPitch·sinR
+    //   screenDy = -dYaw·cosP·sinR + dPitch·cosR
+    // Inverting gives:
+    //   dYaw   = ( dx·cosR - dy·sinR) / cosP
+    //   dPitch =   dx·sinR + dy·cosR
+    // cosP is clamped to avoid the gimbal-lock singularity at pitch ±90°.
+    const float rollRad  = glm::radians(roll);
+    const float pitchRad = glm::radians(pitch);
     const float cosR = std::cos(rollRad);
     const float sinR = std::sin(rollRad);
-    const float adjDx =  dx * cosR + dy * sinR;
-    const float adjDy = -dx * sinR + dy * cosR;
+    // Clamp cosP away from zero to cap yaw rate near gimbal lock
+    const float cosP = std::max(std::abs(std::cos(pitchRad)), 0.1f)
+                     * (std::cos(pitchRad) >= 0.0f ? 1.0f : -1.0f);
 
-    yaw   += adjDx * kSensitivity;
-    pitch -= adjDy * kSensitivity;
+    const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
+    const float dPitch =   dx * sinR + dy * cosR;
+
+    yaw   += dYaw   * kSensitivity;
+    pitch -= dPitch * kSensitivity;
 
     // Wrap to ±180° for parameter compatibility.
     yaw   = std::fmod(std::fmod(yaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;

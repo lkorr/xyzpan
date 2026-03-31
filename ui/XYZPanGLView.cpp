@@ -952,15 +952,21 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
         const float dx = static_cast<float>(delta.x);
         const float dy = static_cast<float>(delta.y);
 
-        // Roll compensation for screen-space alignment.
-        const float rollDeg = apvts_.getRawParameterValue("listener_roll")->load();
-        const float rollRad = rollDeg * (3.14159265f / 180.0f);
+        // Map screen deltas to Euler increments accounting for roll AND pitch.
+        const float rollDeg  = apvts_.getRawParameterValue("listener_roll")->load();
+        const float pitchDeg = apvts_.getRawParameterValue("listener_pitch")->load();
+        const float rollRad  = rollDeg  * (3.14159265f / 180.0f);
+        const float pitchRad = pitchDeg * (3.14159265f / 180.0f);
         const float cosR = std::cos(rollRad), sinR = std::sin(rollRad);
-        const float adjDx =  dx * cosR + dy * sinR;
-        const float adjDy = -dx * sinR + dy * cosR;
+        const float rawCosP = std::cos(pitchRad);
+        const float cosP = std::max(std::abs(rawCosP), 0.1f)
+                         * (rawCosP >= 0.0f ? 1.0f : -1.0f);
 
-        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   - adjDx * kSensitivity;
-        float newPitch = apvts_.getRawParameterValue("listener_pitch")->load() - adjDy * kSensitivity;
+        const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
+        const float dPitch =   dx * sinR + dy * cosR;
+
+        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   - dYaw   * kSensitivity;
+        float newPitch = apvts_.getRawParameterValue("listener_pitch")->load() - dPitch * kSensitivity;
 
         // Wrap to ±180° for param range.
         newYaw   = std::fmod(std::fmod(newYaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
