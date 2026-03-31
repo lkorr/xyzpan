@@ -959,7 +959,7 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
         const float adjDx =  dx * cosR + dy * sinR;
         const float adjDy = -dx * sinR + dy * cosR;
 
-        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   + adjDx * kSensitivity;
+        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   - adjDx * kSensitivity;
         float newPitch = apvts_.getRawParameterValue("listener_pitch")->load() - adjDy * kSensitivity;
 
         // Wrap to ±180° for param range.
