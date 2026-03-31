@@ -72,16 +72,15 @@ private:
 // XYZPanEditor — custom plugin editor.
 //
 // Layout:
-//   Left column (420px) — stacked, no tabs:
-//     SOURCE section (always visible): X/Y/Z knobs + LFO strips + Speed slider
-//     LISTENER section (collapsible): collapsed = mini knobs row; expanded = full knobs
+//   Left column (420px) — SOURCE only (no tabs):
+//     X/Y/Z knobs + LFO strips + Speed slider
 //   Main area: XYZPanGLView (OpenGL 3D spatial view)
 //     Top-right corner: three snap buttons (XY, XZ, YZ)
 //     GL overlay (right 30%): DevPanelComponent — hidden by default
 //   Bottom row (240px), left-to-right:
-//     "Options" | "Customize" tabs (240px) — clickable header switches content
-//     ORBIT LFOs — XY/XZ/YZ strips (always visible) + Speed/Reset
-//     REVERB — Size/Decay/Damp/Wet knobs + DEV toggle
+//     "Options" | "Customize" tabs (312px) — clickable header switches content
+//     "Listener" | "Stereo Orbit" tabs (~544px) — listener controls or orbit LFO strips
+//     REVERB — Size/Decay/Damp/Wet knobs + DEV toggle (120px)
 //   Remote: popup button in listener section (visible when linked instances >= 2)
 // ---------------------------------------------------------------------------
 class XYZPanEditor : public juce::AudioProcessorEditor,
@@ -121,7 +120,7 @@ private:
     static constexpr int kSectionHdrH   = 24;      // section header height
     static constexpr int kDividerW      = 1;       // vertical divider width
     static constexpr int kPadding       = 6;       // general inner padding
-    static constexpr int kOrbitCtrlW    = 240;     // orbit sliders+buttons width in bottom row
+    static constexpr int kOrbitCtrlW    = 312;     // options section width in bottom row (was 240)
     static constexpr int kReverbSectionW = 120;     // vertical reverb column
     static constexpr int kMeterW         = 24;       // output meter strip width
 
@@ -204,10 +203,10 @@ private:
     juce::Label instanceNameLabel_;             // "Name:" label
     juce::TextEditor instanceNameEditor_;       // editable own-instance name
 
-    // Left column tab: Source (X/Y/Z + LFOs) vs Listener (Walker + orientation + toggles)
-    enum class LeftTab { Source, Listener };
-    LeftTab activeLeftTab_ = LeftTab::Source;
-    void setActiveLeftTab(LeftTab tab);
+    // Middle tab in bottom row: Listener vs Stereo Orbit LFOs
+    enum class MiddleTab { Listener, StereoOrbit };
+    MiddleTab activeMiddleTab_ = MiddleTab::Listener;
+    void setActiveMiddleTab(MiddleTab tab);
 
     // Remote popup button (visible when linked instances >= 2)
     juce::TextButton remoteBtn_{"Remote"};
@@ -310,10 +309,11 @@ private:
         int contentY;       // = kPresetBarH
         int leftColH;       // = totalH - kBottomH - kPresetBarH
         int bottomY;        // = totalH - kBottomH
-        int reverbX;        // = totalW - kReverbSectionW
-        int orbitTotalW;    // = reverbX
-        int lfoX;           // = left edge of orbit LFO strips (after cap)
-        int lfoTotalW;      // = capped width of orbit LFO strips
+        int reverbX;        // = totalW - kMeterW - kReverbSectionW
+        int middleTabX;     // = kOrbitCtrlW (start of Listener|StereoOrbit tabbed section)
+        int middleTabW;     // = reverbX - kOrbitCtrlW
+        int lfoX;           // = middleTabX (left edge of orbit LFO strips when StereoOrbit tab)
+        int lfoTotalW;      // = capped width of orbit LFO strips within middle tab
         int contentTop;     // = bottomY + kSectionHdrH
         int leftContentTop; // = contentY + kSectionHdrH (top of left column content)
         int leftContentH;   // = bottomY - leftContentTop (left column content height)
