@@ -96,20 +96,16 @@ ERPipeline::ERResult ERPipeline::processSample(
         reflected *= smoothGain;
 
         // Simplified binaural from image source azimuth (listener-relative)
-        // Order: yaw around Z, then roll around Y, then pitch around X.
         float lrImgX = imgX, lrImgY = imgY;
         if (rotated) {
-            // Yaw around Z
             const float rx = imgX * cY + imgY * sY;
             const float ry = -imgX * sY + imgY * cY;
             lrImgX = rx;
-            lrImgY = ry;
-            // Roll around forward axis (Y)
-            const float rrz = -lrImgX * sR + imgZ * cR;
-            lrImgX = lrImgX * cR + imgZ * sR;
-            // Pitch around X
-            lrImgY = lrImgY * cP + rrz * sP;
-            // (Z not needed downstream, only X and Y used for azimuth)
+            lrImgY = ry * cP + imgZ * sP;
+            const float rrz = -ry * sP + imgZ * cP;  // Z after yaw+pitch
+            // Roll around forward axis (Y in engine coords)
+            lrImgX = lrImgX * cR + rrz * sR;
+            // lrImgY unchanged by roll (forward axis)
         }
         const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
         const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;
