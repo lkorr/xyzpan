@@ -308,6 +308,7 @@ private:
     bool              isDraggingCamera_ = false;
     bool              isSourceHovered_  = false;
     juce::Point<int>  lastDragPos_;
+    juce::Point<int>  dragAnchorScreen_;  // screen-space anchor for cursor warp
 
     // ------------------------------------------------------------------
     // References to processor APVTS, processor base, and bridge

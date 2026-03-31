@@ -1,39 +1,34 @@
 #include "Camera.h"
 #include <cmath>
-#include <algorithm>
 
 namespace xyzpan {
 
+Camera::Camera() { syncQuatFromEuler(); }
+
 glm::mat4 Camera::getViewMatrix(const glm::vec3& target) const
 {
-    // Convert yaw/pitch from degrees to radians
-    const float yawRad   = yaw   * (3.14159265f / 180.0f);
-    const float pitchRad = pitch * (3.14159265f / 180.0f);
+    glm::mat4 rot = glm::mat4_cast(orientation_);
 
-    // Compute eye position in spherical coordinates around target
-    const float cosP = std::cos(pitchRad);
-    const float sinP = std::sin(pitchRad);
-    const float cosY = std::cos(yawRad);
-    const float sinY = std::sin(yawRad);
+    // Extract camera axes from rotation matrix
+    glm::vec3 forward = glm::vec3(rot * glm::vec4(0, 0, -1, 0));
+    glm::vec3 up      = glm::vec3(rot * glm::vec4(0, 1,  0, 0));
 
-    const glm::vec3 eye(
-        target.x + dist * cosP * sinY,   // X
-        target.y + dist * sinP,           // Y (elevation)
-        target.z + dist * cosP * cosY     // Z
-    );
+    // Eye position: orbit at `dist` behind the target along -forward
+    const glm::vec3 eye = target - forward * dist;
 
-    // Rotate the up vector by roll around the camera's forward axis
-    const glm::vec3 forward = glm::normalize(target - eye);
-    const float rollRad = roll * (3.14159265f / 180.0f);
-    const float cosR = std::cos(rollRad);
-    const float sinR = std::sin(rollRad);
-    const glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
-    // Rodrigues' rotation of worldUp around forward by rollRad
-    const glm::vec3 up = worldUp * cosR
-                       + glm::cross(forward, worldUp) * sinR
-                       + forward * glm::dot(forward, worldUp) * (1.0f - cosR);
+    // Build view matrix manually (inverse of camera transform)
+    glm::vec3 right = glm::normalize(glm::cross(forward, up));
+    up = glm::cross(right, forward);
 
-    return glm::lookAt(eye, target, up);
+    glm::mat4 view(1.0f);
+    view[0][0] = right.x;    view[1][0] = right.y;    view[2][0] = right.z;
+    view[0][1] = up.x;       view[1][1] = up.y;       view[2][1] = up.z;
+    view[0][2] = -forward.x; view[1][2] = -forward.y; view[2][2] = -forward.z;
+    view[3][0] = -glm::dot(right, eye);
+    view[3][1] = -glm::dot(up, eye);
+    view[3][2] =  glm::dot(forward, eye);
+
+    return view;
 }
 
 void Camera::setSnapTopDown()
@@ -45,13 +40,13 @@ void Camera::setSnapTopDown()
         savedRoll_  = roll;
     }
     // Top-down: looking straight down along -Y axis.
-    // Pitch=89.9 (near vertical) to avoid gimbal lock at exactly 90.
     yaw         = 0.0f;
-    pitch       = 89.9f;
+    pitch       = 90.0f;
     roll        = 0.0f;
     dist        = 3.5f;
     orthoSnap   = true;
     activeSnap  = SnapView::TopDown;
+    syncQuatFromEuler();
 }
 
 void Camera::setSnapSide()
@@ -68,6 +63,7 @@ void Camera::setSnapSide()
     dist       = 3.5f;
     orthoSnap  = true;
     activeSnap = SnapView::Side;
+    syncQuatFromEuler();
 }
 
 void Camera::setSnapFront()
@@ -84,6 +80,7 @@ void Camera::setSnapFront()
     dist       = 3.5f;
     orthoSnap  = true;
     activeSnap = SnapView::Front;
+    syncQuatFromEuler();
 }
 
 void Camera::setOrbit()
@@ -93,6 +90,7 @@ void Camera::setOrbit()
     roll       = savedRoll_;
     orthoSnap  = false;
     activeSnap = SnapView::Orbit;
+    syncQuatFromEuler();
 }
 
 void Camera::applyMouseDrag(float dx, float dy)
@@ -103,22 +101,69 @@ void Camera::applyMouseDrag(float dx, float dy)
         activeSnap = SnapView::Orbit;
     }
 
-    // Undo the visual tilt caused by roll so mouse drag stays intuitive.
-    // Positive roll rotates the up vector CCW (Rodrigues around forward),
-    // which makes the image appear rotated CCW. Undo with CW rotation (+roll):
-    const float rollRad = roll * (3.14159265f / 180.0f);
+    constexpr float kSensitivity = 0.4f;
+
+    // Compensate mouse deltas for visual roll so screen-space drag stays intuitive.
+    const float rollRad = glm::radians(roll);
     const float cosR = std::cos(rollRad);
     const float sinR = std::sin(rollRad);
-    const float rdx = dx * cosR - dy * sinR;
-    const float rdy = dx * sinR + dy * cosR;
+    const float adjDx =  dx * cosR + dy * sinR;
+    const float adjDy = -dx * sinR + dy * cosR;
 
-    constexpr float kSensitivity = 0.4f;
-    yaw   += rdx * kSensitivity;
-    pitch -= rdy * kSensitivity;  // subtract: drag up -> camera tilts up (pitch increases)
+    yaw   += adjDx * kSensitivity;
+    pitch -= adjDy * kSensitivity;
 
-    // Wrap pitch at ±180° for full rotation
-    if (pitch > 180.0f)  pitch -= 360.0f;
-    if (pitch < -180.0f) pitch += 360.0f;
+    // Wrap to ±180° for parameter compatibility.
+    yaw   = std::fmod(std::fmod(yaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+    pitch = std::fmod(std::fmod(pitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+
+    syncQuatFromEuler();
+}
+
+// ---------------------------------------------------------------------------
+// Quaternion ↔ Euler synchronisation
+// Rotation order: Ry(yaw) · Rx(pitch) · Rz(-roll)   (matches getViewMatrix)
+// ---------------------------------------------------------------------------
+void Camera::syncQuatFromEuler()
+{
+    glm::quat qY = glm::angleAxis(glm::radians(yaw),   glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::quat qP = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::quat qR = glm::angleAxis(glm::radians(-roll), glm::vec3(0.0f, 0.0f, 1.0f));
+    orientation_ = qY * qP * qR;
+}
+
+void Camera::syncEulerFromQuat()
+{
+    // Decompose R = Ry(yaw) · Rx(pitch) · Rz(-roll)
+    // GLM column-major: m[col][row]
+    //   m[2][1] = -sin(pitch)
+    //   m[2][0] =  sin(yaw)*cos(pitch)     m[2][2] = cos(yaw)*cos(pitch)
+    //   m[1][0] =  cos(pitch)*sin(-roll)    m[1][1] = cos(pitch)*cos(-roll)
+    glm::mat3 m = glm::mat3_cast(orientation_);
+
+    float sinP = glm::clamp(-m[2][1], -1.0f, 1.0f);
+    float newPitch = glm::degrees(std::asin(sinP));
+
+    float newYaw, newRoll;
+    if (std::abs(sinP) < 0.9999f) {
+        newYaw  =  glm::degrees(std::atan2(m[2][0], m[2][2]));
+        newRoll = -glm::degrees(std::atan2(m[0][1], m[1][1]));
+    } else {
+        // Gimbal lock — pitch ≈ ±90°. Roll is indeterminate; keep previous value.
+        newRoll = roll;
+        newYaw  = glm::degrees(std::atan2(-m[0][2], m[0][0]));
+    }
+
+    // Unwrap each angle to stay closest to the previous value (prevents 180° knob jumps).
+    auto unwrap = [](float nv, float ov) {
+        float d = std::fmod(std::fmod(nv - ov + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+        if (d < -180.0f) d += 360.0f;
+        return ov + d;
+    };
+
+    yaw   = unwrap(newYaw,   yaw);
+    pitch = unwrap(newPitch, pitch);
+    roll  = unwrap(newRoll,  roll);
 }
 
 } // namespace xyzpan

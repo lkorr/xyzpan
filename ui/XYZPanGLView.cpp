@@ -151,9 +151,10 @@ void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
     if (id == "listener_yaw")
         camera_.yaw = newValue;              // both use -180..180°
     else if (id == "listener_pitch")
-        camera_.pitch = -newValue;           // negate: param and camera pitch conventions differ
+        camera_.pitch = newValue;
     else if (id == "listener_roll")
         camera_.roll = newValue;
+    camera_.syncQuatFromEuler();
 }
 
 // ---------------------------------------------------------------------------
@@ -313,32 +314,11 @@ void XYZPanGLView::renderOpenGL()
         }
 
         if (headFollowsActive_ && toggleOn) {
-            // Map camera yaw/pitch/roll to listener params (wrap to -180..180°)
-            // camera_.yaw, camera_.pitch, and camera_.roll are already in degrees
-            float camYawDeg = std::fmod(camera_.yaw, 360.0f);
-            if (camYawDeg > 180.0f)  camYawDeg -= 360.0f;
-            if (camYawDeg < -180.0f) camYawDeg += 360.0f;
-            float camPitchDeg = std::fmod(-camera_.pitch, 360.0f);
-            if (camPitchDeg > 180.0f)  camPitchDeg -= 360.0f;
-            if (camPitchDeg < -180.0f) camPitchDeg += 360.0f;
-            // Guard: suppress parameterChanged echoes from our own writes.
-            // shared_ptr captured by value so lambda is safe if GLView is destroyed first.
-            auto flag = drivingParamsFromCamera_;
-            auto alive = glAlive_;
-            auto* apvtsPtr = &apvts_;
-            flag->store(true, std::memory_order_relaxed);
-            juce::MessageManager::callAsync([flag, alive, apvtsPtr, camYawDeg, camPitchDeg]() {
-                if (!alive->load(std::memory_order_acquire)) {
-                    flag->store(false, std::memory_order_relaxed);
-                    return;
-                }
-                if (auto* p = apvtsPtr->getParameter("listener_yaw"))
-                    p->setValueNotifyingHost(p->convertTo0to1(camYawDeg));
-                if (auto* p = apvtsPtr->getParameter("listener_pitch"))
-                    p->setValueNotifyingHost(p->convertTo0to1(camPitchDeg));
-                // Roll is intentionally NOT driven by camera — it stays user-controlled.
-                flag->store(false, std::memory_order_relaxed);
-            });
+            // Camera follows head: read listener angles (radians) and apply to camera.
+            camera_.yaw   = glm::degrees(snap.listenerYaw);
+            camera_.pitch = glm::degrees(snap.listenerPitch);
+            camera_.roll  = glm::degrees(snap.listenerRoll);
+            camera_.syncQuatFromEuler();
         }
 
         if (headFollowsActive_ && !toggleOn) {
@@ -865,6 +845,8 @@ void XYZPanGLView::mouseDown(const juce::MouseEvent& e)
     } else {
         isDraggingSource_ = false;
         isDraggingCamera_ = true;
+        setMouseCursor(juce::MouseCursor(juce::MouseCursor::NoCursor));
+        dragAnchorScreen_ = e.getScreenPosition();
     }
 }
 
@@ -923,8 +905,18 @@ void XYZPanGLView::mouseDoubleClick(const juce::MouseEvent& e)
 void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
 {
     const juce::Point<int> currentPos = e.getPosition();
-    const juce::Point<int> delta = currentPos - lastDragPos_;
+    juce::Point<int> delta = currentPos - lastDragPos_;
     lastDragPos_ = currentPos;
+
+    // Camera drag: compute delta from screen anchor and warp cursor back
+    // so the mouse never hits screen edges.
+    if (isDraggingCamera_) {
+        const auto screenPos = e.getScreenPosition();
+        delta = screenPos - dragAnchorScreen_;
+        juce::Desktop::getInstance().getMainMouseSource().setScreenPosition(
+            dragAnchorScreen_.toFloat());
+        lastDragPos_ = getLocalPoint(nullptr, dragAnchorScreen_);
+    }
 
     if (isDraggingSource_) {
         float dX = 0.0f, dY = 0.0f, dZ = 0.0f;
@@ -953,6 +945,36 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
                 if (auto* p = apvtsPtr->getParameter(kParamZ))
                     p->setValueNotifyingHost(apvtsPtr->getParameterRange(kParamZ).convertTo0to1(newZ));
             });
+    } else if (headFollowsActive_) {
+        // Head-follows mode: drive listener params directly from mouse drag.
+        // Camera will sync from params next render frame.
+        constexpr float kSensitivity = 0.4f;
+        const float dx = static_cast<float>(delta.x);
+        const float dy = static_cast<float>(delta.y);
+
+        // Roll compensation for screen-space alignment.
+        const float rollDeg = apvts_.getRawParameterValue("listener_roll")->load();
+        const float rollRad = rollDeg * (3.14159265f / 180.0f);
+        const float cosR = std::cos(rollRad), sinR = std::sin(rollRad);
+        const float adjDx =  dx * cosR + dy * sinR;
+        const float adjDy = -dx * sinR + dy * cosR;
+
+        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   + adjDx * kSensitivity;
+        float newPitch = apvts_.getRawParameterValue("listener_pitch")->load() - adjDy * kSensitivity;
+
+        // Wrap to ±180° for param range.
+        newYaw   = std::fmod(std::fmod(newYaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+        newPitch = std::fmod(std::fmod(newPitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+
+        auto* apvtsPtr = &apvts_;
+        auto alive = glAlive_;
+        juce::MessageManager::callAsync([apvtsPtr, alive, newYaw, newPitch]() {
+            if (!alive->load(std::memory_order_acquire)) return;
+            if (auto* p = apvtsPtr->getParameter("listener_yaw"))
+                p->setValueNotifyingHost(p->convertTo0to1(newYaw));
+            if (auto* p = apvtsPtr->getParameter("listener_pitch"))
+                p->setValueNotifyingHost(p->convertTo0to1(newPitch));
+        });
     } else {
         // Camera orbit — detect if drag exits a snap view
         const bool wasSnapped = camera_.activeSnap != Camera::SnapView::Orbit;

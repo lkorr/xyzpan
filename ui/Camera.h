@@ -6,6 +6,7 @@
 // we include glm directly (available via the glm::glm CMake target).
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace xyzpan {
 
@@ -17,6 +18,8 @@ namespace xyzpan {
 // looking perspective view aligned to one of the three cardinal planes.
 // ---------------------------------------------------------------------------
 struct Camera {
+    Camera();
+
     // Orbit state
     float yaw    = 35.0f;   // degrees — horizontal rotation around Y axis
     float pitch  = 25.0f;   // degrees — vertical elevation angle
@@ -43,7 +46,14 @@ struct Camera {
     // dx/dy are screen-space pixel deltas.
     void applyMouseDrag(float dx, float dy);
 
+    // Rebuild internal quaternion from current yaw/pitch/roll.
+    // Call after externally writing yaw/pitch/roll.
+    void syncQuatFromEuler();
+
 private:
+    void syncEulerFromQuat();
+
+    glm::quat orientation_ {1.0f, 0.0f, 0.0f, 0.0f};
     // Saved orbit values when snapping (restore on setOrbit())
     float savedYaw_   = 35.0f;
     float savedPitch_ = 25.0f;
