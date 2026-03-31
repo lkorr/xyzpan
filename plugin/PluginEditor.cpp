@@ -220,8 +220,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(wasdToggle_);
     wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
 
-    // Bottom middle tab starts on Listener; Source components always visible (no left tab)
-    setActiveMiddleTab(MiddleTab::Listener);
+    // Left column starts on Source tab; listener + orbit always visible in bottom row
+    setActiveLeftTab(LeftTab::Source);
     updateListenerControlsEnabled();
 
     binauralToggle_.setButtonText("");
@@ -812,7 +812,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Window sizing
     setResizable(true, true);
-    setResizeLimits(915, 650, 1800, 1600);
+    setResizeLimits(915, 750, 1800, 1600);
     setSize(kDefaultW, kDefaultH);
 }
 
@@ -845,11 +845,12 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
     l.leftColH    = totalH - kBottomH - kPresetBarH;
     l.bottomY     = totalH - kBottomH;
     l.reverbX     = totalW - kMeterW - kReverbSectionW;
-    l.middleTabX  = kOrbitCtrlW;
-    l.middleTabW  = l.reverbX - kOrbitCtrlW;
-    const int maxStripW = 185;
-    l.lfoTotalW   = juce::jmin(l.middleTabW, maxStripW * 3);
-    l.lfoX        = l.middleTabX;
+    // Bottom row: Listener (left) | Stereo Orbit (right) | Reverb
+    // Listener gets ~40% of available width, Orbit gets the rest
+    const int availW = l.reverbX;  // total width before reverb
+    l.listenerW   = juce::jmax(280, availW * 2 / 5);
+    l.orbitX      = l.listenerW;
+    l.orbitW      = l.reverbX - l.listenerW;
     l.contentTop  = l.bottomY + kSectionHdrH;
 
     // Left column content: full height between header and bottom row
@@ -866,7 +867,6 @@ void XYZPanEditor::paint(juce::Graphics& g)
 {
     const auto& ct = lookAndFeel_.currentTheme();
     const auto lo = Layout::compute(getWidth(), getHeight());
-    const int bx = 0;
     const int bw = getWidth() - kMeterW;
 
     // ===== BACKGROUNDS =====
@@ -896,8 +896,36 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(y + kSectionHdrH - 1, static_cast<float>(x), static_cast<float>(x + w));
     };
 
-    // Left column: simple "SOURCE" header (no tabs — Source is always visible)
-    drawHeader(0, lo.contentY, kLeftColW, "SOURCE");
+    // Left column: tabbed header "Source | Customize"
+    {
+        auto hdrRect = juce::Rectangle<int>(0, lo.contentY, kLeftColW, kSectionHdrH);
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour(ct.bronze).withAlpha(0.25f), 0.0f, static_cast<float>(lo.contentY),
+            juce::Colour(ct.darkIron), static_cast<float>(kLeftColW), static_cast<float>(lo.contentY), false));
+        g.fillRect(hdrRect);
+
+        const int halfW = kLeftColW / 2;
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+
+        g.setColour(activeLeftTab_ == LeftTab::Source
+            ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze));
+        g.drawText("Source", 0, lo.contentY, halfW, kSectionHdrH, juce::Justification::centred);
+
+        g.setColour(activeLeftTab_ == LeftTab::Customize
+            ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze));
+        g.drawText("Customize", halfW, lo.contentY, kLeftColW - halfW, kSectionHdrH, juce::Justification::centred);
+
+        // Gold underline on active tab
+        g.setColour(juce::Colour(ct.brightGold));
+        const int ulH = 2;
+        if (activeLeftTab_ == LeftTab::Source)
+            g.fillRect(halfW / 4, lo.contentY + kSectionHdrH - ulH, halfW / 2, ulH);
+        else
+            g.fillRect(halfW + halfW / 4, lo.contentY + kSectionHdrH - ulH, (kLeftColW - halfW) / 2, ulH);
+
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
+        g.drawHorizontalLine(lo.contentY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
+    }
 
     // Remote focus indicator — colored bar below left column header
     if (remoteFocusIndex_ >= 0) {
@@ -907,106 +935,51 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.fillRect(0, barY, kLeftColW, barH);
     }
 
-    // Bottom row header — three sections: Options|Customize + Listener|StereoOrbit + Reverb
+    // Bottom row headers — Listener | Stereo Orbit | Reverb (all always visible)
     {
         const int hdrY = lo.bottomY;
 
-        // --- Options|Customize tab header (left portion, kOrbitCtrlW wide) ---
+        // "LISTENER" header
+        drawHeader(0, hdrY, lo.listenerW, "LISTENER");
+
+        // "STEREO ORBIT" header with width badge
         {
-            auto hdrRect = juce::Rectangle<int>(bx, hdrY, kOrbitCtrlW, kSectionHdrH);
+            const int ox = lo.orbitX;
+            const int ow = lo.orbitW;
+            auto hdrRect = juce::Rectangle<int>(ox, hdrY, ow, kSectionHdrH);
             g.setGradientFill(juce::ColourGradient(
-                juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(bx), static_cast<float>(hdrY),
-                juce::Colour(ct.darkIron), static_cast<float>(bx + kOrbitCtrlW), static_cast<float>(hdrY), false));
+                juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(ox), static_cast<float>(hdrY),
+                juce::Colour(ct.darkIron), static_cast<float>(ox + ow), static_cast<float>(hdrY), false));
             g.fillRect(hdrRect);
 
-            g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
-            g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(bx), static_cast<float>(bx + kOrbitCtrlW));
+            const bool orbitActive = stereoWidthKnob_.getValue() > 0.0;
+            g.setColour(orbitActive ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze).withAlpha(0.5f));
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            g.drawText("STEREO ORBIT", hdrRect.reduced(10, 0), juce::Justification::centredLeft);
 
-            const int halfTab = kOrbitCtrlW / 2;
-            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-
-            auto optTabColor = [&](OptionsTab t) {
-                return activeTab_ == t
-                    ? juce::Colour(ct.brightGold)
-                    : juce::Colour(ct.bronze);
-            };
-
-            g.setColour(optTabColor(OptionsTab::Options));
-            g.drawText("Options", bx, hdrY, halfTab, kSectionHdrH, juce::Justification::centred);
-
-            g.setColour(optTabColor(OptionsTab::Customize));
-            g.drawText("Customize", bx + halfTab, hdrY, kOrbitCtrlW - halfTab, kSectionHdrH, juce::Justification::centred);
-
-            // Gold underline on active options tab
-            g.setColour(juce::Colour(ct.brightGold));
-            const int ulH = 2;
-            if (activeTab_ == OptionsTab::Options)
-                g.fillRect(bx + halfTab / 4, hdrY + kSectionHdrH - ulH, halfTab / 2, ulH);
-            else
-                g.fillRect(bx + halfTab + halfTab / 4, hdrY + kSectionHdrH - ulH, (kOrbitCtrlW - halfTab) / 2, ulH);
-        }
-
-        // --- Listener|StereoOrbit tab header (middle portion) ---
-        {
-            const int mx = lo.middleTabX;
-            const int mw = lo.middleTabW;
-            auto hdrRect = juce::Rectangle<int>(mx, hdrY, mw, kSectionHdrH);
-            g.setGradientFill(juce::ColourGradient(
-                juce::Colour(ct.bronze).withAlpha(0.25f), static_cast<float>(mx), static_cast<float>(hdrY),
-                juce::Colour(ct.darkIron), static_cast<float>(mx + mw), static_cast<float>(hdrY), false));
-            g.fillRect(hdrRect);
+            // Width badge
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.setColour(juce::Colour(ct.bronze).withAlpha(0.7f));
+            juce::String badge = "W:" + juce::String(stereoWidthKnob_.getValue(), 2);
+            g.drawText(badge, ox + ow - 56, hdrY, 50, kSectionHdrH, juce::Justification::centredRight);
 
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
-            g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(mx), static_cast<float>(mx + mw));
-
-            const int halfMid = mw / 2;
-            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-
-            // Listener tab label
-            g.setColour(activeMiddleTab_ == MiddleTab::Listener
-                ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze));
-            g.drawText("Listener", mx, hdrY, halfMid, kSectionHdrH, juce::Justification::centred);
-
-            // Stereo Orbit tab label — uses accent color and dims when width=0
-            {
-                const bool orbitActive = stereoWidthKnob_.getValue() > 0.0;
-                juce::Colour orbitTabCol;
-                if (activeMiddleTab_ == MiddleTab::StereoOrbit)
-                    orbitTabCol = orbitActive ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze).withAlpha(0.5f);
-                else
-                    orbitTabCol = orbitActive ? juce::Colour(ct.bronze) : juce::Colour(ct.bronze).withAlpha(0.4f);
-
-                g.setColour(orbitTabCol);
-                g.drawText("Stereo Orbit", mx + halfMid, hdrY, halfMid, kSectionHdrH, juce::Justification::centred);
-
-                // Width badge — small "W: X.XX" indicator
-                g.setFont(juce::Font(juce::FontOptions(9.0f)));
-                g.setColour(orbitTabCol.withAlpha(0.7f));
-                juce::String badge = "W:" + juce::String(stereoWidthKnob_.getValue(), 2);
-                g.drawText(badge, mx + halfMid + halfMid - 50, hdrY, 46, kSectionHdrH, juce::Justification::centredRight);
-            }
-
-            // Gold underline on active middle tab
-            g.setColour(juce::Colour(ct.brightGold));
-            const int ulH = 2;
-            if (activeMiddleTab_ == MiddleTab::Listener)
-                g.fillRect(mx + halfMid / 4, hdrY + kSectionHdrH - ulH, halfMid / 2, ulH);
-            else
-                g.fillRect(mx + halfMid + halfMid / 4, hdrY + kSectionHdrH - ulH, (mw - halfMid) / 2, ulH);
+            g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(ox), static_cast<float>(ox + ow));
         }
+
+        // "REVERB" header
+        drawHeader(lo.reverbX, hdrY, kReverbSectionW, "REVERB");
     }
 
-    // "REVERB" header — bottom row, reverb portion
-    drawHeader(lo.reverbX, lo.bottomY, kReverbSectionW, "REVERB");
-
-    // ===== DIVIDERS — LEFT COLUMN (Source only) =====
-    {
+    // ===== DIVIDERS — LEFT COLUMN =====
+    if (activeLeftTab_ == LeftTab::Source) {
         const int subColW = kLeftColW / 3;
         const float divTop = static_cast<float>(lo.leftContentTop);
 
         // Thin bronze separator above LFO Speed slider row
         const int lfoSpeedRowH = 32;
-        const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
+        const int optionsH = 120;  // options section below source
+        const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH - optionsH;
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
         g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
 
@@ -1015,35 +988,36 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
         g.drawVerticalLine(subColW * 2, divTop, divBot);
+
+        // Horizontal separator between LFO Speed row and Options section
+        const int optionsSepY = lo.bottomY - optionsH;
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+        g.drawHorizontalLine(optionsSepY, 0.0f, static_cast<float>(kLeftColW));
     }
 
     // ===== DIVIDERS — BOTTOM ROW =====
-    // Vertical divider between Options section and middle tab section
+    // Vertical divider between Listener and Stereo Orbit sections
     g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-    g.drawVerticalLine(lo.middleTabX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
+    g.drawVerticalLine(lo.orbitX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
 
-    // When Stereo Orbit tab is active: vertical dividers between LFO strips + speed row separator
-    if (activeMiddleTab_ == MiddleTab::StereoOrbit) {
-        const int lfoX = lo.lfoX;
-        const int lfoTotalW = lo.lfoTotalW;
-        const int stripW = lfoTotalW / 3;
+    // Vertical dividers between orbit LFO strips (XY | XZ | YZ)
+    {
+        const int ox = lo.orbitX;
+        const int ow = lo.orbitW;
+        const int stripW = ow / 3;
+        // Dividers only extend down to the orbit control sliders area
+        const int orbitCtrlH = 100;  // height of Width/Offset/Phase/FaceListener area
         const int speedRowH = 32;
-        const int speedSepY = lo.bottomY + kBottomH - speedRowH;
+        const int stripDivBot = lo.bottomY + kBottomH - orbitCtrlH - speedRowH;
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-        g.drawVerticalLine(lfoX + stripW,     static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
-        g.drawVerticalLine(lfoX + stripW * 2, static_cast<float>(lo.contentTop), static_cast<float>(speedSepY));
+        g.drawVerticalLine(ox + stripW,     static_cast<float>(lo.contentTop), static_cast<float>(stripDivBot));
+        g.drawVerticalLine(ox + stripW * 2, static_cast<float>(lo.contentTop), static_cast<float>(stripDivBot));
+        // Horizontal separator above speed+sliders area
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(speedSepY, static_cast<float>(lfoX), static_cast<float>(lfoX + lfoTotalW));
-    } else {
-        // Listener tab: vertical divider between Walker X/Y/Z and Yaw/Pitch/Roll
-        const int mx = lo.middleTabX;
-        const int mw = lo.middleTabW;
-        const int midDivX = mx + mw / 2;
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-        g.drawVerticalLine(midDivX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
+        g.drawHorizontalLine(stripDivBot, static_cast<float>(ox), static_cast<float>(ox + ow));
     }
 
-    // Vertical divider between middle tab section and reverb section
+    // Vertical divider between Stereo Orbit and Reverb sections
     g.setColour(juce::Colour(ct.bronze));
     g.fillRect(lo.reverbX - 1, lo.bottomY, 2, kBottomH);
 
@@ -1141,13 +1115,14 @@ void XYZPanEditor::resized()
         : defaultPanelW;
     devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
 
-    // ===== LEFT COLUMN — SOURCE (always visible, no tabs) =====
-    {
+    // ===== LEFT COLUMN — SOURCE | CUSTOMIZE tabs =====
+    if (activeLeftTab_ == LeftTab::Source) {
         const int posColW = kLeftColW / 3;
         const int knobH   = 100;
         const int posPad  = 6;
         const int lfoSpeedRowH = 32;
-        const int posSectionBottom = lo.bottomY - lfoSpeedRowH;
+        const int optionsH = 120;  // space for options section below speed row
+        const int posSectionBottom = lo.bottomY - lfoSpeedRowH - optionsH;
         const int sourceTop = lo.leftContentTop;
 
         const int bigLabelH = 20;
@@ -1169,7 +1144,7 @@ void XYZPanEditor::resized()
         layoutPosCol(zKnob_, zLabel_, zLFO_,
                      posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
 
-        // LFO Speed slider row at bottom of left column
+        // LFO Speed slider row
         const int speedY = posSectionBottom;
         const int speedLabelW = 70;
         const int resetBtnW = 44;
@@ -1180,24 +1155,14 @@ void XYZPanEditor::resized()
                                    lfoSpeedRowH - 8);
         resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
                                      resetBtnW, lfoSpeedRowH - 8);
-    }
 
-    // ===== BOTTOM ROW =====
-    {
-        const int bx = bottomRow.getX();
-        const int contentH = kBottomH - kSectionHdrH;  // 216
-
-        // Use shared Layout for structural geometry (reverb/orbit split)
-        const int contentTop = lo.contentTop;
-        const int reverbX    = lo.reverbX;
-
-        // --- OPTIONS CONTROLS (312px left portion, always visible) ---
+        // --- OPTIONS SECTION (below speed row) ---
         {
-            const int ox = bx;
-            const int ow = kOrbitCtrlW;
-            const int pad = 4;
+            const int ox = 0;
+            const int ow = kLeftColW;
             const int knobSz = 58;
             const int labelH_b = 14;
+            const int optTop = speedY + lfoSpeedRowH;
 
             // Top row: Sphere | Doppler | In Gain — three knobs in equal columns
             {
@@ -1205,22 +1170,22 @@ void XYZPanEditor::resized()
                 const int doppSubLabelH = 12;
 
                 int sKnobX = ox + (colW - knobSz) / 2;
-                sphereRadiusKnob_.setBounds(sKnobX, contentTop + 2, knobSz, knobSz);
-                sphereRadiusLabel_.setBounds(ox, contentTop + 60, colW, labelH_b);
+                sphereRadiusKnob_.setBounds(sKnobX, optTop + 2, knobSz, knobSz);
+                sphereRadiusLabel_.setBounds(ox, optTop + 60, colW, labelH_b);
 
                 int dKnobX = ox + colW + (colW - knobSz) / 2;
-                dopplerKnob_.setBounds(dKnobX, contentTop + 2, knobSz, knobSz);
-                dopplerLabel_.setBounds(ox + colW, contentTop + 60, colW, labelH_b);
-                dopplerSubLabel_.setBounds(ox + colW, contentTop + 74, colW, doppSubLabelH);
+                dopplerKnob_.setBounds(dKnobX, optTop + 2, knobSz, knobSz);
+                dopplerLabel_.setBounds(ox + colW, optTop + 60, colW, labelH_b);
+                dopplerSubLabel_.setBounds(ox + colW, optTop + 74, colW, doppSubLabelH);
 
                 int gKnobX = ox + colW * 2 + (colW - knobSz) / 2;
-                inputGainKnob_.setBounds(gKnobX, contentTop + 2, knobSz, knobSz);
-                inputGainLabel_.setBounds(ox + colW * 2, contentTop + 60, colW, labelH_b);
+                inputGainKnob_.setBounds(gKnobX, optTop + 2, knobSz, knobSz);
+                inputGainLabel_.setBounds(ox + colW * 2, optTop + 60, colW, labelH_b);
             }
 
             // Checkbox row: Binaural | Early Reflections
             {
-                const int cbY = contentTop + 87;
+                const int cbY = optTop + 87;
                 const int boxSz = 22;
                 const int cbLabelW = 90;
                 const int cbGap = 4;
@@ -1235,15 +1200,171 @@ void XYZPanEditor::resized()
                 earlyReflToggle_.setBounds(erPairX, cbY, boxSz, boxSz);
                 earlyReflLabel_.setBounds(erPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
             }
+        }
+    } else {
+        // --- CUSTOMIZE TAB — scrollable viewport fills entire left column content ---
+        customizeViewport_.setBounds(0, lo.leftContentTop, kLeftColW, lo.leftContentH);
 
-            // Orbit sliders + Face Listener below checkbox row
+        const int ow = kLeftColW;
+        const int pad = 4;
+        const int sliderH  = 20;
+        const int comboH   = 22;
+        const int labelW   = 68;
+        const int gap      = 4;
+        const int headerH  = 16;
+
+        int cy = 2;
+        themeLabel_.setBounds(pad, cy, labelW, comboH);
+        themeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
+
+        auto placeAvatarSlider = [&](juce::Slider& slider, juce::Label& label) {
+            label.setBounds(pad, cy, labelW, sliderH);
+            slider.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
+            cy += sliderH + gap;
+        };
+
+        auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
+            label.setBounds(pad, cy, labelW, sliderH);
+            swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
+            cy += sliderH + gap;
+        };
+
+        placeColorSwatch(headColorSwatch_,  headColorLabel_);
+        placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
+        placeAvatarSlider(headElongationSlider_, headElongationLabel_);
+
+        eyesSectionHeaderY_ = cy;
+        cy += headerH + gap;
+        eyeTypeLabel_.setBounds(pad, cy, labelW, comboH);
+        eyeTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
+        placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
+        placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
+        placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
+        placeAvatarSlider(googlySlider_,          googlyLabel_);
+        placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
+
+        earsSectionHeaderY_ = cy;
+        cy += headerH + gap;
+        earTypeLabel_.setBounds(pad, cy, labelW, comboH);
+        earTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
+        placeAvatarSlider(earSizeSlider_,        earSizeLabel_);
+        placeAvatarSlider(earRotationSlider_,    earRotationLabel_);
+
+        noseSectionHeaderY_ = cy;
+        cy += headerH + gap;
+        noseTypeLabel_.setBounds(pad, cy, labelW, comboH);
+        noseTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
+        placeAvatarSlider(noseSizeSlider_, noseSizeLabel_);
+        placeColorSwatch(noseColorSwatch_,  noseColorLabel_);
+
+        hatsSectionHeaderY_ = cy;
+        cy += headerH + gap;
+        hatTypeLabel_.setBounds(pad, cy, labelW, comboH);
+        hatTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
+        placeAvatarSlider(hatSizeSlider_, hatSizeLabel_);
+        placeColorSwatch(hatColorSwatch_,   hatColorLabel_);
+
+        customizeContent_.setSize(ow, cy + 2);
+    }
+
+    // ===== BOTTOM ROW =====
+    {
+        const int contentH = kBottomH - kSectionHdrH;
+
+        // Use shared Layout for structural geometry (reverb/orbit split)
+        const int contentTop = lo.contentTop;
+        const int reverbX    = lo.reverbX;
+
+        // --- LISTENER SECTION (always visible, left portion of bottom row) ---
+        {
+            const int lw = lo.listenerW;
+            const int knobSz = 80;
+            const int bigLabelH = 18;
+            const int posPad = 6;
+            const int colW = lw / 3;
+
+            // Walker X/Y/Z — top row of 3 knobs
+            auto layoutListenerKnob = [&](juce::Slider& knob, juce::Label& label,
+                                          int colX, int top) {
+                label.setBounds(colX, top, colW, bigLabelH);
+                int kw = juce::jmin(knobSz, colW - posPad * 2);
+                int kx = colX + (colW - kw) / 2;
+                knob.setBounds(kx, top + bigLabelH, kw, knobSz);
+            };
+
+            layoutListenerKnob(walkerXKnob_, walkerXLabel_, 0,          contentTop);
+            layoutListenerKnob(walkerYKnob_, walkerYLabel_, colW,       contentTop);
+            layoutListenerKnob(walkerZKnob_, walkerZLabel_, colW * 2,   contentTop);
+
+            // Yaw/Pitch/Roll — second row of 3 knobs
+            const int row2Y = contentTop + bigLabelH + knobSz + 4;
+            layoutListenerKnob(listenerYawKnob_,   listenerYawLabel_,   0,          row2Y);
+            layoutListenerKnob(listenerPitchKnob_, listenerPitchLabel_, colW,       row2Y);
+            layoutListenerKnob(listenerRollKnob_,  listenerRollLabel_,  colW * 2,   row2Y);
+
+            // Toggles below knobs
+            const int toggleY = row2Y + bigLabelH + knobSz + 8;
+            const int bigToggleH = 22;
+            const int togglePad = 6;
+            const int toggleW = lw - togglePad * 2;
+
+            wasdToggle_.setBounds(togglePad, toggleY, toggleW / 2, bigToggleH);
+            headFollowsToggle_.setBounds(togglePad + toggleW / 2, toggleY, toggleW / 2, bigToggleH);
+
+            // Link / Pilot / Remote row
+            const int linkY = toggleY + bigToggleH + 4;
+            const int smallToggleH = 20;
+            const int thirdW = (lw - togglePad * 4) / 3;
+            listenerLinkToggle_.setBounds(togglePad, linkY, thirdW, smallToggleH);
+            listenerPilotToggle_.setBounds(togglePad + thirdW + togglePad, linkY, thirdW, smallToggleH);
+            remoteBtn_.setBounds(togglePad + 2 * (thirdW + togglePad), linkY, thirdW, smallToggleH);
+            pilotStatusLabel_.setBounds(togglePad, linkY + smallToggleH + 1, lw - togglePad * 2, 14);
+        }
+
+        // --- STEREO ORBIT SECTION (always visible, right of listener) ---
+        {
+            const int ox = lo.orbitX;
+            const int ow = lo.orbitW;
+            const int orbitCtrlH = 100;  // Width/Offset/Phase/FaceListener area at bottom
+            const int speedRowH = 32;
+            const int lfoH = contentH - speedRowH - orbitCtrlH;
+            const int maxStripW = 185;
+            const int lfoTotalW = juce::jmin(ow, maxStripW * 3);
+            const int stripW = lfoTotalW / 3;
+            const int lastStripW = lfoTotalW - stripW * 2;
+
+            // LFO strips
+            orbitXYLFO_.setBounds(ox,              contentTop, stripW,     lfoH);
+            orbitXZLFO_.setBounds(ox + stripW,     contentTop, stripW,     lfoH);
+            orbitYZLFO_.setBounds(ox + stripW * 2, contentTop, lastStripW, lfoH);
+
+            // Speed slider + Reset button row
+            const int speedY = contentTop + lfoH;
+            const int speedLabelW = 70;
+            const int resetBtnW = 44;
+            const int resetBtnGap = 4;
+            const int pad = 6;
+            orbitSpeedMulLabel_.setBounds(ox + pad, speedY + 4, speedLabelW, speedRowH - 8);
+            orbitSpeedMulKnob_.setBounds(ox + pad + speedLabelW, speedY + 4,
+                                          ow - pad * 2 - speedLabelW - resetBtnW - resetBtnGap,
+                                          speedRowH - 8);
+            resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, speedY + 4,
+                                           resetBtnW, speedRowH - 8);
+
+            // Orbit control sliders: Width, Offset, Phase, Face Listener
             {
+                const int ctrlY = speedY + speedRowH;
                 const int labelW = 46;
                 const int sliderH = 22;
                 const int gap = 4;
                 const int btnH = 22;
 
-                int sy = contentTop + 118;
+                int sy = ctrlY;
                 auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
                     label.setBounds(ox + pad, sy, labelW, sliderH);
                     slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
@@ -1255,153 +1376,6 @@ void XYZPanEditor::resized()
                 placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
 
                 faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
-            }
-
-            // === CUSTOMIZE VIEWPORT (overlays Options area when visible) ===
-            {
-                const int sliderH  = 20;
-                const int comboH   = 22;
-                const int labelW   = 68;
-                const int gap      = 4;
-                const int headerH  = 16;
-
-                // Viewport fills the tab content area
-                customizeViewport_.setBounds(ox, contentTop, ow, contentH);
-
-                // All coordinates are LOCAL to customizeContent_ (start at 0)
-                int cy = 2;
-
-                // --- General section ---
-                themeLabel_.setBounds(pad, cy, labelW, comboH);
-                themeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-
-                auto placeAvatarSlider = [&](juce::Slider& slider, juce::Label& label) {
-                    label.setBounds(pad, cy, labelW, sliderH);
-                    slider.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-                    cy += sliderH + gap;
-                };
-
-                auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
-                    label.setBounds(pad, cy, labelW, sliderH);
-                    swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
-                    cy += sliderH + gap;
-                };
-
-                placeColorSwatch(headColorSwatch_,  headColorLabel_);
-                placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
-                placeAvatarSlider(headElongationSlider_, headElongationLabel_);
-
-                eyesSectionHeaderY_ = cy;
-                cy += headerH + gap;
-                eyeTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                eyeTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-                placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
-                placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
-                placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
-                placeAvatarSlider(googlySlider_,          googlyLabel_);
-                placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
-
-                earsSectionHeaderY_ = cy;
-                cy += headerH + gap;
-                earTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                earTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-                placeAvatarSlider(earSizeSlider_,        earSizeLabel_);
-                placeAvatarSlider(earRotationSlider_,    earRotationLabel_);
-
-                noseSectionHeaderY_ = cy;
-                cy += headerH + gap;
-                noseTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                noseTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-                placeAvatarSlider(noseSizeSlider_, noseSizeLabel_);
-                placeColorSwatch(noseColorSwatch_,  noseColorLabel_);
-
-                hatsSectionHeaderY_ = cy;
-                cy += headerH + gap;
-                hatTypeLabel_.setBounds(pad, cy, labelW, comboH);
-                hatTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-                cy += comboH + gap;
-                placeAvatarSlider(hatSizeSlider_, hatSizeLabel_);
-                placeColorSwatch(hatColorSwatch_,   hatColorLabel_);
-
-                customizeContent_.setSize(ow, cy + 2);
-            }
-        }
-
-        // --- MIDDLE TAB CONTENT: Listener or Stereo Orbit (lo.middleTabX to lo.reverbX) ---
-        {
-            const int mx = lo.middleTabX;
-            const int mw = lo.middleTabW;
-
-            if (activeMiddleTab_ == MiddleTab::Listener) {
-                // --- LISTENER TAB: 6 knobs horizontal + toggles below ---
-                const int knobSz = 80;
-                const int bigLabelH = 18;
-                const int posPad = 6;
-                const int colW = mw / 6;
-
-                auto layoutListenerKnob = [&](juce::Slider& knob, juce::Label& label,
-                                              int colIdx) {
-                    int colX = mx + colIdx * colW;
-                    label.setBounds(colX, contentTop, colW, bigLabelH);
-                    int kw = juce::jmin(knobSz, colW - posPad * 2);
-                    int kx = colX + (colW - kw) / 2;
-                    knob.setBounds(kx, contentTop + bigLabelH, kw, knobSz);
-                };
-
-                layoutListenerKnob(walkerXKnob_,       walkerXLabel_,       0);
-                layoutListenerKnob(walkerYKnob_,       walkerYLabel_,       1);
-                layoutListenerKnob(walkerZKnob_,       walkerZLabel_,       2);
-                layoutListenerKnob(listenerYawKnob_,   listenerYawLabel_,   3);
-                layoutListenerKnob(listenerPitchKnob_, listenerPitchLabel_, 4);
-                layoutListenerKnob(listenerRollKnob_,  listenerRollLabel_,  5);
-
-                // Toggles below knobs
-                const int toggleY = contentTop + bigLabelH + knobSz + 8;
-                const int bigToggleH = 22;
-                const int halfMW = mw / 2;
-                const int togglePad = 6;
-
-                // Left half: WASD + Head Follows
-                wasdToggle_.setBounds(mx + togglePad, toggleY, halfMW - togglePad * 2, bigToggleH);
-                headFollowsToggle_.setBounds(mx + togglePad, toggleY + bigToggleH + 3, halfMW - togglePad * 2, bigToggleH);
-
-                // Right half: Link + Pilot + Remote
-                const int smallToggleH = 20;
-                const int linkY = toggleY;
-                const int thirdW = (halfMW - togglePad * 4) / 3;
-                int rx = mx + halfMW;
-                listenerLinkToggle_.setBounds(rx + togglePad, linkY, thirdW, smallToggleH);
-                listenerPilotToggle_.setBounds(rx + togglePad + thirdW + togglePad, linkY, thirdW, smallToggleH);
-                remoteBtn_.setBounds(rx + togglePad + 2 * (thirdW + togglePad), linkY, thirdW, smallToggleH);
-                pilotStatusLabel_.setBounds(rx + togglePad, linkY + smallToggleH + 1, halfMW - togglePad * 2, 14);
-            } else {
-                // --- STEREO ORBIT TAB: 3 LFO strips + speed/reset row ---
-                const int lfoX = lo.lfoX;
-                const int lfoTotalW = lo.lfoTotalW;
-                const int speedRowH = 32;
-                const int lfoH = contentH - speedRowH;
-                const int stripW = lfoTotalW / 3;
-                const int lastStripW = lfoTotalW - stripW * 2;
-
-                orbitXYLFO_.setBounds(lfoX,              contentTop, stripW,     lfoH);
-                orbitXZLFO_.setBounds(lfoX + stripW,     contentTop, stripW,     lfoH);
-                orbitYZLFO_.setBounds(lfoX + stripW * 2, contentTop, lastStripW, lfoH);
-
-                const int speedY = contentTop + lfoH;
-                const int speedLabelW = 70;
-                const int resetBtnW = 44;
-                const int resetBtnGap = 4;
-                const int pad = 6;
-                orbitSpeedMulLabel_.setBounds(lfoX + pad, speedY + 4, speedLabelW, speedRowH - 8);
-                orbitSpeedMulKnob_.setBounds(lfoX + pad + speedLabelW, speedY + 4,
-                                              lfoTotalW - pad * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                              speedRowH - 8);
-                resetOrbitPhasesBtn_.setBounds(lfoX + lfoTotalW - pad - resetBtnW, speedY + 4,
-                                               resetBtnW, speedRowH - 8);
             }
         }
 
@@ -1552,76 +1526,43 @@ void XYZPanEditor::syncEyeSpacingSliderMode(bool isCyclops)
 }
 
 // ---------------------------------------------------------------------------
-// setActiveTab — show/hide components for Options vs Customize tab
+// setActiveLeftTab — switch left column between Source and Customize
 // ---------------------------------------------------------------------------
-void XYZPanEditor::setActiveTab(OptionsTab tab)
+void XYZPanEditor::setActiveLeftTab(LeftTab tab)
 {
-    activeTab_ = tab;
-    const bool options   = (tab == OptionsTab::Options);
-    const bool customize = (tab == OptionsTab::Customize);
+    activeLeftTab_ = tab;
+    const bool source    = (tab == LeftTab::Source);
+    const bool customize = (tab == LeftTab::Customize);
 
-    // Options-only components
-    sphereRadiusKnob_.setVisible(options);
-    sphereRadiusLabel_.setVisible(options);
-    dopplerKnob_.setVisible(options);
-    dopplerLabel_.setVisible(options);
-    dopplerSubLabel_.setVisible(options);
-    inputGainKnob_.setVisible(options);
-    inputGainLabel_.setVisible(options);
-    binauralToggle_.setVisible(options);
-    binauralLabel_.setVisible(options);
-    earlyReflToggle_.setVisible(options);
-    earlyReflLabel_.setVisible(options);
-    stereoWidthKnob_.setVisible(options);
-    stereoWidthLabel_.setVisible(options);
-    orbitOffsetKnob_.setVisible(options);
-    orbitOffsetLabel_.setVisible(options);
-    orbitPhaseKnob_.setVisible(options);
-    orbitPhaseLabel_.setVisible(options);
-    faceListenerToggle_.setVisible(options);
+    // Source tab components
+    xKnob_.setVisible(source);
+    xLabel_.setVisible(source);
+    yKnob_.setVisible(source);
+    yLabel_.setVisible(source);
+    zKnob_.setVisible(source);
+    zLabel_.setVisible(source);
+    xLFO_.setVisible(source);
+    yLFO_.setVisible(source);
+    zLFO_.setVisible(source);
+    lfoSpeedMulKnob_.setVisible(source);
+    lfoSpeedMulLabel_.setVisible(source);
+    resetXYZPhasesBtn_.setVisible(source);
 
-    // Customize-only components (all children of viewport content)
+    // Options controls (part of source tab)
+    sphereRadiusKnob_.setVisible(source);
+    sphereRadiusLabel_.setVisible(source);
+    dopplerKnob_.setVisible(source);
+    dopplerLabel_.setVisible(source);
+    dopplerSubLabel_.setVisible(source);
+    inputGainKnob_.setVisible(source);
+    inputGainLabel_.setVisible(source);
+    binauralToggle_.setVisible(source);
+    binauralLabel_.setVisible(source);
+    earlyReflToggle_.setVisible(source);
+    earlyReflLabel_.setVisible(source);
+
+    // Customize tab (scrollable viewport)
     customizeViewport_.setVisible(customize);
-
-    repaint();
-}
-
-// ---------------------------------------------------------------------------
-// setActiveMiddleTab — switch bottom-row middle section between Listener and Stereo Orbit
-// ---------------------------------------------------------------------------
-void XYZPanEditor::setActiveMiddleTab(MiddleTab tab)
-{
-    activeMiddleTab_ = tab;
-    const bool listener = (tab == MiddleTab::Listener);
-    const bool orbit    = (tab == MiddleTab::StereoOrbit);
-
-    // Listener tab components
-    walkerXKnob_.setVisible(listener);
-    walkerXLabel_.setVisible(listener);
-    walkerYKnob_.setVisible(listener);
-    walkerYLabel_.setVisible(listener);
-    walkerZKnob_.setVisible(listener);
-    walkerZLabel_.setVisible(listener);
-    listenerYawKnob_.setVisible(listener);
-    listenerYawLabel_.setVisible(listener);
-    listenerPitchKnob_.setVisible(listener);
-    listenerPitchLabel_.setVisible(listener);
-    listenerRollKnob_.setVisible(listener);
-    listenerRollLabel_.setVisible(listener);
-    wasdToggle_.setVisible(listener);
-    headFollowsToggle_.setVisible(listener);
-    listenerLinkToggle_.setVisible(listener);
-    listenerPilotToggle_.setVisible(listener);
-    pilotStatusLabel_.setVisible(listener);
-    remoteBtn_.setVisible(listener);
-
-    // Stereo Orbit tab components
-    orbitXYLFO_.setVisible(orbit);
-    orbitXZLFO_.setVisible(orbit);
-    orbitYZLFO_.setVisible(orbit);
-    orbitSpeedMulKnob_.setVisible(orbit);
-    orbitSpeedMulLabel_.setVisible(orbit);
-    resetOrbitPhasesBtn_.setVisible(orbit);
 
     // Only trigger relayout if we've been sized (avoid crash during construction)
     if (getWidth() > 0 && getHeight() > 0) {
@@ -1651,7 +1592,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
             pilotStatusLabel_.setText(name + " is the pilot", juce::dontSendNotification);
         else
             pilotStatusLabel_.setText("No pilot set", juce::dontSendNotification);
-        pilotStatusLabel_.setVisible(activeMiddleTab_ == MiddleTab::Listener);
+        pilotStatusLabel_.setVisible(true);  // listener always visible in bottom row
     } else {
         pilotStatusLabel_.setText("", juce::dontSendNotification);
         pilotStatusLabel_.setVisible(false);
@@ -1665,7 +1606,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     headFollowsToggle_.setEnabled(canControl);
 }
 
-// Options|Customize toggled by tab click; Listener|StereoOrbit toggled by middle tab click.
+// Source|Customize toggled by left column tab; Listener + Orbit always visible in bottom row.
 
 // ---------------------------------------------------------------------------
 // mouseDown — tab header click detection + last-clicked zone tracking
@@ -1682,24 +1623,13 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
 
     const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Hit-test bottom-left tab header area — "Options" | "Customize"
-    if (pos.y >= lo.bottomY && pos.y < lo.bottomY + kSectionHdrH && pos.x < kOrbitCtrlW) {
-        const int halfTab = kOrbitCtrlW / 2;
-        if (pos.x < halfTab)
-            setActiveTab(OptionsTab::Options);
+    // Hit-test left column tab header — "Source | Customize"
+    if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
+        const int halfW = kLeftColW / 2;
+        if (pos.x < halfW)
+            setActiveLeftTab(LeftTab::Source);
         else
-            setActiveTab(OptionsTab::Customize);
-        return;
-    }
-
-    // Hit-test bottom-middle tab header area — "Listener" | "Stereo Orbit"
-    if (pos.y >= lo.bottomY && pos.y < lo.bottomY + kSectionHdrH
-        && pos.x >= lo.middleTabX && pos.x < lo.reverbX) {
-        const int halfMid = lo.middleTabW / 2;
-        if (pos.x < lo.middleTabX + halfMid)
-            setActiveMiddleTab(MiddleTab::Listener);
-        else
-            setActiveMiddleTab(MiddleTab::StereoOrbit);
+            setActiveLeftTab(LeftTab::Customize);
         return;
     }
 
@@ -1934,8 +1864,22 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
     const int x = pos.x;
     const int y = pos.y;
 
-    // Left column: always Source (no tab switching)
+    // Left column: depends on active tab (Source or Customize)
     if (x >= 0 && x < kLeftColW && y >= kPresetBarH && y < lo.bottomY) {
+        if (activeLeftTab_ == LeftTab::Customize) {
+            int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
+            if (localY < eyesSectionHeaderY_)
+                return RandZone::CustColors;
+            if (localY < earsSectionHeaderY_)
+                return RandZone::CustEyes;
+            if (localY < noseSectionHeaderY_)
+                return RandZone::CustEars;
+            if (localY < hatsSectionHeaderY_)
+                return RandZone::CustNose;
+            return RandZone::CustHats;
+        }
+
+        // Source tab — check individual LFO strips
         auto inBounds = [&](const LFOStrip& strip) {
             auto b = strip.getBounds();
             return b.contains(x, y);
@@ -1953,31 +1897,12 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
         if (x >= lo.reverbX && x < lo.reverbX + kReverbSectionW)
             return RandZone::Reverb;
 
-        // Options section (left portion of bottom row)
-        if (x >= 0 && x < kOrbitCtrlW && y >= lo.contentTop) {
-            if (activeTab_ == OptionsTab::Options)
-                return RandZone::StereoOrbit;
+        // Listener section (left portion of bottom row)
+        if (x >= 0 && x < lo.orbitX && y >= lo.contentTop)
+            return RandZone::Perspective;
 
-            if (activeTab_ == OptionsTab::Customize) {
-                int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
-                if (localY < eyesSectionHeaderY_)
-                    return RandZone::CustColors;
-                if (localY < earsSectionHeaderY_)
-                    return RandZone::CustEyes;
-                if (localY < noseSectionHeaderY_)
-                    return RandZone::CustEars;
-                if (localY < hatsSectionHeaderY_)
-                    return RandZone::CustNose;
-                return RandZone::CustHats;
-            }
-        }
-
-        // Middle tab section (Listener or Stereo Orbit)
-        if (x >= lo.middleTabX && x < lo.reverbX && y >= lo.contentTop) {
-            if (activeMiddleTab_ == MiddleTab::Listener)
-                return RandZone::Perspective;
-
-            // Stereo Orbit — check individual orbit LFO strips
+        // Stereo Orbit section (middle portion)
+        if (x >= lo.orbitX && x < lo.reverbX && y >= lo.contentTop) {
             auto inBounds = [&](const LFOStrip& strip) {
                 auto b = strip.getBounds();
                 return b.contains(x, y);
@@ -1985,6 +1910,7 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
             if (inBounds(orbitXYLFO_)) return RandZone::OrbitLfoXY;
             if (inBounds(orbitXZLFO_)) return RandZone::OrbitLfoXZ;
             if (inBounds(orbitYZLFO_)) return RandZone::OrbitLfoYZ;
+            return RandZone::StereoOrbit;
         }
     }
 
