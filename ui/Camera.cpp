@@ -116,8 +116,9 @@ void Camera::applyMouseDrag(float dx, float dy)
     const float cosR = std::cos(rollRad);
     const float sinR = std::sin(rollRad);
     // Clamp cosP away from zero to cap yaw rate near gimbal lock
-    const float cosP = std::max(std::abs(std::cos(pitchRad)), 0.1f)
-                     * (std::cos(pitchRad) >= 0.0f ? 1.0f : -1.0f);
+    const float rawCosP = std::cos(pitchRad);
+    const float cosP = std::max(std::abs(rawCosP), 0.1f)
+                     * (rawCosP >= 0.0f ? 1.0f : -1.0f);
 
     const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
     const float dPitch =   dx * sinR + dy * cosR;

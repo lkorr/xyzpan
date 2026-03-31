@@ -9,6 +9,7 @@ add_executable(XYZPanTests
     engine/TestSineLUT.cpp
     engine/TestDelayInterpolation.cpp
     engine/TestGoldenReference.cpp
+    engine/TestOrientationMath.cpp
 )
 
 target_link_libraries(XYZPanTests

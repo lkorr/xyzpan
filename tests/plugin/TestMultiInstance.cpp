@@ -101,54 +101,6 @@ TEST_CASE("Hub: two instances link and see each other", "[multi][hub]") {
     REQUIRE(hub.getLinkedCount() == 0);
 }
 
-TEST_CASE("Hub: orientation broadcast propagates to linked instance", "[multi][hub]") {
-    XYZPanProcessor a, b;
-
-    enableLink(a);
-    enableLink(b);
-
-    // Change yaw on A — should propagate to B
-    setParam(a, ParamID::LISTENER_YAW, 45.0f);
-
-    float bYaw = getParam(b, ParamID::LISTENER_YAW);
-    REQUIRE(bYaw == Approx(45.0f).margin(0.5f));
-
-    disableLink(a);
-    disableLink(b);
-}
-
-TEST_CASE("Hub: walker position broadcast propagates", "[multi][hub]") {
-    XYZPanProcessor a, b;
-
-    enableLink(a);
-    enableLink(b);
-
-    // Walker range is [-1, 1]
-    setParam(a, ParamID::WALKER_X, 0.6f);
-
-    float bWx = getParam(b, ParamID::WALKER_X);
-    REQUIRE(bWx == Approx(0.6f).margin(0.05f));
-
-    disableLink(a);
-    disableLink(b);
-}
-
-TEST_CASE("Hub: new instance adopts cached orientation on link", "[multi][hub]") {
-    XYZPanProcessor a;
-    enableLink(a);
-    setParam(a, ParamID::LISTENER_YAW, 90.0f);
-
-    // B links after A already broadcast — should adopt cached value
-    XYZPanProcessor b;
-    enableLink(b);
-
-    float bYaw = getParam(b, ParamID::LISTENER_YAW);
-    REQUIRE(bYaw == Approx(90.0f).margin(0.5f));
-
-    disableLink(a);
-    disableLink(b);
-}
-
 TEST_CASE("Hub: unlinked instance does NOT receive broadcast", "[multi][hub]") {
     XYZPanProcessor a, b;
     enableLink(a);

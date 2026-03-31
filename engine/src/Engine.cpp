@@ -314,7 +314,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float chestGainLin   = std::pow(10.0f, currentParams.chestGainDb / 20.0f);
     const float floorGainLin   = std::pow(10.0f, currentParams.floorGainDb / 20.0f);
     ildGainBase_               = std::pow(10.0f, -currentParams.ildMaxDb / 20.0f);
-    hardpanGainBase_           = std::pow(10.0f, kHardpanMaxDb / 20.0f);
+    // kHardpanMaxDb is constexpr — computed once, not every block
+    static const float kHardpanGainLin = std::pow(10.0f, kHardpanMaxDb / 20.0f);
+    hardpanGainBase_           = kHardpanGainLin;
     const float auxMaxBoostLin = std::pow(10.0f, currentParams.auxSendGainMaxDb / 20.0f);
     blkDistRefScale_           = std::pow(10.0f, currentParams.distGainFloorDb / 40.0f);
 
@@ -355,16 +357,22 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         rollSmCos_  = std::cos(currentParams.listenerRoll)  * b + rollSmCos_  * angularSmA_;
         rollSmSin_  = std::sin(currentParams.listenerRoll)  * b + rollSmSin_  * angularSmA_;
     }
-    const float listYaw   = std::atan2(yawSmSin_,   yawSmCos_);
-    const float listPitch = std::atan2(pitchSmSin_, pitchSmCos_);
-    const float listRoll  = std::atan2(rollSmSin_,  rollSmCos_);
-    const bool listenerRotated = (std::abs(listYaw) > 1e-7f || std::abs(listPitch) > 1e-7f || std::abs(listRoll) > 1e-7f);
-    const float cosY = std::cos(listYaw);
-    const float sinY = std::sin(listYaw);
-    const float cosP = std::cos(listPitch);
-    const float sinP = std::sin(listPitch);
-    const float cosR = std::cos(listRoll);
-    const float sinR = std::sin(listRoll);
+    // Normalize IIR vectors to extract cos/sin directly — avoids the
+    // atan2 → cos/sin round-trip (saves 3 atan2 + 6 trig per block).
+    auto normCS = [](float c, float s, float& outCos, float& outSin) {
+        const float mag = std::sqrt(c * c + s * s);
+        const float inv = (mag > 1e-12f) ? 1.0f / mag : 1.0f;
+        outCos = c * inv;
+        outSin = s * inv;
+    };
+    float cosY, sinY, cosP, sinP, cosR, sinR;
+    normCS(yawSmCos_,   yawSmSin_,   cosY, sinY);
+    normCS(pitchSmCos_, pitchSmSin_, cosP, sinP);
+    normCS(rollSmCos_,  rollSmSin_,  cosR, sinR);
+
+    constexpr float kRotEps = 1e-7f;
+    const bool listenerRotated = (std::abs(sinY) > kRotEps || std::abs(cosY - 1.0f) > kRotEps
+                               || std::abs(sinP) > kRotEps || std::abs(sinR) > kRotEps);
 
     // Rotate block-start position into listener-relative frame for EQ targets.
     // Inverse yaw around Z, then inverse pitch around X, then roll around Y-forward.
@@ -557,12 +565,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float lCylT       = std::clamp(lHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
         const float lMonoBlend  = 1.0f - lCylT * lCylT * (3.0f - 2.0f * lCylT);
         const float lEffAz      = lAzFactor * (1.0f - lMonoBlend);
-        const float lProx       = 1.0f - std::clamp((std::sqrt(blkLNodeX*blkLNodeX+blkLNodeY*blkLNodeY+blkLNodeZ*blkLNodeZ)-kMinDistance)/blkMaxRange, 0.0f, 1.0f);
+        const float lFullDist   = std::sqrt(blkLNodeX*blkLNodeX+blkLNodeY*blkLNodeY+blkLNodeZ*blkLNodeZ);
+        const float lLNodeDistFrac = std::clamp((lFullDist - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
+        const float lProx       = 1.0f - lLNodeDistFrac;
         const float lNFBaseDb   = currentParams.nearFieldLFMaxDb * lProx;
         const float lNFGainR    = lNFBaseDb * std::max(0.0f,  lEffAz);
         const float lNFGainL    = lNFBaseDb * std::max(0.0f, -lEffAz);
-        const float lLNodeDistFrac = std::clamp(
-            (std::sqrt(blkLNodeX*blkLNodeX+blkLNodeY*blkLNodeY+blkLNodeZ*blkLNodeZ) - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
         const float lAirCut1    = currentParams.airAbsMaxHz + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * lLNodeDistFrac;
         const float lAirCut2    = currentParams.airAbs2MaxHz + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * lLNodeDistFrac;
 
@@ -582,12 +590,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float rCylT       = std::clamp(rHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
         const float rMonoBlend  = 1.0f - rCylT * rCylT * (3.0f - 2.0f * rCylT);
         const float rEffAz      = rAzFactor * (1.0f - rMonoBlend);
-        const float rProx       = 1.0f - std::clamp((std::sqrt(blkRNodeX*blkRNodeX+blkRNodeY*blkRNodeY+blkRNodeZ*blkRNodeZ)-kMinDistance)/blkMaxRange, 0.0f, 1.0f);
+        const float rFullDist   = std::sqrt(blkRNodeX*blkRNodeX+blkRNodeY*blkRNodeY+blkRNodeZ*blkRNodeZ);
+        const float rRNodeDistFrac = std::clamp((rFullDist - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
+        const float rProx       = 1.0f - rRNodeDistFrac;
         const float rNFBaseDb   = currentParams.nearFieldLFMaxDb * rProx;
         const float rNFGainR    = rNFBaseDb * std::max(0.0f,  rEffAz);
         const float rNFGainL    = rNFBaseDb * std::max(0.0f, -rEffAz);
-        const float rRNodeDistFrac = std::clamp(
-            (std::sqrt(blkRNodeX*blkRNodeX+blkRNodeY*blkRNodeY+blkRNodeZ*blkRNodeZ) - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
         const float rAirCut1    = currentParams.airAbsMaxHz + (currentParams.airAbsMinHz - currentParams.airAbsMaxHz) * rRNodeDistFrac;
         const float rAirCut2    = currentParams.airAbs2MaxHz + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * rRNodeDistFrac;
 
@@ -992,10 +1000,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Doppler FIRST — per-node mono doppler before comb/pinna/binaural
             // Distance is rotation-invariant, use listener-relative node positions
             const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
-            const float lRawDistFrac = std::clamp(
-                std::sqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ) / kSqrt3, 0.0f, 1.0f);
-            const float rRawDistFrac = std::clamp(
-                std::sqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ) / kSqrt3, 0.0f, 1.0f);
+            const float lNodeRawDist = std::sqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ);
+            const float rNodeRawDist = std::sqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ);
+            const float lRawDistFrac = std::clamp(lNodeRawDist / kSqrt3, 0.0f, 1.0f);
+            const float rRawDistFrac = std::clamp(rNodeRawDist / kSqrt3, 0.0f, 1.0f);
 
             sampleL = dist_.processDoppler(sampleL, lRawDistFrac, sr, effectiveDoppler, currentParams);
             sampleR = distR_.processDoppler(sampleR, rRawDistFrac, sr, effectiveDoppler, currentParams);
@@ -1048,12 +1056,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float dampCutoff = kERDampingLPMaxHz
                         + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
 
-                    // Per-node distGainTarget for ER gain scaling (listener-relative)
-                    const float lNodeDist = std::max(std::sqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ), kMinDistance);
+                    // Per-node distGainTarget for ER gain scaling (reuse cached distances)
+                    const float lNodeDist = std::max(lNodeRawDist, kMinDistance);
                     const float lDistRatio = distRef / lNodeDist;
                     const float lDistGainTarget = std::clamp(lDistRatio * lDistRatio, 0.0f, currentParams.distGainMax);
 
-                    const float rNodeDist = std::max(std::sqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ), kMinDistance);
+                    const float rNodeDist = std::max(rNodeRawDist, kMinDistance);
                     const float rDistRatio = distRef / rNodeDist;
                     const float rDistGainTarget = std::clamp(rDistRatio * rDistRatio, 0.0f, currentParams.distGainMax);
 

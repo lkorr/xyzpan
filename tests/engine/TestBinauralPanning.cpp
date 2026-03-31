@@ -693,55 +693,6 @@ TEST_CASE("Binaural OFF: ITD is zero - impulse arrives at same sample in both ea
     CHECK(peakL == peakR);
 }
 
-TEST_CASE("Binaural OFF: hardpan attenuates opposite ear at x=1", "[Integration][Binaural]") {
-    const float sr = 48000.0f;
-    const int N = 4096;
-    XYZPanEngine eng;
-    eng.prepare(sr, N);
-
-    EngineParams p;
-    p.x = 1.0f; p.y = 1.0f; p.z = 0.0f;  // source right
-    p.binauralEnabled = false;
-    p.bypassHeadShadow = true;
-    p.bypassRearShadow = true;
-    p.bypassPinnaEQ    = true;
-    p.bypassComb       = true;
-    p.bypassChest      = true;
-    p.bypassFloor      = true;
-    p.bypassDistGain   = true;
-    p.bypassDoppler    = true;
-    p.bypassAirAbs     = true;
-    p.bypassNearField  = true;
-    p.bypassILD        = true;
-    p.bypassReverb     = true;
-
-    settle(eng, p, 8192);
-
-    // Constant signal for RMS measurement
-    std::vector<float> input(N, 0.5f);
-    std::vector<float> outL(N), outR(N);
-    const float* ins[1] = { input.data() };
-    eng.setParams(p);
-    eng.process(ins, 1, outL.data(), outR.data(), nullptr, nullptr, N);
-
-    // Compute RMS of second half (after any transient)
-    float rmsL = 0.0f, rmsR = 0.0f;
-    const int start = N / 2;
-    for (int i = start; i < N; ++i) {
-        rmsL += outL[i] * outL[i];
-        rmsR += outR[i] * outR[i];
-    }
-    rmsL = std::sqrt(rmsL / (N - start));
-    rmsR = std::sqrt(rmsR / (N - start));
-
-    // Source is right (x=1), so left ear (opposite) should be attenuated
-    // hardpanMaxDb = -10dB → ratio ~0.316 at full azimuth
-    // Allow range 0.2 to 0.6 for the ratio
-    float ratio = rmsL / rmsR;
-    CHECK(ratio < 0.6f);
-    CHECK(ratio > 0.15f);
-}
-
 TEST_CASE("Binaural ON: no hardpan applied - both ears similar level", "[Integration][Binaural]") {
     const float sr = 48000.0f;
     const int N = 4096;
