@@ -1885,7 +1885,7 @@ void XYZPanEditor::timerCallback()
 
     // --- Q/E: Roll control ---
     if ((q || e) && pr != nullptr) {
-        constexpr float rollSpeed = 1.5f;  // degrees per 60Hz tick (~90°/sec)
+        constexpr float rollSpeed = 3.0f;  // degrees per 60Hz tick (~180°/sec)
         float rollDelta = 0.0f;
         if (e) rollDelta += rollSpeed;
         if (q) rollDelta -= rollSpeed;

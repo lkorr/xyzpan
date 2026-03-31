@@ -125,9 +125,9 @@ void Camera::applyMouseDrag(float dx, float dy)
     yaw   += dYaw   * kSensitivity;
     pitch -= dPitch * kSensitivity;
 
-    // Wrap to ±180° for parameter compatibility.
+    // Wrap yaw to ±180°, clamp pitch to ±89° to avoid gimbal lock.
     yaw   = std::fmod(std::fmod(yaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-    pitch = std::fmod(std::fmod(pitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+    pitch = std::clamp(pitch, -89.0f, 89.0f);
 
     syncQuatFromEuler();
 }
