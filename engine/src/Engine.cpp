@@ -367,18 +367,23 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float sinR = std::sin(listRoll);
 
     // Rotate block-start position into listener-relative frame for EQ targets.
-    // Inverse yaw around Z, then inverse pitch around X, then roll around Y-forward.
+    // Order: yaw around Z, then roll around Y-forward, then pitch around X.
     if (listenerRotated) {
+        // Yaw around Z
         const float rx = blkX * cosY + blkY * sinY;
         const float ry = -blkX * sinY + blkY * cosY;
         blkX = rx;
-        blkY = ry * cosP + blkZ * sinP;
-        blkZ = -ry * sinP + blkZ * cosP;
-        // Roll around forward axis (Y in engine coords)
+        blkY = ry;
+        // Roll around forward axis (Y)
         const float rrx =  blkX * cosR + blkZ * sinR;
         const float rrz = -blkX * sinR + blkZ * cosR;
         blkX = rrx;
         blkZ = rrz;
+        // Pitch around X
+        const float py = blkY * cosP + blkZ * sinP;
+        const float pz = -blkY * sinP + blkZ * cosP;
+        blkY = py;
+        blkZ = pz;
     }
 
     const float blkHorizMag  = std::sqrt(blkX * blkX + blkY * blkY);
@@ -799,17 +804,23 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         modZ -= currentParams.listenerZ;
 
         // Rotate into listener-relative frame for DSP (binaural cues, EQ targets)
+        // Order: yaw around Z, then roll around Y, then pitch around X.
         if (listenerRotated) {
+            // Yaw around Z
             const float rx = modX * cosY + modY * sinY;
             const float ry = -modX * sinY + modY * cosY;
             modX = rx;
-            modY = ry * cosP + modZ * sinP;
-            modZ = -ry * sinP + modZ * cosP;
-            // Roll around forward axis (Y in engine coords)
+            modY = ry;
+            // Roll around forward axis (Y)
             const float rrx =  modX * cosR + modZ * sinR;
             const float rrz = -modX * sinR + modZ * cosR;
             modX = rrx;
             modZ = rrz;
+            // Pitch around X
+            const float py = modY * cosP + modZ * sinP;
+            const float pz = -modY * sinP + modZ * cosP;
+            modY = py;
+            modZ = pz;
         }
 
         // Position-dependent targets from listener-relative center position
@@ -958,31 +969,42 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             const float rRelZ = rNodeZ - currentParams.listenerZ;
 
             // Rotate listener-relative positions into head frame for binaural DSP
+            // Order: yaw around Z, then roll around Y, then pitch around X.
             float dspLX = lRelX, dspLY = lRelY, dspLZ = lRelZ;
             float dspRX = rRelX, dspRY = rRelY, dspRZ = rRelZ;
             if (listenerRotated) {
-                float rx, ry;
+                float rx, ry, rrx, rrz, py, pz;
+                // L node: yaw
                 rx = lRelX * cosY + lRelY * sinY;
                 ry = -lRelX * sinY + lRelY * cosY;
                 dspLX = rx;
-                dspLY = ry * cosP + lRelZ * sinP;
-                dspLZ = -ry * sinP + lRelZ * cosP;
-                // Roll around forward axis (Y in engine coords)
-                float rrx =  dspLX * cosR + dspLZ * sinR;
-                float rrz = -dspLX * sinR + dspLZ * cosR;
+                dspLY = ry;
+                // L node: roll
+                rrx =  dspLX * cosR + lRelZ * sinR;
+                rrz = -dspLX * sinR + lRelZ * cosR;
                 dspLX = rrx;
                 dspLZ = rrz;
+                // L node: pitch
+                py = dspLY * cosP + dspLZ * sinP;
+                pz = -dspLY * sinP + dspLZ * cosP;
+                dspLY = py;
+                dspLZ = pz;
 
+                // R node: yaw
                 rx = rRelX * cosY + rRelY * sinY;
                 ry = -rRelX * sinY + rRelY * cosY;
                 dspRX = rx;
-                dspRY = ry * cosP + rRelZ * sinP;
-                dspRZ = -ry * sinP + rRelZ * cosP;
-                // Roll around forward axis (Y in engine coords)
-                rrx =  dspRX * cosR + dspRZ * sinR;
-                rrz = -dspRX * sinR + dspRZ * cosR;
+                dspRY = ry;
+                // R node: roll
+                rrx =  dspRX * cosR + rRelZ * sinR;
+                rrz = -dspRX * sinR + rRelZ * cosR;
                 dspRX = rrx;
                 dspRZ = rrz;
+                // R node: pitch
+                py = dspRY * cosP + dspRZ * sinP;
+                pz = -dspRY * sinP + dspRZ * cosP;
+                dspRY = py;
+                dspRZ = pz;
             }
 
             // Get input samples — test tone overrides both channels

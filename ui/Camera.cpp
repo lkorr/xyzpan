@@ -102,80 +102,64 @@ void Camera::applyMouseDrag(float dx, float dy)
     }
 
     constexpr float kSensitivity = 0.4f;
+    const float yawAngle   = glm::radians(-dx * kSensitivity);
+    const float pitchAngle = glm::radians(-dy * kSensitivity);
 
-    // Map screen-space mouse deltas to Euler increments accounting for both
-    // roll AND pitch.  The forward mapping (Euler → screen motion) is:
-    //   screenDx =  dYaw·cosP·cosR + dPitch·sinR
-    //   screenDy = -dYaw·cosP·sinR + dPitch·cosR
-    // Inverting gives:
-    //   dYaw   = ( dx·cosR - dy·sinR) / cosP
-    //   dPitch =   dx·sinR + dy·cosR
-    // cosP is clamped to avoid the gimbal-lock singularity at pitch ±90°.
-    const float rollRad  = glm::radians(roll);
-    const float pitchRad = glm::radians(pitch);
-    const float cosR = std::cos(rollRad);
-    const float sinR = std::sin(rollRad);
-    // Clamp cosP away from zero to cap yaw rate near gimbal lock
-    const float cosP = std::max(std::abs(std::cos(pitchRad)), 0.1f)
-                     * (std::cos(pitchRad) >= 0.0f ? 1.0f : -1.0f);
+    // Right vector from CURRENT quaternion (no Euler rebuild)
+    glm::vec3 right = glm::mat3_cast(orientation_)[0];
 
-    const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
-    const float dPitch =   dx * sinR + dy * cosR;
+    // Horizontal → world Y spin;  Vertical → camera-right backflip
+    glm::quat qYaw   = glm::angleAxis(yawAngle,   glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::quat qPitch = glm::angleAxis(pitchAngle, right);
 
-    yaw   += dYaw   * kSensitivity;
-    pitch -= dPitch * kSensitivity;
+    // Accumulate into member quaternion — NO Euler round-trip
+    orientation_ = glm::normalize(qPitch * qYaw * orientation_);
 
-    // Wrap to ±180° for parameter compatibility.
-    yaw   = std::fmod(std::fmod(yaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-    pitch = std::fmod(std::fmod(pitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-
-    syncQuatFromEuler();
+    // Extract Euler for knobs (output-only, not fed back into orientation_)
+    syncEulerFromQuat();
 }
 
 // ---------------------------------------------------------------------------
 // Quaternion ↔ Euler synchronisation
-// Rotation order: Ry(yaw) · Rx(pitch) · Rz(-roll)   (matches getViewMatrix)
+// Rotation order: Ry(yaw) · Rz(-roll) · Rx(pitch)
+// Roll is the middle axis → ±90° singularity on roll (head sideways).
+// Yaw and pitch get full ±180° range.
 // ---------------------------------------------------------------------------
 void Camera::syncQuatFromEuler()
 {
     glm::quat qY = glm::angleAxis(glm::radians(yaw),   glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::quat qP = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
     glm::quat qR = glm::angleAxis(glm::radians(-roll), glm::vec3(0.0f, 0.0f, 1.0f));
-    orientation_ = qY * qP * qR;
+    glm::quat qP = glm::angleAxis(glm::radians(pitch), glm::vec3(1.0f, 0.0f, 0.0f));
+    orientation_ = qY * qR * qP;
 }
 
 void Camera::syncEulerFromQuat()
 {
-    // Decompose R = Ry(yaw) · Rx(pitch) · Rz(-roll)
-    // GLM column-major: m[col][row]
-    //   m[2][1] = -sin(pitch)
-    //   m[2][0] =  sin(yaw)*cos(pitch)     m[2][2] = cos(yaw)*cos(pitch)
-    //   m[1][0] =  cos(pitch)*sin(-roll)    m[1][1] = cos(pitch)*cos(-roll)
+    // Decompose R = Ry(yaw) · Rz(-roll) · Rx(pitch)
+    // Roll (middle axis) limited to ±90°. Yaw and pitch get full ±180°.
     glm::mat3 m = glm::mat3_cast(orientation_);
 
-    float sinP = glm::clamp(-m[2][1], -1.0f, 1.0f);
-    float newPitch = glm::degrees(std::asin(sinP));
+    // sin(-roll) = m[0][1]
+    float sinR = glm::clamp(m[0][1], -1.0f, 1.0f);
+    float newRoll = -glm::degrees(std::asin(sinR));
 
-    float newYaw, newRoll;
-    if (std::abs(sinP) < 0.9999f) {
-        newYaw  =  glm::degrees(std::atan2(m[2][0], m[2][2]));
-        newRoll = -glm::degrees(std::atan2(m[0][1], m[1][1]));
+    float newYaw, newPitch;
+    if (std::abs(sinR) < 0.9999f) {
+        newYaw   = glm::degrees(std::atan2(-m[0][2], m[0][0]));
+        newPitch = glm::degrees(std::atan2(-m[2][1], m[1][1]));
     } else {
-        // Gimbal lock — pitch ≈ ±90°. Roll is indeterminate; keep previous value.
-        newRoll = roll;
-        newYaw  = glm::degrees(std::atan2(-m[0][2], m[0][0]));
+        // Gimbal lock — roll ≈ ±90°. Yaw indeterminate; keep previous.
+        newYaw   = yaw;
+        newPitch = glm::degrees(std::atan2(m[1][2], m[2][2]));
     }
 
-    // Unwrap each angle to stay closest to the previous value (prevents 180° knob jumps).
-    auto unwrap = [](float nv, float ov) {
-        float d = std::fmod(std::fmod(nv - ov + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-        if (d < -180.0f) d += 360.0f;
-        return ov + d;
+    auto wrap180 = [](float v) {
+        return std::fmod(std::fmod(v + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
     };
 
-    yaw   = unwrap(newYaw,   yaw);
-    pitch = unwrap(newPitch, pitch);
-    roll  = unwrap(newRoll,  roll);
+    yaw   = wrap180(newYaw);
+    pitch = wrap180(newPitch);
+    roll  = wrap180(newRoll);
 }
 
 } // namespace xyzpan
