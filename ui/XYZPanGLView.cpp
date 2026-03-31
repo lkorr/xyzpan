@@ -144,8 +144,7 @@ void XYZPanGLView::newOpenGLContextCreated()
 // ---------------------------------------------------------------------------
 void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
 {
-    if (!headFollowsActive_ || isDraggingCamera_
-        || drivingParamsFromCamera_->load(std::memory_order_relaxed)
+    if (!headFollowsActive_ || drivingParamsFromCamera_->load(std::memory_order_relaxed)
         || (receivingBroadcast_ && receivingBroadcast_->load(std::memory_order_relaxed)))
         return;
 
@@ -314,9 +313,8 @@ void XYZPanGLView::renderOpenGL()
             headFollowsActive_ = true;
         }
 
-        if (headFollowsActive_ && toggleOn && !isDraggingCamera_) {
+        if (headFollowsActive_ && toggleOn) {
             // Camera follows head: read listener angles (radians) and apply to camera.
-            // Skipped during drag — camera is authoritative while dragging.
             camera_.yaw   = glm::degrees(snap.listenerYaw);
             camera_.pitch = glm::degrees(snap.listenerPitch);
             camera_.roll  = glm::degrees(snap.listenerRoll);
@@ -948,15 +946,32 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
                     p->setValueNotifyingHost(apvtsPtr->getParameterRange(kParamZ).convertTo0to1(newZ));
             });
     } else if (headFollowsActive_) {
-        // Head-follows drag: update camera directly (no round-trip lag),
-        // then push Euler to APVTS for the audio engine.
-        // Negate dx: camera orbit moves the camera, head-follows moves the head
-        // (opposite directions for the same screen drag).
-        camera_.applyMouseDrag(-static_cast<float>(delta.x),
-                                static_cast<float>(delta.y));
+        // Head-follows mode: drive listener params directly from mouse drag.
+        // Camera will sync from params next render frame.
+        constexpr float kSensitivity = 0.4f;
+        const float dx = static_cast<float>(delta.x);
+        const float dy = static_cast<float>(delta.y);
 
-        const float newYaw   = camera_.yaw;
-        const float newPitch = camera_.pitch;
+        // Map screen deltas to Euler increments accounting for roll AND pitch.
+        const float rollDeg  = apvts_.getRawParameterValue("listener_roll")->load();
+        const float pitchDeg = apvts_.getRawParameterValue("listener_pitch")->load();
+        const float rollRad  = rollDeg  * (3.14159265f / 180.0f);
+        const float pitchRad = pitchDeg * (3.14159265f / 180.0f);
+        const float cosR = std::cos(rollRad), sinR = std::sin(rollRad);
+        const float rawCosP = std::cos(pitchRad);
+        const float cosP = std::max(std::abs(rawCosP), 0.1f)
+                         * (rawCosP >= 0.0f ? 1.0f : -1.0f);
+
+        const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
+        const float dPitch =   dx * sinR + dy * cosR;
+
+        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   - dYaw   * kSensitivity;
+        float newPitch = apvts_.getRawParameterValue("listener_pitch")->load() - dPitch * kSensitivity;
+
+        // Wrap to ±180° for param range.
+        newYaw   = std::fmod(std::fmod(newYaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+        newPitch = std::fmod(std::fmod(newPitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
+
         auto* apvtsPtr = &apvts_;
         auto alive = glAlive_;
         juce::MessageManager::callAsync([apvtsPtr, alive, newYaw, newPitch]() {
