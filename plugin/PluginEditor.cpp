@@ -808,7 +808,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Window sizing
     setResizable(true, true);
-    setResizeLimits(915, 750, 1800, 1600);
+    setResizeLimits(kMinW, kMinH, 1800, 1600);
     setSize(kDefaultW, kDefaultH);
 }
 
@@ -838,20 +838,20 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 {
     Layout l;
     l.contentY    = kPresetBarH;
-    l.leftColH    = totalH - kBottomH - kPresetBarH;
-    l.bottomY     = totalH - kBottomH;
-    l.reverbX     = totalW - kMeterW - kReverbSectionW;
+    l.leftColH    = juce::jmax(1, totalH - kBottomH - kPresetBarH);
+    l.bottomY     = juce::jmax(kPresetBarH + 1, totalH - kBottomH);
+    l.reverbX     = juce::jmax(1, totalW - kMeterW - kReverbSectionW);
     // Bottom row: Listener (left) | Stereo Orbit (right) | Reverb
     // Listener gets ~40% of available width, Orbit gets the rest
-    const int availW = l.reverbX;  // total width before reverb
+    const int availW = l.reverbX;
     l.listenerW   = juce::jmax(280, availW * 2 / 5);
     l.orbitX      = l.listenerW;
-    l.orbitW      = l.reverbX - l.listenerW;
+    l.orbitW      = juce::jmax(1, l.reverbX - l.listenerW);
     l.contentTop  = l.bottomY + kSectionHdrH;
 
     // Left column content: full height between header and bottom row
     l.leftContentTop = l.contentY + kSectionHdrH;
-    l.leftContentH   = l.bottomY - l.leftContentTop;
+    l.leftContentH   = juce::jmax(1, l.bottomY - l.leftContentTop);
 
     return l;
 }
@@ -862,6 +862,14 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 void XYZPanEditor::paint(juce::Graphics& g)
 {
     const auto& ct = lookAndFeel_.currentTheme();
+
+    // If host forces us too small, just fill background and bail
+    if (getWidth() < 200 || getHeight() < 200)
+    {
+        g.fillAll(juce::Colour(ct.background));
+        return;
+    }
+
     const auto lo = Layout::compute(getWidth(), getHeight());
     const int bw = getWidth() - kMeterW;
 
@@ -1012,65 +1020,109 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
         g.drawText("HEAD ORIENTATION", 6, dividerY + 2, lw - 12, 14, juce::Justification::centredLeft);
 
-        // --- YPR labels + engraved symbols below ---
+        // --- YPR labels + engraved arrows flanking knobs ---
         {
             const int yprTop = dividerY + 20;
             const int yprColW = lw / 3;
             const int yprLabelH = 16;
-            const int iconH = 48;
-
-            // Symbol strings
-            const juce::String symbols[3] = {
-                juce::String::fromUTF8("\xE2\x86\x90 \xE2\x86\x92"),   // "← →"
-                juce::String::fromUTF8("\xE2\x86\x91 \xE2\x86\x93"),   // "↑ ↓"
-                juce::String::fromUTF8("\xE2\x86\xBB"),                 // "↻"
-            };
+            const int yprBoxH = 30;
+            const int yprKnobSz = 50;
             const char* yprNames[3] = { "Yaw", "Pitch", "Roll" };
 
-            auto drawEngravedSymbol = [&](const juce::String& sym, juce::Rectangle<int> r) {
-                // Shadow pass (offset 1px down-right = carved into surface, light from upper-left)
-                g.setColour(juce::Colour(ct.obsidian).withAlpha(0.7f));
+            // Multi-pass engraving: deep shadow, broad glow, highlight catch, main groove
+            auto drawEngraved = [&](const juce::String& sym, juce::Rectangle<int> r) {
+                // Pass 1: deep shadow (2px down-right, black)
+                g.setColour(juce::Colours::black.withAlpha(0.5f));
+                g.drawText(sym, r.translated(2, 2), juce::Justification::centred, false);
+                // Pass 2: softer shadow (1px down-right)
+                g.setColour(juce::Colours::black.withAlpha(0.35f));
                 g.drawText(sym, r.translated(1, 1), juce::Justification::centred, false);
-
-                // Highlight pass (offset 1px up-left = catch light on bottom edge of carving)
-                g.setColour(juce::Colour(ct.bronze).withAlpha(0.25f));
+                // Pass 3: highlight catch on upper-left edge (light from above-left)
+                g.setColour(juce::Colour(ct.bronze).withAlpha(0.12f));
                 g.drawText(sym, r.translated(-1, -1), juce::Justification::centred, false);
-
-                // Main symbol
-                g.setColour(juce::Colour(ct.warmGold));
+                // Pass 4: main groove — bronze tinted, well visible against darkIron
+                g.setColour(juce::Colour(ct.bronze).withAlpha(0.28f));
                 g.drawText(sym, r, juce::Justification::centred, false);
             };
+
+            // Arrow symbols
+            auto leftArrow  = juce::String::fromUTF8("\xE2\x86\x90");  // ←
+            auto rightArrow = juce::String::fromUTF8("\xE2\x86\x92");  // →
+            auto upArrow    = juce::String::fromUTF8("\xE2\x86\x91");  // ↑
+            auto downArrow  = juce::String::fromUTF8("\xE2\x86\x93");  // ↓
+            // Curved arrows for roll: ⤴ ⤵ ⤶ ⤷
+            auto curveTopR  = juce::String::fromUTF8("\xE2\xA4\xB4");  // ⤴ top-right
+            auto curveTopL  = juce::String::fromUTF8("\xE2\xA4\xB6");  // ⤶ top-left
+            auto curveBotR  = juce::String::fromUTF8("\xE2\xA4\xB5");  // ⤵ bottom-right
+            auto curveBotL  = juce::String::fromUTF8("\xE2\xA4\xB7");  // ⤷ bottom-left
 
             for (int col = 0; col < 3; ++col)
             {
                 int colX = col * yprColW;
 
-                // "Yaw" / "Pitch" / "Roll" label on top
+                // "Yaw" / "Pitch" / "Roll" label
                 g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
                 g.setColour(juce::Colour(ct.goldLeafPale).withAlpha(0.8f));
                 g.drawText(yprNames[col], colX, yprTop, yprColW, yprLabelH,
                            juce::Justification::centred);
 
-                // Engraved symbol below the label
-                auto symArea = juce::Rectangle<int>(colX, yprTop + yprLabelH, yprColW, iconH);
+                // Knob centre position (matches layoutYPRKnob in resized)
+                int kx = colX + (yprColW - yprKnobSz) / 2;
+                int ky = yprTop + yprLabelH + yprBoxH;
+                int knobCY = ky + yprKnobSz / 2;
 
-                g.setFont(juce::Font(juce::FontOptions(col == 2 ? 52.0f : 44.0f,
-                                                        juce::Font::bold)));
-
-                if (col == 2)
+                if (col == 0) // Yaw: ← on left, → on right of knob
                 {
-                    // Roll symbol: draw ↻ upside-down via affine transform
-                    float fcx = static_cast<float>(symArea.getCentreX());
-                    float fcy = static_cast<float>(symArea.getCentreY());
-                    juce::AffineTransform flip = juce::AffineTransform::rotation(
-                        juce::MathConstants<float>::pi, fcx, fcy);
-                    juce::Graphics::ScopedSaveState sss(g);
-                    g.addTransform(flip);
-                    drawEngravedSymbol(symbols[col], symArea);
+                    const int arrowSz = 32;
+                    g.setFont(juce::Font(juce::FontOptions(30.0f, juce::Font::bold)));
+                    auto leftR  = juce::Rectangle<int>(kx - arrowSz, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                    auto rightR = juce::Rectangle<int>(kx + yprKnobSz, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                    drawEngraved(leftArrow, leftR);
+                    drawEngraved(rightArrow, rightR);
                 }
-                else
+                else if (col == 1) // Pitch: ↑ on left, ↓ on right of knob
                 {
-                    drawEngravedSymbol(symbols[col], symArea);
+                    const int arrowSz = 32;
+                    g.setFont(juce::Font(juce::FontOptions(30.0f, juce::Font::bold)));
+                    auto leftR  = juce::Rectangle<int>(kx - arrowSz, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                    auto rightR = juce::Rectangle<int>(kx + yprKnobSz, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                    drawEngraved(upArrow, leftR);
+                    drawEngraved(downArrow, rightR);
+                }
+                else // Roll: 4 curved arrows encircling the knob
+                {
+                    const int arrowSz = 24;
+                    g.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
+                    int knobCX = kx + yprKnobSz / 2;
+                    int off = yprKnobSz / 2 + 2; // just outside knob edge
+
+                    // Cardinal positions: right, bottom, left, top
+                    auto rightR  = juce::Rectangle<int>(knobCX + off - arrowSz / 2, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                    auto bottomR = juce::Rectangle<int>(knobCX - arrowSz / 2, knobCY + off - arrowSz / 2, arrowSz, arrowSz);
+                    auto leftR   = juce::Rectangle<int>(knobCX - off - arrowSz / 2, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                    auto topR    = juce::Rectangle<int>(knobCX - arrowSz / 2, knobCY - off - arrowSz / 2, arrowSz, arrowSz);
+
+                    const float deg45 = juce::MathConstants<float>::pi / 4.0f;
+                    auto drawRotated = [&](const juce::String& sym, juce::Rectangle<int> r, float angle) {
+                        float cx = static_cast<float>(r.getCentreX());
+                        float cy = static_cast<float>(r.getCentreY());
+                        juce::Graphics::ScopedSaveState sss(g);
+                        g.addTransform(juce::AffineTransform::rotation(angle, cx, cy));
+                        drawEngraved(sym, r);
+                    };
+                    auto drawFlippedRotated = [&](const juce::String& sym, juce::Rectangle<int> r, float angle) {
+                        float cx = static_cast<float>(r.getCentreX());
+                        float cy = static_cast<float>(r.getCentreY());
+                        juce::Graphics::ScopedSaveState sss(g);
+                        g.addTransform(juce::AffineTransform::scale(1.0f, -1.0f, cx, cy)
+                                       .followedBy(juce::AffineTransform::rotation(angle, cx, cy)));
+                        drawEngraved(sym, r);
+                    };
+
+                    drawRotated(curveBotR, rightR, deg45);        // ⤵ on right, tilted 45°
+                    drawRotated(curveTopL, bottomR, deg45);        // ⤶ on bottom, tilted 45°
+                    drawFlippedRotated(curveBotL, leftR, deg45);   // ⤷ flipped+tilted on left
+                    drawFlippedRotated(curveTopR, topR, deg45);    // ⤴ flipped+tilted on top
                 }
             }
         }
@@ -1151,6 +1203,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::resized()
 {
+    // If the host forces us below minimum, skip layout to avoid crashes
+    if (getWidth() < 200 || getHeight() < 200)
+        return;
+
     auto b = getLocalBounds();
 
     // Preset bar at the very top (full width)
@@ -1193,11 +1249,13 @@ void XYZPanEditor::resized()
     }
 
     // Dev panel: child of glView_, right 30% of GL area (or user-dragged width)
-    const int defaultPanelW = static_cast<int>(glArea.getWidth() * 0.30f);
+    const int glW = juce::jmax(1, glArea.getWidth());
+    const int glH = juce::jmax(1, glArea.getHeight());
+    const int defaultPanelW = static_cast<int>(glW * 0.30f);
     const int panelW = devPanel_.getCustomWidth() > 0
-        ? juce::jlimit(200, glArea.getWidth() - 50, devPanel_.getCustomWidth())
+        ? juce::jlimit(200, juce::jmax(201, glW - 50), devPanel_.getCustomWidth())
         : defaultPanelW;
-    devPanel_.setBounds(glArea.getWidth() - panelW, 0, panelW, glArea.getHeight());
+    devPanel_.setBounds(glW - panelW, 0, panelW, glH);
 
     // ===== LEFT COLUMN — SOURCE | CUSTOMIZE tabs =====
     if (activeLeftTab_ == LeftTab::Source) {
@@ -1391,20 +1449,19 @@ void XYZPanEditor::resized()
             // Y position stored for paint() to draw the divider
             const int dividerY = contentTop + bigLabelH + walkerKnobSz + 6;
 
-            // Yaw/Pitch/Roll — vertical stack: label (16) + symbol (48) + gap (2) + knob (50) + textBelow (16)
+            // Yaw/Pitch/Roll — vertical stack: label (16) + box (30) + knob (50) + textBelow (16)
             const int yprLabelH   = 16;
-            const int yprSymH     = 48;
-            const int yprIconGap  = 2;
+            const int yprBoxH     = 30;
             const int yprKnobSz   = 50;
             const int yprTextH    = 16;
-            const int yprTotalH   = yprLabelH + yprSymH + yprIconGap + yprKnobSz + yprTextH; // 132
+            const int yprTotalH   = yprLabelH + yprBoxH + yprKnobSz + yprTextH; // 112
             const int yprTop = dividerY + 20;  // 20px for divider + label
 
             auto layoutYPRKnob = [&](juce::Slider& knob, int colX, int top) {
                 const int colW = lw / 3;
                 int kw = yprKnobSz;
                 int kx = colX + (colW - kw) / 2;
-                int ky = top + yprLabelH + yprSymH + yprIconGap;
+                int ky = top + yprLabelH + yprBoxH;
                 knob.setBounds(kx, ky, kw, yprKnobSz + yprTextH);
             };
 

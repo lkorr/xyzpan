@@ -124,6 +124,9 @@ private:
     static constexpr int kReverbSectionW = 120;     // vertical reverb column
     static constexpr int kMeterW         = 24;       // output meter strip width
 
+    static constexpr int kMinW = 915;
+    static constexpr int kMinH = 750;
+
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
     juce::Label  xLabel_, yLabel_, zLabel_;
