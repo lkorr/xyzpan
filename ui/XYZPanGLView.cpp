@@ -144,12 +144,21 @@ void XYZPanGLView::newOpenGLContextCreated()
 // ---------------------------------------------------------------------------
 void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
 {
-    if (!headFollowsActive_ || drivingParamsFromCamera_->load(std::memory_order_relaxed)
+    if (!headFollowsActive_
+        || (accumulator_ && accumulator_->drivingFromInput->load(std::memory_order_relaxed))
         || (receivingBroadcast_ && receivingBroadcast_->load(std::memory_order_relaxed)))
         return;
 
+    // Path B: external write (DAW automation / knob) -> sync accumulator + camera
+    if (accumulator_) {
+        float y = apvts_.getRawParameterValue("listener_yaw")->load();
+        float p = apvts_.getRawParameterValue("listener_pitch")->load();
+        float r = apvts_.getRawParameterValue("listener_roll")->load();
+        accumulator_->syncFromRPY(y, p, r);
+    }
+
     if (id == "listener_yaw")
-        camera_.yaw = newValue;              // both use -180..180°
+        camera_.yaw = newValue;
     else if (id == "listener_pitch")
         camera_.pitch = newValue;
     else if (id == "listener_roll")
@@ -306,10 +315,12 @@ void XYZPanGLView::renderOpenGL()
         const bool toggleOn = apvts_.getRawParameterValue("head_follows_camera")->load() >= 0.5f;
 
         if (toggleOn && !headFollowsActive_) {
-            // Entering head-follows mode: save current param values
+            // Entering head-follows mode: save current param values and seed accumulator
             savedYawDeg_   = apvts_.getRawParameterValue("listener_yaw")->load();
             savedPitchDeg_ = apvts_.getRawParameterValue("listener_pitch")->load();
             savedRollDeg_  = apvts_.getRawParameterValue("listener_roll")->load();
+            if (accumulator_)
+                accumulator_->syncFromRPY(savedYawDeg_, savedPitchDeg_, savedRollDeg_);
             headFollowsActive_ = true;
         }
 
@@ -945,41 +956,28 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
                 if (auto* p = apvtsPtr->getParameter(kParamZ))
                     p->setValueNotifyingHost(apvtsPtr->getParameterRange(kParamZ).convertTo0to1(newZ));
             });
-    } else if (headFollowsActive_) {
-        // Head-follows mode: drive listener params directly from mouse drag.
-        // Camera will sync from params next render frame.
-        constexpr float kSensitivity = 0.4f;
+    } else if (headFollowsActive_ && accumulator_) {
+        // Head-follows mode: quaternion accumulation for gimbal-lock-free rotation.
+        constexpr float kSensitivity = 0.007f;  // ~0.4 deg/px
         const float dx = static_cast<float>(delta.x);
         const float dy = static_cast<float>(delta.y);
 
-        // Map screen deltas to Euler increments accounting for roll AND pitch.
-        const float rollDeg  = apvts_.getRawParameterValue("listener_roll")->load();
-        const float pitchDeg = apvts_.getRawParameterValue("listener_pitch")->load();
-        const float rollRad  = rollDeg  * (3.14159265f / 180.0f);
-        const float pitchRad = pitchDeg * (3.14159265f / 180.0f);
-        const float cosR = std::cos(rollRad), sinR = std::sin(rollRad);
-        const float rawCosP = std::cos(pitchRad);
-        const float cosP = std::max(std::abs(rawCosP), 0.1f)
-                         * (rawCosP >= 0.0f ? 1.0f : -1.0f);
-
-        const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
-        const float dPitch =   dx * sinR + dy * cosR;
-
-        float newYaw   = apvts_.getRawParameterValue("listener_yaw")->load()   - dYaw   * kSensitivity;
-        float newPitch = apvts_.getRawParameterValue("listener_pitch")->load() - dPitch * kSensitivity;
-
-        // Wrap to ±180° for param range.
-        newYaw   = std::fmod(std::fmod(newYaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-        newPitch = std::fmod(std::fmod(newPitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-
-        auto* apvtsPtr = &apvts_;
+        auto* accum = accumulator_;
         auto alive = glAlive_;
-        juce::MessageManager::callAsync([apvtsPtr, alive, newYaw, newPitch]() {
+        auto driving = accum->drivingFromInput;
+        auto* apvtsPtr = &apvts_;
+        juce::MessageManager::callAsync([accum, alive, driving, apvtsPtr, dx, dy]() {
             if (!alive->load(std::memory_order_acquire)) return;
+            driving->store(true, std::memory_order_relaxed);
+            accum->applyMouseDelta(dx, dy, kSensitivity);
+            auto rpy = accum->bakeRPY();
             if (auto* p = apvtsPtr->getParameter("listener_yaw"))
-                p->setValueNotifyingHost(p->convertTo0to1(newYaw));
+                p->setValueNotifyingHost(p->convertTo0to1(rpy.yawDeg));
             if (auto* p = apvtsPtr->getParameter("listener_pitch"))
-                p->setValueNotifyingHost(p->convertTo0to1(newPitch));
+                p->setValueNotifyingHost(p->convertTo0to1(rpy.pitchDeg));
+            if (auto* p = apvtsPtr->getParameter("listener_roll"))
+                p->setValueNotifyingHost(p->convertTo0to1(rpy.rollDeg));
+            driving->store(false, std::memory_order_relaxed);
         });
     } else {
         // Camera orbit — detect if drag exits a snap view

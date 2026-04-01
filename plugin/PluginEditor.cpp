@@ -39,6 +39,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // ----- GL view — added FIRST so devPanel_ (added later) paints on top of it -----
     addAndMakeVisible(glView_);
+    glView_.setAccumulator(&listenerAccum_);
 
     // ----- Position knobs (X / Y / Z) — left column, 2x large -----
     for (auto* knob : {&xKnob_, &yKnob_, &zKnob_}) {
@@ -141,6 +142,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 54, 14);
         knob->setTextValueSuffix(juce::String::fromUTF8("\xC2\xB0"));  // degree symbol
+        // Full-circle wrap: dragging past +180° wraps to -180° and vice versa.
+        // stopAtEnd=false makes the rotary arc seamless (no dead zone).
+        knob->setRotaryParameters(juce::MathConstants<float>::pi, 3.0f * juce::MathConstants<float>::pi, false);
         addAndMakeVisible(knob);
     }
     // Per-axis colours matching source/walker: Yaw=Cinnabar, Pitch=Aqua, Roll=Gold
@@ -154,6 +158,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     listenerYawAtt_   = std::make_unique<SA>(p.apvts, ParamID::LISTENER_YAW,   listenerYawKnob_);
     listenerPitchAtt_ = std::make_unique<SA>(p.apvts, ParamID::LISTENER_PITCH, listenerPitchKnob_);
     listenerRollAtt_  = std::make_unique<SA>(p.apvts, ParamID::LISTENER_ROLL,  listenerRollKnob_);
+
     // Labels hidden — icons above knobs replace text labels
     for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_})
         lbl->setVisible(false);
@@ -1953,18 +1958,22 @@ void XYZPanEditor::timerCallback()
         wasdGestureActive_ = true;
     }
 
-    // --- Q/E: Roll control ---
+    // --- Q/E: Roll control via quaternion accumulator ---
     if ((q || e) && pr != nullptr) {
         constexpr float rollSpeed = 2.8f;  // degrees per 60Hz tick (~168°/sec)
         float rollDelta = 0.0f;
         if (e) rollDelta += rollSpeed;
         if (q) rollDelta -= rollSpeed;
 
-        float curRoll = pr->convertFrom0to1(pr->getValue());
-        float newRoll = curRoll + rollDelta;
-        if (newRoll > 180.0f)  newRoll -= 360.0f;
-        if (newRoll < -180.0f) newRoll += 360.0f;
-        pr->setValueNotifyingHost(pr->convertTo0to1(newRoll));
+        listenerAccum_.drivingFromInput->store(true, std::memory_order_relaxed);
+        listenerAccum_.applyRollDelta(rollDelta);
+        auto rpy = listenerAccum_.bakeRPY();
+        if (auto* pYaw = proc_.apvts.getParameter(ParamID::LISTENER_YAW))
+            pYaw->setValueNotifyingHost(pYaw->convertTo0to1(rpy.yawDeg));
+        if (auto* pPitch = proc_.apvts.getParameter(ParamID::LISTENER_PITCH))
+            pPitch->setValueNotifyingHost(pPitch->convertTo0to1(rpy.pitchDeg));
+        pr->setValueNotifyingHost(pr->convertTo0to1(rpy.rollDeg));
+        listenerAccum_.drivingFromInput->store(false, std::memory_order_relaxed);
     }
 
     // --- WASD + Space/X: Position movement ---

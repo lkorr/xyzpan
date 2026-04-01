@@ -226,6 +226,7 @@ private:
     juce::ToggleButton wasdToggle_;
     std::unique_ptr<BA> wasdAtt_;
     bool wasdGestureActive_ = false;
+    xyzpan::ListenerQuatAccumulator listenerAccum_;
     void endWasdGestureIfActive();
     void timerCallback() override;
 

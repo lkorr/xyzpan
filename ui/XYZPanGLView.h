@@ -8,6 +8,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include "ListenerQuatAccumulator.h"
 
 // GLM — orbit camera math
 #include <glm/glm.hpp>
@@ -153,6 +154,9 @@ public:
     // Instance list overlay — clickable list in top-left of GL view
     void setShowInstanceList(bool show) { showInstanceList_ = show; repaint(); }
     bool getShowInstanceList() const { return showInstanceList_; }
+
+    // Set the quaternion accumulator for head-follows mode (owned by PluginEditor).
+    void setAccumulator(xyzpan::ListenerQuatAccumulator* a) { accumulator_ = a; }
 
     // Callback when user clicks an instance in the overlay list.
     // Parameter: linked index (-1 = self, 0+ = foreign source index)
@@ -399,7 +403,7 @@ private:
 
     // Head-follows-camera state
     bool  headFollowsActive_ = false;
-    std::shared_ptr<std::atomic<bool>> drivingParamsFromCamera_ = std::make_shared<std::atomic<bool>>(false);
+    xyzpan::ListenerQuatAccumulator* accumulator_ = nullptr;
     std::shared_ptr<std::atomic<bool>> receivingBroadcast_;  // shared with processor; suppresses cross-instance feedback
     float savedYawDeg_   = 0.0f;
     float savedPitchDeg_ = 0.0f;

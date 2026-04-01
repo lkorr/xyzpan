@@ -37,6 +37,7 @@ add_executable(XYZPanPluginTests
     plugin/TestPositionBridge.cpp
     plugin/TestPresets.cpp
     plugin/TestMultiInstance.cpp
+    plugin/TestQuatAccumulator.cpp
 )
 
 target_link_libraries(XYZPanPluginTests
