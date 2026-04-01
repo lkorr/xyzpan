@@ -134,10 +134,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(faceListenerToggle_);
     faceListenerAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
 
-    // ----- Listener head orientation knobs (continuous / wrapping) -----
+    // ----- Listener head orientation knobs (smaller, text-right style) -----
     for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 63, 16);
+        knob->setTextBoxStyle(juce::Slider::TextBoxRight, false, 54, 14);
+        knob->setTextValueSuffix(juce::String::fromUTF8("\xC2\xB0"));  // degree symbol
         addAndMakeVisible(knob);
     }
     // Per-axis colours matching source/walker: Yaw=Cinnabar, Pitch=Aqua, Roll=Gold
@@ -155,8 +156,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     listenerPitchLabel_.setText("Pitch", juce::dontSendNotification);
     listenerRollLabel_.setText("Roll", juce::dontSendNotification);
     for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_}) {
-        lbl->setJustificationType(juce::Justification::centred);
-        lbl->setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+        lbl->setJustificationType(juce::Justification::centredLeft);
+        lbl->setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         lbl->setColour(juce::Label::textColourId,
                        juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeafPale));
         addAndMakeVisible(lbl);
@@ -996,6 +997,27 @@ void XYZPanEditor::paint(juce::Graphics& g)
     }
 
     // ===== DIVIDERS — BOTTOM ROW =====
+    // Listener section: vertical dividers between Walker X|Y|Z columns + HEAD ORIENTATION divider
+    {
+        const int lw = lo.listenerW;
+        const int walkerColW = lw / 3;
+        const int walkerKnobSz = 80;
+        const int bigLabelH = 18;
+        const int dividerY = lo.contentTop + bigLabelH + walkerKnobSz + 6;
+
+        // Vertical dividers between Walker X | Y | Z columns (down to orientation divider)
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
+        g.drawVerticalLine(walkerColW,     static_cast<float>(lo.contentTop), static_cast<float>(dividerY));
+        g.drawVerticalLine(walkerColW * 2, static_cast<float>(lo.contentTop), static_cast<float>(dividerY));
+
+        // "HEAD ORIENTATION" horizontal divider with label
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+        g.drawHorizontalLine(dividerY, 0.0f, static_cast<float>(lw));
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.7f));
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.drawText("HEAD ORIENTATION", 6, dividerY + 2, lw - 12, 14, juce::Justification::centredLeft);
+    }
+
     // Vertical divider between Listener and Stereo Orbit sections
     g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
     g.drawVerticalLine(lo.orbitX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
@@ -1283,32 +1305,47 @@ void XYZPanEditor::resized()
         // --- LISTENER SECTION (always visible, left portion of bottom row) ---
         {
             const int lw = lo.listenerW;
-            const int knobSz = 80;
+            const int walkerKnobSz = 80;
             const int bigLabelH = 18;
             const int posPad = 6;
-            const int colW = lw / 3;
+            const int walkerColW = lw / 3;
 
-            // Walker X/Y/Z — top row of 3 knobs
-            auto layoutListenerKnob = [&](juce::Slider& knob, juce::Label& label,
-                                          int colX, int top) {
-                label.setBounds(colX, top, colW, bigLabelH);
-                int kw = juce::jmin(knobSz, colW - posPad * 2);
-                int kx = colX + (colW - kw) / 2;
-                knob.setBounds(kx, top + bigLabelH, kw, knobSz);
+            // Walker X/Y/Z — top row of 3 big knobs
+            auto layoutWalkerKnob = [&](juce::Slider& knob, juce::Label& label,
+                                        int colX, int top) {
+                label.setBounds(colX, top, walkerColW, bigLabelH);
+                int kw = juce::jmin(walkerKnobSz, walkerColW - posPad * 2);
+                int kx = colX + (walkerColW - kw) / 2;
+                knob.setBounds(kx, top + bigLabelH, kw, walkerKnobSz);
             };
 
-            layoutListenerKnob(walkerXKnob_, walkerXLabel_, 0,          contentTop);
-            layoutListenerKnob(walkerYKnob_, walkerYLabel_, colW,       contentTop);
-            layoutListenerKnob(walkerZKnob_, walkerZLabel_, colW * 2,   contentTop);
+            layoutWalkerKnob(walkerXKnob_, walkerXLabel_, 0,              contentTop);
+            layoutWalkerKnob(walkerYKnob_, walkerYLabel_, walkerColW,     contentTop);
+            layoutWalkerKnob(walkerZKnob_, walkerZLabel_, walkerColW * 2, contentTop);
 
-            // Yaw/Pitch/Roll — second row of 3 knobs
-            const int row2Y = contentTop + bigLabelH + knobSz + 4;
-            layoutListenerKnob(listenerYawKnob_,   listenerYawLabel_,   0,          row2Y);
-            layoutListenerKnob(listenerPitchKnob_, listenerPitchLabel_, colW,       row2Y);
-            layoutListenerKnob(listenerRollKnob_,  listenerRollLabel_,  colW * 2,   row2Y);
+            // --- "HEAD ORIENTATION" divider label (painted in paint()) ---
+            // Y position stored for paint() to draw the divider
+            const int dividerY = contentTop + bigLabelH + walkerKnobSz + 6;
 
-            // Toggles below knobs
-            const int toggleY = row2Y + bigLabelH + knobSz + 8;
+            // Yaw/Pitch/Roll — smaller knobs (50px) with label left, text right
+            const int yprKnobSz = 50;
+            const int yprLabelW = 40;
+            const int yprTop = dividerY + 20;  // 20px for divider + label
+
+            auto layoutYPRKnob = [&](juce::Slider& knob, juce::Label& label,
+                                     int colX, int top) {
+                label.setBounds(colX + 2, top + (yprKnobSz - 14) / 2, yprLabelW, 14);
+                int kx = colX + yprLabelW;
+                knob.setBounds(kx, top, yprKnobSz + 54, yprKnobSz);  // 54px extra for text box
+            };
+
+            const int yprColW = lw / 3;
+            layoutYPRKnob(listenerYawKnob_,   listenerYawLabel_,   0,              yprTop);
+            layoutYPRKnob(listenerPitchKnob_, listenerPitchLabel_, yprColW,        yprTop);
+            layoutYPRKnob(listenerRollKnob_,  listenerRollLabel_,  yprColW * 2,    yprTop);
+
+            // Toggles below YPR knobs
+            const int toggleY = yprTop + yprKnobSz + 8;
             const int bigToggleH = 22;
             const int togglePad = 6;
             const int toggleW = lw - togglePad * 2;
