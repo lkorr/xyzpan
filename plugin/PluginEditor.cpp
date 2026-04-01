@@ -107,6 +107,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         addAndMakeVisible(&l);
     };
     configOrbitSlider(stereoWidthKnob_, stereoWidthLabel_, "Width");
+    // Width is the gateway control — bold label, slightly larger
+    stereoWidthLabel_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     configOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_,  "Phase");
     configOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_, "Offset");
 
@@ -134,10 +136,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(faceListenerToggle_);
     faceListenerAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
 
-    // ----- Listener head orientation knobs (smaller, text-right style) -----
+    // ----- Listener head orientation knobs (icon above, value below) -----
     for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        knob->setTextBoxStyle(juce::Slider::TextBoxRight, false, 54, 14);
+        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 54, 14);
         knob->setTextValueSuffix(juce::String::fromUTF8("\xC2\xB0"));  // degree symbol
         addAndMakeVisible(knob);
     }
@@ -152,16 +154,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     listenerYawAtt_   = std::make_unique<SA>(p.apvts, ParamID::LISTENER_YAW,   listenerYawKnob_);
     listenerPitchAtt_ = std::make_unique<SA>(p.apvts, ParamID::LISTENER_PITCH, listenerPitchKnob_);
     listenerRollAtt_  = std::make_unique<SA>(p.apvts, ParamID::LISTENER_ROLL,  listenerRollKnob_);
-    listenerYawLabel_.setText("Yaw", juce::dontSendNotification);
-    listenerPitchLabel_.setText("Pitch", juce::dontSendNotification);
-    listenerRollLabel_.setText("Roll", juce::dontSendNotification);
-    for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_}) {
-        lbl->setJustificationType(juce::Justification::centredLeft);
-        lbl->setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-        lbl->setColour(juce::Label::textColourId,
-                       juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeafPale));
-        addAndMakeVisible(lbl);
-    }
+    // Labels hidden — icons above knobs replace text labels
+    for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_})
+        lbl->setVisible(false);
 
     // Head-follows-camera toggle
     headFollowsToggle_.setButtonText("Head Follows Camera");
@@ -975,25 +970,25 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // ===== DIVIDERS — LEFT COLUMN =====
     if (activeLeftTab_ == LeftTab::Source) {
         const int subColW = kLeftColW / 3;
-        const float divTop = static_cast<float>(lo.leftContentTop);
-
-        // Thin bronze separator above LFO Speed slider row
         const int lfoSpeedRowH = 32;
-        const int optionsH = 120;  // options section below source
-        const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH - optionsH;
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
+        const int optionsH = 120;
 
-        // Vertical dividers between X | Y | Z sub-columns (down to speed row)
+        // Horizontal separator between Options and Source sections
+        const int optionsSepY = lo.leftContentTop + optionsH;
+        g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
+        g.drawHorizontalLine(optionsSepY, 0.0f, static_cast<float>(kLeftColW));
+
+        // Vertical dividers between X | Y | Z sub-columns (source section to speed row)
+        const float divTop = static_cast<float>(optionsSepY);
+        const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
         const float divBot = static_cast<float>(lfoSpeedSepY);
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
         g.drawVerticalLine(subColW * 2, divTop, divBot);
 
-        // Horizontal separator between LFO Speed row and Options section
-        const int optionsSepY = lo.bottomY - optionsH;
+        // Thin bronze separator above LFO Speed slider row
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(optionsSepY, 0.0f, static_cast<float>(kLeftColW));
+        g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
     }
 
     // ===== DIVIDERS — BOTTOM ROW =====
@@ -1016,6 +1011,69 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.7f));
         g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
         g.drawText("HEAD ORIENTATION", 6, dividerY + 2, lw - 12, 14, juce::Justification::centredLeft);
+
+        // --- YPR labels + engraved symbols below ---
+        {
+            const int yprTop = dividerY + 20;
+            const int yprColW = lw / 3;
+            const int yprLabelH = 16;
+            const int iconH = 48;
+
+            // Symbol strings
+            const juce::String symbols[3] = {
+                juce::String::fromUTF8("\xE2\x86\x90 \xE2\x86\x92"),   // "← →"
+                juce::String::fromUTF8("\xE2\x86\x91 \xE2\x86\x93"),   // "↑ ↓"
+                juce::String::fromUTF8("\xE2\x86\xBB"),                 // "↻"
+            };
+            const char* yprNames[3] = { "Yaw", "Pitch", "Roll" };
+
+            auto drawEngravedSymbol = [&](const juce::String& sym, juce::Rectangle<int> r) {
+                // Shadow pass (offset 1px down-right = carved into surface, light from upper-left)
+                g.setColour(juce::Colour(ct.obsidian).withAlpha(0.7f));
+                g.drawText(sym, r.translated(1, 1), juce::Justification::centred, false);
+
+                // Highlight pass (offset 1px up-left = catch light on bottom edge of carving)
+                g.setColour(juce::Colour(ct.bronze).withAlpha(0.25f));
+                g.drawText(sym, r.translated(-1, -1), juce::Justification::centred, false);
+
+                // Main symbol
+                g.setColour(juce::Colour(ct.warmGold));
+                g.drawText(sym, r, juce::Justification::centred, false);
+            };
+
+            for (int col = 0; col < 3; ++col)
+            {
+                int colX = col * yprColW;
+
+                // "Yaw" / "Pitch" / "Roll" label on top
+                g.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
+                g.setColour(juce::Colour(ct.goldLeafPale).withAlpha(0.8f));
+                g.drawText(yprNames[col], colX, yprTop, yprColW, yprLabelH,
+                           juce::Justification::centred);
+
+                // Engraved symbol below the label
+                auto symArea = juce::Rectangle<int>(colX, yprTop + yprLabelH, yprColW, iconH);
+
+                g.setFont(juce::Font(juce::FontOptions(col == 2 ? 52.0f : 44.0f,
+                                                        juce::Font::bold)));
+
+                if (col == 2)
+                {
+                    // Roll symbol: draw ↻ upside-down via affine transform
+                    float fcx = static_cast<float>(symArea.getCentreX());
+                    float fcy = static_cast<float>(symArea.getCentreY());
+                    juce::AffineTransform flip = juce::AffineTransform::rotation(
+                        juce::MathConstants<float>::pi, fcx, fcy);
+                    juce::Graphics::ScopedSaveState sss(g);
+                    g.addTransform(flip);
+                    drawEngravedSymbol(symbols[col], symArea);
+                }
+                else
+                {
+                    drawEngravedSymbol(symbols[col], symArea);
+                }
+            }
+        }
     }
 
     // Vertical divider between Listener and Stereo Orbit sections
@@ -1027,16 +1085,20 @@ void XYZPanEditor::paint(juce::Graphics& g)
         const int ox = lo.orbitX;
         const int ow = lo.orbitW;
         const int stripW = ow / 3;
-        // Dividers only extend down to the orbit control sliders area
-        const int orbitCtrlH = 100;  // height of Width/Offset/Phase/FaceListener area
+        // Controls (Width/Offset/Phase/FaceListener) are at top; LFOs below them
+        const int sliderH = 22, gap = 4, btnH = 22;
+        const int orbitCtrlH = (sliderH + gap) * 3 + btnH;
         const int speedRowH = 32;
-        const int stripDivBot = lo.bottomY + kBottomH - orbitCtrlH - speedRowH;
+        const int lfoTop = lo.contentTop + orbitCtrlH;
+        const int lfoBot = lo.bottomY + kBottomH - speedRowH;
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-        g.drawVerticalLine(ox + stripW,     static_cast<float>(lo.contentTop), static_cast<float>(stripDivBot));
-        g.drawVerticalLine(ox + stripW * 2, static_cast<float>(lo.contentTop), static_cast<float>(stripDivBot));
-        // Horizontal separator above speed+sliders area
+        g.drawVerticalLine(ox + stripW,     static_cast<float>(lfoTop), static_cast<float>(lfoBot));
+        g.drawVerticalLine(ox + stripW * 2, static_cast<float>(lfoTop), static_cast<float>(lfoBot));
+        // Horizontal separator between controls and LFOs
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(stripDivBot, static_cast<float>(ox), static_cast<float>(ox + ow));
+        g.drawHorizontalLine(lfoTop, static_cast<float>(ox), static_cast<float>(ox + ow));
+        // Horizontal separator above speed row
+        g.drawHorizontalLine(lfoBot, static_cast<float>(ox), static_cast<float>(ox + ow));
     }
 
     // Vertical divider between Stereo Orbit and Reverb sections
@@ -1143,48 +1205,15 @@ void XYZPanEditor::resized()
         const int knobH   = 100;
         const int posPad  = 6;
         const int lfoSpeedRowH = 32;
-        const int optionsH = 120;  // space for options section below speed row
-        const int posSectionBottom = lo.bottomY - lfoSpeedRowH - optionsH;
-        const int sourceTop = lo.leftContentTop;
+        const int optionsH = 120;  // space for options section at top
 
-        const int bigLabelH = 20;
-        auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
-                                int colX, int colW, int colTop, int colBottom) {
-            label.setBounds(colX, colTop, colW, bigLabelH);
-            int knobW = juce::jmin(knobH, colW - posPad * 2);
-            int knobX = colX + (colW - knobW) / 2;
-            knob.setBounds(knobX, colTop + bigLabelH, knobW, knobH);
-            int lfoTop = colTop + bigLabelH + knobH + 2;
-            int lfoH = juce::jmax(0, colBottom - lfoTop);
-            lfo.setBounds(colX, lfoTop, colW, lfoH);
-        };
-
-        layoutPosCol(xKnob_, xLabel_, xLFO_,
-                     0,            posColW, sourceTop, posSectionBottom);
-        layoutPosCol(yKnob_, yLabel_, yLFO_,
-                     posColW,      posColW, sourceTop, posSectionBottom);
-        layoutPosCol(zKnob_, zLabel_, zLFO_,
-                     posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
-
-        // LFO Speed slider row
-        const int speedY = posSectionBottom;
-        const int speedLabelW = 70;
-        const int resetBtnW = 44;
-        const int resetBtnGap = 4;
-        lfoSpeedMulLabel_.setBounds(kPadding, speedY + 4, speedLabelW, lfoSpeedRowH - 8);
-        lfoSpeedMulKnob_.setBounds(kPadding + speedLabelW, speedY + 4,
-                                   kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                   lfoSpeedRowH - 8);
-        resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
-                                     resetBtnW, lfoSpeedRowH - 8);
-
-        // --- OPTIONS SECTION (below speed row) ---
+        // --- OPTIONS SECTION (top of left column) ---
+        const int optTop = lo.leftContentTop;
         {
             const int ox = 0;
             const int ow = kLeftColW;
             const int knobSz = 58;
             const int labelH_b = 14;
-            const int optTop = speedY + lfoSpeedRowH;
 
             // Top row: Sphere | Doppler | In Gain — three knobs in equal columns
             {
@@ -1223,6 +1252,41 @@ void XYZPanEditor::resized()
                 earlyReflLabel_.setBounds(erPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
             }
         }
+
+        // --- SOURCE POSITION SECTION (below options) ---
+        const int sourceTop = optTop + optionsH;
+        const int posSectionBottom = lo.bottomY - lfoSpeedRowH;
+
+        const int bigLabelH = 20;
+        auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
+                                int colX, int colW, int colTop, int colBottom) {
+            label.setBounds(colX, colTop, colW, bigLabelH);
+            int knobW = juce::jmin(knobH, colW - posPad * 2);
+            int knobX = colX + (colW - knobW) / 2;
+            knob.setBounds(knobX, colTop + bigLabelH, knobW, knobH);
+            int lfoTop = colTop + bigLabelH + knobH + 2;
+            int lfoH = juce::jmax(0, colBottom - lfoTop);
+            lfo.setBounds(colX, lfoTop, colW, lfoH);
+        };
+
+        layoutPosCol(xKnob_, xLabel_, xLFO_,
+                     0,            posColW, sourceTop, posSectionBottom);
+        layoutPosCol(yKnob_, yLabel_, yLFO_,
+                     posColW,      posColW, sourceTop, posSectionBottom);
+        layoutPosCol(zKnob_, zLabel_, zLFO_,
+                     posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
+
+        // LFO Speed slider row (bottom of source section)
+        const int speedY = posSectionBottom;
+        const int speedLabelW = 70;
+        const int resetBtnW = 44;
+        const int resetBtnGap = 4;
+        lfoSpeedMulLabel_.setBounds(kPadding, speedY + 4, speedLabelW, lfoSpeedRowH - 8);
+        lfoSpeedMulKnob_.setBounds(kPadding + speedLabelW, speedY + 4,
+                                   kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap,
+                                   lfoSpeedRowH - 8);
+        resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
+                                     resetBtnW, lfoSpeedRowH - 8);
     } else {
         // --- CUSTOMIZE TAB — scrollable viewport fills entire left column content ---
         customizeViewport_.setBounds(0, lo.leftContentTop, kLeftColW, lo.leftContentH);
@@ -1327,25 +1391,30 @@ void XYZPanEditor::resized()
             // Y position stored for paint() to draw the divider
             const int dividerY = contentTop + bigLabelH + walkerKnobSz + 6;
 
-            // Yaw/Pitch/Roll — smaller knobs (50px) with label left, text right
-            const int yprKnobSz = 50;
-            const int yprLabelW = 40;
+            // Yaw/Pitch/Roll — vertical stack: label (16) + symbol (48) + gap (2) + knob (50) + textBelow (16)
+            const int yprLabelH   = 16;
+            const int yprSymH     = 48;
+            const int yprIconGap  = 2;
+            const int yprKnobSz   = 50;
+            const int yprTextH    = 16;
+            const int yprTotalH   = yprLabelH + yprSymH + yprIconGap + yprKnobSz + yprTextH; // 132
             const int yprTop = dividerY + 20;  // 20px for divider + label
 
-            auto layoutYPRKnob = [&](juce::Slider& knob, juce::Label& label,
-                                     int colX, int top) {
-                label.setBounds(colX + 2, top + (yprKnobSz - 14) / 2, yprLabelW, 14);
-                int kx = colX + yprLabelW;
-                knob.setBounds(kx, top, yprKnobSz + 54, yprKnobSz);  // 54px extra for text box
+            auto layoutYPRKnob = [&](juce::Slider& knob, int colX, int top) {
+                const int colW = lw / 3;
+                int kw = yprKnobSz;
+                int kx = colX + (colW - kw) / 2;
+                int ky = top + yprLabelH + yprSymH + yprIconGap;
+                knob.setBounds(kx, ky, kw, yprKnobSz + yprTextH);
             };
 
             const int yprColW = lw / 3;
-            layoutYPRKnob(listenerYawKnob_,   listenerYawLabel_,   0,              yprTop);
-            layoutYPRKnob(listenerPitchKnob_, listenerPitchLabel_, yprColW,        yprTop);
-            layoutYPRKnob(listenerRollKnob_,  listenerRollLabel_,  yprColW * 2,    yprTop);
+            layoutYPRKnob(listenerYawKnob_,   0,              yprTop);
+            layoutYPRKnob(listenerPitchKnob_, yprColW,        yprTop);
+            layoutYPRKnob(listenerRollKnob_,  yprColW * 2,    yprTop);
 
             // Toggles below YPR knobs
-            const int toggleY = yprTop + yprKnobSz + 8;
+            const int toggleY = yprTop + yprTotalH + 8;
             const int bigToggleH = 22;
             const int togglePad = 6;
             const int toggleW = lw - togglePad * 2;
@@ -1367,7 +1436,13 @@ void XYZPanEditor::resized()
         {
             const int ox = lo.orbitX;
             const int ow = lo.orbitW;
-            const int orbitCtrlH = 100;  // Width/Offset/Phase/FaceListener area at bottom
+            const int pad = 6;
+            const int labelW = 46;
+            const int sliderH = 22;
+            const int widthSliderH = 30;   // Width slider is taller — it's the gateway control
+            const int gap = 4;
+            const int btnH = 22;
+            const int orbitCtrlH = widthSliderH + gap + (sliderH + gap) * 2 + btnH;
             const int speedRowH = 32;
             const int lfoH = contentH - speedRowH - orbitCtrlH;
             const int maxStripW = 185;
@@ -1375,45 +1450,44 @@ void XYZPanEditor::resized()
             const int stripW = lfoTotalW / 3;
             const int lastStripW = lfoTotalW - stripW * 2;
 
-            // LFO strips
-            orbitXYLFO_.setBounds(ox,              contentTop, stripW,     lfoH);
-            orbitXZLFO_.setBounds(ox + stripW,     contentTop, stripW,     lfoH);
-            orbitYZLFO_.setBounds(ox + stripW * 2, contentTop, lastStripW, lfoH);
-
-            // Speed slider + Reset button row
-            const int speedY = contentTop + lfoH;
-            const int speedLabelW = 70;
-            const int resetBtnW = 44;
-            const int resetBtnGap = 4;
-            const int pad = 6;
-            orbitSpeedMulLabel_.setBounds(ox + pad, speedY + 4, speedLabelW, speedRowH - 8);
-            orbitSpeedMulKnob_.setBounds(ox + pad + speedLabelW, speedY + 4,
-                                          ow - pad * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                          speedRowH - 8);
-            resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, speedY + 4,
-                                           resetBtnW, speedRowH - 8);
-
-            // Orbit control sliders: Width, Offset, Phase, Face Listener
+            // Orbit control sliders at top: Width (prominent), Offset, Phase, Face Listener
             {
-                const int ctrlY = speedY + speedRowH;
-                const int labelW = 46;
-                const int sliderH = 22;
-                const int gap = 4;
-                const int btnH = 22;
+                int sy = contentTop;
 
-                int sy = ctrlY;
+                // Width — taller row
+                stereoWidthLabel_.setBounds(ox + pad, sy, labelW + 8, widthSliderH);
+                stereoWidthKnob_.setBounds(ox + pad + labelW + 8, sy, ow - pad * 2 - labelW - 8, widthSliderH);
+                sy += widthSliderH + gap;
+
                 auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
                     label.setBounds(ox + pad, sy, labelW, sliderH);
                     slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
                     sy += sliderH + gap;
                 };
 
-                placeOrbitSlider(stereoWidthKnob_, stereoWidthLabel_);
                 placeOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_);
                 placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
 
                 faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
             }
+
+            // LFO strips below controls
+            const int lfoTop = contentTop + orbitCtrlH;
+            orbitXYLFO_.setBounds(ox,              lfoTop, stripW,     lfoH);
+            orbitXZLFO_.setBounds(ox + stripW,     lfoTop, stripW,     lfoH);
+            orbitYZLFO_.setBounds(ox + stripW * 2, lfoTop, lastStripW, lfoH);
+
+            // Speed slider + Reset button row at bottom
+            const int speedY = lfoTop + lfoH;
+            const int speedLabelW = 70;
+            const int resetBtnW = 44;
+            const int resetBtnGap = 4;
+            orbitSpeedMulLabel_.setBounds(ox + pad, speedY + 4, speedLabelW, speedRowH - 8);
+            orbitSpeedMulKnob_.setBounds(ox + pad + speedLabelW, speedY + 4,
+                                          ow - pad * 2 - speedLabelW - resetBtnW - resetBtnGap,
+                                          speedRowH - 8);
+            resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, speedY + 4,
+                                           resetBtnW, speedRowH - 8);
         }
 
         // --- REVERB KNOBS (2×2 grid in 120px column) ---

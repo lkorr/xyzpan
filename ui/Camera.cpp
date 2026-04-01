@@ -101,36 +101,22 @@ void Camera::applyMouseDrag(float dx, float dy)
         activeSnap = SnapView::Orbit;
     }
 
-    constexpr float kSensitivity = 0.4f;
+    constexpr float kSensitivity = 0.007f; // radians per pixel (~0.4 deg/px)
 
-    // Map screen-space mouse deltas to Euler increments accounting for both
-    // roll AND pitch.  The forward mapping (Euler → screen motion) is:
-    //   screenDx =  dYaw·cosP·cosR + dPitch·sinR
-    //   screenDy = -dYaw·cosP·sinR + dPitch·cosR
-    // Inverting gives:
-    //   dYaw   = ( dx·cosR - dy·sinR) / cosP
-    //   dPitch =   dx·sinR + dy·cosR
-    // cosP is clamped to avoid the gimbal-lock singularity at pitch ±90°.
-    const float rollRad  = glm::radians(roll);
-    const float pitchRad = glm::radians(pitch);
-    const float cosR = std::cos(rollRad);
-    const float sinR = std::sin(rollRad);
-    // Clamp cosP away from zero to cap yaw rate near gimbal lock
-    const float rawCosP = std::cos(pitchRad);
-    const float cosP = std::max(std::abs(rawCosP), 0.1f)
-                     * (rawCosP >= 0.0f ? 1.0f : -1.0f);
+    // Accumulate drag rotation in quaternion space to avoid Euler cross-coupling
+    // drift at non-cardinal roll angles (45°, 135°, etc.).
+    //
+    // Yaw: world-up Y axis — horizontal drag always orbits around "up".
+    // Pitch: camera-local right axis — vertical drag always tilts the view.
+    glm::quat qYaw = glm::angleAxis(-dx * kSensitivity, glm::vec3(0.0f, 1.0f, 0.0f));
 
-    const float dYaw   = ( dx * cosR - dy * sinR) / cosP;
-    const float dPitch =   dx * sinR + dy * cosR;
+    glm::vec3 right = orientation_ * glm::vec3(1.0f, 0.0f, 0.0f);
+    glm::quat qPitch = glm::angleAxis(dy * kSensitivity, right);
 
-    yaw   += dYaw   * kSensitivity;
-    pitch -= dPitch * kSensitivity;
+    orientation_ = glm::normalize(qYaw * qPitch * orientation_);
 
-    // Wrap to ±180° for parameter compatibility.
-    yaw   = std::fmod(std::fmod(yaw   + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-    pitch = std::fmod(std::fmod(pitch + 180.0f, 360.0f) + 360.0f, 360.0f) - 180.0f;
-
-    syncQuatFromEuler();
+    // Extract Euler angles for parameters/display.
+    syncEulerFromQuat();
 }
 
 // ---------------------------------------------------------------------------

@@ -2311,6 +2311,7 @@ void XYZPanGLView::updateGooglyPhysics(const SourcePositionSnapshot& snap, doubl
     const float kSpring  = kSpringMax  * springW;
     const float kDamping = kDampingMax * springW;
     const float hs = avatar.headSize;
+    const glm::vec3 listenerPos(snap.listenerPosX, snap.listenerPosZ, -snap.listenerPosY);
 
     // Reconstruct head rotation matrix (same as renderOpenGL headRot)
     glm::mat4 headRot(1.0f);
@@ -2330,7 +2331,7 @@ void XYZPanGLView::updateGooglyPhysics(const SourcePositionSnapshot& snap, doubl
         if (gravity > 0.0f) {
             // Eye world position
             glm::vec3 eyeLocal(eyeSideSign * spacing, eyeY, -eyeZ);
-            glm::vec3 eyeWorld = headRot3 * eyeLocal;
+            glm::vec3 eyeWorld = headRot3 * eyeLocal + listenerPos;
 
             // Pick nearest source
             glm::vec3 target = sourcePos;
