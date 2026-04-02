@@ -36,11 +36,18 @@ void LFOShapeSelector::resized() {
     const int count = xyzpan::dsp::kLFOWaveformCount;
     const int gap = 4;
     const int totalGaps = (count - 1) * gap;
-    const int btnW = (b.getWidth() - totalGaps) / count;
+    const int availW = b.getWidth() - totalGaps;
     const int btnH = b.getHeight();
 
+    // Distribute remainder pixels across first N buttons so they fill edge-to-edge
+    const int baseBtnW = availW / count;
+    const int remainder = availW - baseBtnW * count;
+    int x = b.getX();
+
     for (int i = 0; i < count; ++i) {
-        buttons_[i].setBounds(b.getX() + i * (btnW + gap), b.getY(), btnW, btnH);
+        const int w = baseBtnW + (i < remainder ? 1 : 0);
+        buttons_[i].setBounds(x, b.getY(), w, btnH);
+        x += w + gap;
     }
 }
 

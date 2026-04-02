@@ -160,9 +160,9 @@ void LFOStrip::resized()
     const int row2Y    = row1Y + displayH;
     const int row3Y    = row2Y + row2H;
 
-    // Row 0: Shape selector
-    shapeSelector_.setBounds(b.getX() + kShapeLRMargin, row0Y + kShapeTopMargin,
-                             totalW - kShapeLRMargin * 2, kShapeRowH);
+    // Row 0: Shape selector — aligned to display edges
+    shapeSelector_.setBounds(b.getX() + kDisplayLRMargin, row0Y + kShapeTopMargin,
+                             totalW - kDisplayLRMargin * 2, kShapeRowH);
 
     // Row 1: Waveform display
     waveformDisplay_.setBounds(b.getX() + kDisplayLRMargin, row1Y,

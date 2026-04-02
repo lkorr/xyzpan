@@ -1,0 +1,44 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14          # Apple Silicon (arm64)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/CPM
+          key: cpm-macos-${{ hashFiles('CMakeLists.txt', 'cmake/CPM.cmake') }}
+          restore-keys: cpm-macos-
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCPM_SOURCE_CACHE=~/.cache/CPM
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: XYZPan-macOS-VST3
+          path: build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3
+
+      - name: Upload AU
+        uses: actions/upload-artifact@v4
+        with:
+          name: XYZPan-macOS-AU
+          path: build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component
+
+      - name: Upload Standalone
+        uses: actions/upload-artifact@v4
+        with:
+          name: XYZPan-macOS-Standalone
+          path: build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app

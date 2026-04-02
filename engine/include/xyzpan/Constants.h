@@ -101,6 +101,12 @@ constexpr float kCombMaxDelay_ms = 1.50f;
 // Phase 3: Elevation (pinna, chest bounce, floor bounce)
 // ============================================================================
 
+// Virtual ear vertical offset for distance-difference elevation computation.
+// Top/bottom nodes at (0,0,±h) in listener-relative space; elevation factor
+// derived from (distBottom − distTop) / (2h). Matches the distance-difference
+// pattern used for L/R (azimuth) and F/B (rear) cues.
+constexpr float kElevEarOffset = 0.087f;   // normalized units (~head radius)
+
 // Pinna N1 notch: elevation-dependent frequency shift
 // Below horizon (Z=-1): 6.5 kHz; ear level (Z=0): 8 kHz; above (Z=1): 10 kHz
 constexpr float kPinnaN1MinHz     = 6500.0f;   // N1 frequency at Z=-1 (below)

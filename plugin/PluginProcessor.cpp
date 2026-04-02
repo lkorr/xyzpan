@@ -5,7 +5,6 @@
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
 #include <cmath>
-#include <unordered_set>
 
 XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
@@ -823,7 +822,12 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     snap.x = mp.x;
     snap.y = mp.y;
     snap.z = mp.z;
-    snap.distance = std::sqrt(mp.x * mp.x + mp.y * mp.y + mp.z * mp.z);
+    {
+        const float dx = mp.x - params.listenerX;
+        const float dy = mp.y - params.listenerY;
+        const float dz = mp.z - params.listenerZ;
+        snap.distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    }
 
     // Stereo node positions for GL rendering
     auto sn = engine.getLastStereoNodes();
@@ -897,6 +901,9 @@ void XYZPanProcessor::timerCallback() {
 // Linked listener orientation — APVTS parameter listener
 // ---------------------------------------------------------------------------
 void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float newValue) {
+    if (restoringState_)
+        return;
+
     if (parameterID == ParamID::LISTENER_LINK) {
         if (newValue >= 0.5f) {
             listenerHub_->addLinkedInstance(this);
@@ -1039,44 +1046,22 @@ juce::String XYZPanProcessor::getPilotName() const {
 // User-facing params saved in DAW state / user presets.
 // Dev-panel tuning params are intentionally excluded — they keep
 // defaults on load so hand-tuned values aren't overwritten.
-static const std::unordered_set<juce::String> kUserParams = {
-    // position + geometry
-    "x", "y", "z", "sphere_radius", "dist_delay_max_ms",
-    // reverb
-    "verb_size", "verb_decay", "verb_damping", "verb_wet",
-    // XYZ LFOs
-    "lfo_x_rate", "lfo_x_depth", "lfo_x_phase", "lfo_x_waveform", "lfo_x_smooth", "lfo_x_beat_div", "lfo_x_tempo_sync",
-    "lfo_y_rate", "lfo_y_depth", "lfo_y_phase", "lfo_y_waveform", "lfo_y_smooth", "lfo_y_beat_div", "lfo_y_tempo_sync",
-    "lfo_z_rate", "lfo_z_depth", "lfo_z_phase", "lfo_z_waveform", "lfo_z_smooth", "lfo_z_beat_div", "lfo_z_tempo_sync",
-    "lfo_speed_mul",
-    // stereo
-    "stereo_width", "stereo_face_listener", "stereo_orbit_phase", "stereo_orbit_offset", "stereo_orbit_speed_mul",
-    // orbit LFOs
-    "stereo_orbit_xy_waveform", "stereo_orbit_xy_rate", "stereo_orbit_xy_beat_div",
-    "stereo_orbit_xy_phase", "stereo_orbit_xy_reset_phase", "stereo_orbit_xy_depth", "stereo_orbit_xy_smooth", "stereo_orbit_xy_tempo_sync",
-    "stereo_orbit_xz_waveform", "stereo_orbit_xz_rate", "stereo_orbit_xz_beat_div",
-    "stereo_orbit_xz_phase", "stereo_orbit_xz_reset_phase", "stereo_orbit_xz_depth", "stereo_orbit_xz_smooth", "stereo_orbit_xz_tempo_sync",
-    "stereo_orbit_yz_waveform", "stereo_orbit_yz_rate", "stereo_orbit_yz_beat_div",
-    "stereo_orbit_yz_phase", "stereo_orbit_yz_reset_phase", "stereo_orbit_yz_depth", "stereo_orbit_yz_smooth", "stereo_orbit_yz_tempo_sync",
-    // toggles
-    "binaural_enabled", "er_enabled",
-    // listener
-    "listener_yaw", "listener_pitch", "listener_roll", "head_follows_camera",
-    "listener_link", "listener_pilot",
-    // walker
-    "walker_x", "walker_y", "walker_z", "walker_enabled",
-};
 
 void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
-    // Strip dev-panel-only parameters from saved state
-    for (int i = xml->getNumChildElements() - 1; i >= 0; --i) {
+    // Snap boolean parameter values — AudioParameterBool accepts any float via
+    // setValue() but only stores true/false internally.  The APVTS ValueTree may
+    // retain the raw float, causing state-restore round-trip mismatches.
+    for (int i = 0; i < xml->getNumChildElements(); ++i) {
         auto* child = xml->getChildElement(i);
-        if (child->hasTagName("PARAM")
-            && kUserParams.count(child->getStringAttribute("id")) == 0)
-            xml->removeChildElement(child, true);
+        if (child->hasTagName("PARAM")) {
+            auto id = child->getStringAttribute("id");
+            if (auto* p = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter(id))) {
+                child->setAttribute("value", p->get() ? 1.0 : 0.0);
+            }
+        }
     }
 
     // Persist instance name
@@ -1086,15 +1071,19 @@ void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
     }
 
     xml->setAttribute("stateVersion", 2);
+    xml->setAttribute("currentProgram", currentPresetIndex_);
     copyXmlToBinary(*xml, destData);
 }
 
 void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     if (xml != nullptr && xml->hasTagName(apvts.state.getType())) {
-        // Restore instance name before replacing state
+        restoringState_ = true;
+
+        // Restore instance name and program index before replacing state
         instanceName_     = xml->getStringAttribute("instanceName", "");
         nameManuallySet_  = xml->getIntAttribute("nameManuallySet", 0) != 0;
+        currentPresetIndex_ = xml->getIntAttribute("currentProgram", 0);
 
         // Migrate v1 presets: yaw/pitch/roll were 0–360, now -180–180.
         // APVTS stores normalized 0–1 values. Old: norm = deg/360.
@@ -1117,6 +1106,24 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
         }
 
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+
+        // Force-snap bool params after state replacement — JUCE's ValueTree may
+        // retain raw floats that AudioParameterBool doesn't snap on replaceState.
+        for (auto* p : getParameters()) {
+            if (auto* bp = dynamic_cast<juce::AudioParameterBool*>(p))
+                bp->setValueNotifyingHost(bp->get() ? 1.0f : 0.0f);
+        }
+
+        restoringState_ = false;
+
+        // Re-apply listener link state now that all params are fully restored.
+        // During replaceState the parameterChanged callback was suppressed to
+        // prevent the hub from overwriting just-restored orientation values.
+        if (listenerLinkParam->load() >= 0.5f) {
+            listenerHub_->addLinkedInstance(this);
+            if (listenerPilotParam->load() >= 0.5f)
+                listenerHub_->claimPilot(this);
+        }
     }
 }
 

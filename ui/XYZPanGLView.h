@@ -19,6 +19,7 @@
 #include "PositionBridge.h"
 #include "ColorTheme.h"
 #include "AvatarParams.h"
+#include "SceneParams.h"
 
 namespace xyzpan {
 
@@ -102,6 +103,46 @@ private:
 //   - Drag on source node: moves source (posts X/Y/Z to APVTS via MessageManager)
 //   - Three snap buttons drive setSnapView()
 //
+// ---------------------------------------------------------------------------
+// WaveEmitter — spawns sound wave records at fixed intervals.
+// Each wave remembers its birth position (averaged over ~0.1s) and birth time,
+// so it expands from that fixed point rather than following the moving source.
+// ---------------------------------------------------------------------------
+struct WaveEmitter {
+    static constexpr int kMaxWaves = 32;
+    static constexpr float kAvgWindow = 0.03f; // position averaging window (seconds)
+
+    struct Wave {
+        glm::vec3 birthPos{0.0f};
+        double    birthTime = 0.0;
+    };
+
+    Wave  waves[kMaxWaves];
+    int   head     = 0;
+    int   count    = 0;
+    double lastSpawnTime = -1.0;
+
+    // Exponential moving average of source position
+    glm::vec3 avgPos{0.0f};
+    bool      avgInitialized = false;
+
+    void updateAverage(const glm::vec3& pos, double dt) {
+        if (!avgInitialized) {
+            avgPos = pos;
+            avgInitialized = true;
+        } else {
+            const float alpha = (dt > 0.0) ? std::min(1.0f, static_cast<float>(dt / kAvgWindow)) : 1.0f;
+            avgPos += alpha * (pos - avgPos);
+        }
+    }
+
+    void spawn(double now) {
+        head = (head + 1) % kMaxWaves;
+        waves[head] = { avgPos, now };
+        if (count < kMaxWaves) ++count;
+    }
+};
+
 // Note: Takes juce::AudioProcessorValueTreeState& to avoid circular dependency
 // between xyzpan_ui (compiled first) and plugin/ targets.
 // ---------------------------------------------------------------------------
@@ -143,6 +184,7 @@ public:
     // read on GL thread under SpinLock).
     void setColorTheme(const ColorTheme& theme);
     void setAvatarParams(const AvatarParams& params);
+    void setSceneParams(const SceneParams& params);
 
     // Set the index of the focused foreign source (-1 = none).
     // When set, the GL view draws a highlight ring around that source.
@@ -150,6 +192,9 @@ public:
 
     // Set the name displayed above the own source node (message thread only)
     void setOwnInstanceName(const juce::String& name) { ownInstanceName_ = name; }
+
+    // Set whether this instance is the current pilot (for overlay label)
+    void setOwnIsPilot(bool pilot) { ownIsPilot_.store(pilot ? 1 : 0, std::memory_order_relaxed); }
 
     // Instance list overlay — clickable list in top-left of GL view
     void setShowInstanceList(bool show) { showInstanceList_ = show; repaint(); }
@@ -214,10 +259,11 @@ private:
     void drawSphereRings(float radius, const glm::vec3& color, float opacity,
                          const glm::vec3& position);
 
-    // Draw expanding sound wave pulses radiating from a source node
-    void drawSoundWaves(const glm::vec3& center, float sphereRadius,
-                        float inputRms, const glm::vec3& color, double nowSeconds,
-                        float intensity, float baseOpacity, float speed, int numWaves);
+    // Draw expanding sound wave pulses radiating from spawned positions
+    void drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
+                        float sphereRadius, float inputRms, const glm::vec3& color,
+                        double nowSeconds, float intensity, float baseOpacity,
+                        float speed, int numWaves);
 
     // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
     void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
@@ -279,6 +325,13 @@ private:
     GLuint vaoText_ = 0, vboText_ = 0;
     std::unordered_map<std::string, CachedTextTexture> textTextureCache_;
 
+    // Skybox + ground plane
+    std::unique_ptr<juce::OpenGLShaderProgram> skyboxShader_;
+    std::unique_ptr<juce::OpenGLShaderProgram> groundShader_;
+    GLuint vaoSkybox_ = 0, vboSkybox_ = 0;
+    GLuint vaoGround_ = 0, vboGround_ = 0, iboGround_ = 0;
+    int    groundIndexCount_ = 0;
+
     int roomVertexCount_   = 0;
     int gridVertexCount_   = 0;
     int sphereIndexCount_  = 0;
@@ -328,10 +381,11 @@ private:
     // AudioProcessorValueTreeState::Listener override
     void parameterChanged(const juce::String& id, float newValue) override;
 
-    // Runtime theme + avatar (written from message thread, read on GL thread)
+    // Runtime theme + avatar + scene (written from message thread, read on GL thread)
     juce::SpinLock     customizeLock_;
     ColorTheme         glTheme_;
     AvatarParams       avatarParams_;
+    SceneParams        sceneParams_;
     std::atomic<int>   focusedForeignIndex_{-1};
     std::atomic<float>* waveIntensityParam_ = nullptr;
     std::atomic<float>* waveOpacityParam_   = nullptr;
@@ -411,9 +465,10 @@ private:
 
     // Instance name for paint() overlay labels (message thread only)
     juce::String   ownInstanceName_;
+    std::atomic<int> ownIsPilot_{0};  // 1 if this instance is the pilot
 
     // Instance list overlay state (message thread only)
-    bool showInstanceList_ = true;  // visible by default for UI testing
+    bool showInstanceList_ = false;  // shown when link listener is active
     struct InstanceListEntry {
         juce::Rectangle<int> bounds;
         int linkedIndex;  // -1 = self, 0+ = foreign source index
@@ -423,6 +478,10 @@ private:
     // Smoothed input RMS for sound wave visualization (own + foreign sources)
     float smoothedRms_ = 0.0f;
     float foreignSmoothedRms_[kMaxLinkedSources] = {};
+
+    // Wave emitters: each tracks spawned waves + position averaging
+    WaveEmitter ownWaveEmitter_;
+    WaveEmitter foreignWaveEmitters_[kMaxLinkedSources];
 
     // Smoothed foreign source positions for per-frame interpolation (GL thread only)
     struct SmoothedForeignPos {

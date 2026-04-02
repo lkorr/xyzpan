@@ -266,6 +266,7 @@ public:
             if (count >= maxOut) break;
             out[count] = buf->read();
             out[count].colorIndex = colorIdx++;
+            out[count].isPilot = (l == pilot_);
             // Copy instance name (truncated to fit fixed-size buffer)
             auto nameStr = l->getInstanceName();
             if (nameStr.isEmpty())

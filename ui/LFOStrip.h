@@ -47,7 +47,7 @@ private:
     static constexpr int kSyncH         = 18;
     static constexpr int kShapeRowH     = 18;
     static constexpr int kShapeTopMargin = 4;
-    static constexpr int kShapeLRMargin = 6;   // left/right padding for shape selector row
+    static constexpr int kShapeLRMargin = 8;   // left/right padding for shape selector row
     static constexpr int kDisplayMinH  = 30;
     static constexpr int kDisplayMaxH  = 80;
     static constexpr int kDisplayLRMargin = 4;

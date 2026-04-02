@@ -535,7 +535,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_PULSE_HZ, 1}, "Test Tone Pulse Hz",
         NR(xyzpan::kTestTonePulseMinHz, xyzpan::kTestTonePulseMaxHz, 0.01f), xyzpan::kTestTonePulseDefault));
     layout.add(std::make_unique<APF>(PID{ParamID::TEST_TONE_WAVEFORM, 1}, "Test Tone Waveform",
-        NR(0.0f, 8.0f, 1.0f), 0.0f));
+        NR(0.0f, 9.0f, 1.0f), 0.0f));
 
     // -------------------------------------------------------------------------
     // Dev Panel: Expanded pinna EQ (P5)
@@ -601,7 +601,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_SPEED, 1}, "Wave Speed",
         NR(0.05f, 2.0f, 0.01f), 0.3f));
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_COUNT, 1}, "Wave Count",
-        NR(1.0f, 30.0f, 1.0f), 3.0f));
+        NR(3.0f, 30.0f, 1.0f), 3.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
         PID{ParamID::SHOW_AUDIBLE_SPHERE, 1}, "Show Audible Sphere", true));
     layout.add(std::make_unique<APF>(PID{ParamID::SOURCE_SPHERE_OPACITY, 1}, "Source Sphere Opacity",

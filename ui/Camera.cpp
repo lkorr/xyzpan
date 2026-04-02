@@ -111,7 +111,7 @@ void Camera::applyMouseDrag(float dx, float dy)
     glm::quat qYaw = glm::angleAxis(-dx * kSensitivity, glm::vec3(0.0f, 1.0f, 0.0f));
 
     glm::vec3 right = orientation_ * glm::vec3(1.0f, 0.0f, 0.0f);
-    glm::quat qPitch = glm::angleAxis(dy * kSensitivity, right);
+    glm::quat qPitch = glm::angleAxis(-dy * kSensitivity, right);
 
     orientation_ = glm::normalize(qYaw * qPitch * orientation_);
 

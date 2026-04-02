@@ -234,6 +234,7 @@ private:
     std::atomic<float>* listenerPilotParam        = nullptr;
     juce::SharedResourcePointer<SharedListenerHub> listenerHub_;
     std::shared_ptr<std::atomic<bool>> receivingBroadcast_ = std::make_shared<std::atomic<bool>>(false);
+    bool restoringState_ = false;  // guard: suppress listener hub side-effects during setStateInformation
 
     // SharedListenerHub::Listener overrides
     void listenerOrientationChanged(float yaw, float pitch, float roll,

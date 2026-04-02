@@ -1,6 +1,7 @@
 #pragma once
 #include "ColorTheme.h"
 #include "AvatarParams.h"
+#include "SceneParams.h"
 
 namespace xyzpan {
 
@@ -13,9 +14,11 @@ public:
     int themeIndex() const { return themeIndex_; }
     const ColorTheme& activeTheme() const { return getThemeEntry(themeIndex_).theme; }
     const AvatarParams& avatarParams() const { return avatar_; }
+    const SceneParams& sceneParams() const { return scene_; }
 
     void setThemeIndex(int index);
     void setAvatarParams(const AvatarParams& params);
+    void setSceneParams(const SceneParams& params);
 
 private:
     void load();
@@ -23,6 +26,7 @@ private:
 
     int          themeIndex_ = 0;
     AvatarParams avatar_;
+    SceneParams  scene_;
 };
 
 } // namespace xyzpan

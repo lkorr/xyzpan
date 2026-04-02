@@ -188,6 +188,14 @@ private:
     float pitchSmCos_ = 1.0f, pitchSmSin_ = 0.0f;
     float rollSmCos_ = 1.0f, rollSmSin_ = 0.0f;
 
+    // Cached listener orientation for change-detection gating (skip smoother when static)
+    float prevListenerYaw_   = 0.0f;
+    float prevListenerPitch_ = 0.0f;
+    float prevListenerRoll_  = 0.0f;
+    float cachedCosY_ = 1.0f, cachedSinY_ = 0.0f;
+    float cachedCosP_ = 1.0f, cachedSinP_ = 0.0f;
+    float cachedCosR_ = 1.0f, cachedSinR_ = 0.0f;
+
     // Last L/R node positions for position bridge
     StereoNodePositions lastStereoNodes_{};
 

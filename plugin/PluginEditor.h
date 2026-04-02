@@ -111,8 +111,8 @@ private:
     void updateSnapButtonStates();
 
     // Layout constants
-    static constexpr int kLeftColW      = 420;     // position column width
-    static constexpr int kBottomH       = 340;     // bottom row height (listener + orbit + reverb)
+    static constexpr int kLeftColW      = 470;     // position column width
+    static constexpr int kBottomH       = 310;     // bottom row height (listener + orbit + reverb)
     static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
@@ -120,12 +120,12 @@ private:
     static constexpr int kDefaultH      = 750;
     static constexpr int kSectionHdrH   = 24;      // section header height
     static constexpr int kDividerW      = 1;       // vertical divider width
-    static constexpr int kPadding       = 6;       // general inner padding
+    static constexpr int kPadding       = 10;      // general inner padding
     static constexpr int kReverbSectionW = 120;     // vertical reverb column
     static constexpr int kMeterW         = 24;       // output meter strip width
 
-    static constexpr int kMinW = 915;
-    static constexpr int kMinH = 750;
+    static constexpr int kMinW = 1119;
+    static constexpr int kMinH = 829;
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -210,6 +210,7 @@ private:
     enum class LeftTab { Source, Customize };
     LeftTab activeLeftTab_ = LeftTab::Source;
     void setActiveLeftTab(LeftTab tab);
+    bool swapPanels_ = false;  // cached from SceneParams
 
     // Remote popup button (visible when linked instances >= 2)
     juce::TextButton remoteBtn_{"Remote"};
@@ -227,6 +228,18 @@ private:
     std::unique_ptr<BA> wasdAtt_;
     bool wasdGestureActive_ = false;
     xyzpan::ListenerQuatAccumulator listenerAccum_;
+
+    // Cached APVTS parameter pointers for timerCallback (avoid per-frame string lookup)
+    juce::RangedAudioParameter* cachedWalkerX_  = nullptr;
+    juce::RangedAudioParameter* cachedWalkerY_  = nullptr;
+    juce::RangedAudioParameter* cachedWalkerZ_  = nullptr;
+    juce::RangedAudioParameter* cachedListenerRoll_  = nullptr;
+    juce::RangedAudioParameter* cachedListenerYaw_   = nullptr;
+    juce::RangedAudioParameter* cachedListenerPitch_ = nullptr;
+    std::atomic<float>* cachedRawYaw_   = nullptr;
+    std::atomic<float>* cachedRawPitch_ = nullptr;
+    std::atomic<float>* cachedRawRoll_  = nullptr;
+    juce::ToggleButton rollLockBtn_;
     void endWasdGestureIfActive();
     void timerCallback() override;
 
@@ -262,6 +275,21 @@ private:
     std::unique_ptr<xyzpan::UserPreferences> userPrefs_;
     juce::ComboBox    themeCombo_;
     juce::Label       themeLabel_;
+    juce::ComboBox    skyCombo_;
+    juce::Label       skyLabel_;
+    juce::ComboBox    groundCombo_;
+    juce::Label       groundLabel_;
+    juce::Slider      groundHeightSlider_;
+    juce::Label       groundHeightLabel_;
+    juce::Slider      groundHillsSlider_;
+    juce::Label       groundHillsLabel_;
+    juce::ToggleButton swapPanelsToggle_{"Swap Listener/Orbit"};
+    juce::ToggleButton showLabelsToggle_{"Show Object Labels"};
+    juce::ToggleButton showAudibleSphereToggle_{"Show Audible Sphere"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> showAudibleSphereAtt_;
+    juce::Slider waveCountSlider_;
+    juce::Label  waveCountLabel_;
+    std::unique_ptr<SA> waveCountAtt_;
     juce::Slider      headElongationSlider_, eyeSizeSlider_, eyeSpacingSlider_,
                       earSizeSlider_, headSizeSlider_;
     juce::Label       headElongationLabel_, eyeSizeLabel_, eyeSpacingLabel_,
@@ -279,10 +307,14 @@ private:
     juce::Viewport customizeViewport_;
     struct CustomizeContent : public juce::Component {
         std::function<void(juce::Graphics&)> onPaint;
+        std::function<void(const juce::MouseEvent&)> onMouseDown;
         void paint(juce::Graphics& g) override { if (onPaint) onPaint(g); }
+        void mouseDown(const juce::MouseEvent& e) override { if (onMouseDown) onMouseDown(e); }
     };
     CustomizeContent customizeContent_;
     int eyesSectionHeaderY_ = 0, earsSectionHeaderY_ = 0, hatsSectionHeaderY_ = 0;
+    int avatarHeaderY_ = 0;
+    bool avatarCollapsed_ = true;
 
     // Hat type combo + size slider
     juce::ComboBox hatTypeCombo_;
@@ -311,14 +343,15 @@ private:
         int leftColH;       // = totalH - kBottomH - kPresetBarH
         int bottomY;        // = totalH - kBottomH
         int reverbX;        // = totalW - kMeterW - kReverbSectionW
+        int listenerX;      // X offset of listener section in bottom row
         int listenerW;      // width of listener section in bottom row
-        int orbitX;         // = listenerW (start of stereo orbit section)
+        int orbitX;         // start of stereo orbit section
         int orbitW;         // = reverbX - listenerW
         int contentTop;     // = bottomY + kSectionHdrH
         int leftContentTop; // = contentY + kSectionHdrH (top of left column content)
         int leftContentH;   // = bottomY - leftContentTop (left column content height)
 
-        static Layout compute(int totalW, int totalH);
+        static Layout compute(int totalW, int totalH, bool swapPanels = false);
     };
 
     void updateOrbitEnabled();

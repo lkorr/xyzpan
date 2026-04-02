@@ -29,6 +29,7 @@
 
 #include <cmath>
 #include <algorithm>
+#include "SineLUT.h"
 
 namespace xyzpan::dsp {
 
@@ -49,9 +50,9 @@ public:
     void setCoefficients(float cutoffHz, float sampleRate, float Q = 0.7071f) {
         // Clamp to prevent instability near Nyquist
         float safeHz = std::min(cutoffHz, 0.45f * sampleRate);
-        if (safeHz == lastCutoff_) return;  // skip tan() when cutoff unchanged
+        if (std::abs(safeHz - lastCutoff_) < 0.5f) return;  // skip when delta < 0.5 Hz
         lastCutoff_ = safeHz;
-        float g = std::tan(3.14159265f * safeHz / sampleRate);
+        float g = SineLUT::fastTan(3.14159265f * safeHz / sampleRate);
         float k = 1.0f / Q;
         a1_ = 1.0f / (1.0f + g * (g + k));
         a2_ = g * a1_;

@@ -28,6 +28,12 @@ void UserPreferences::setAvatarParams(const AvatarParams& params)
     save();
 }
 
+void UserPreferences::setSceneParams(const SceneParams& params)
+{
+    scene_ = params;
+    save();
+}
+
 void UserPreferences::load()
 {
     auto file = getPrefsFile();
@@ -45,6 +51,22 @@ void UserPreferences::load()
 
     themeIndex_ = juce::jlimit(0, kNumThemes - 1,
                                 static_cast<int>(obj->getProperty("themeIndex")));
+
+    // Scene params (root level, not under avatar)
+    {
+        auto skyVal = obj->getProperty("skyType");
+        scene_.skyType = skyVal.isVoid() ? kSkyNone : juce::jlimit(0, kNumSkyTypes - 1, static_cast<int>(skyVal));
+        auto groundVal = obj->getProperty("groundType");
+        scene_.groundType = groundVal.isVoid() ? kGroundNone : juce::jlimit(0, kNumGroundTypes - 1, static_cast<int>(groundVal));
+        auto ghVal = obj->getProperty("groundHeight");
+        scene_.groundHeight = ghVal.isVoid() ? 0.0f : static_cast<float>(juce::jlimit(0.0, 1.0, static_cast<double>(ghVal)));
+        auto hillsVal = obj->getProperty("groundHills");
+        scene_.groundHills = hillsVal.isVoid() ? 0.0f : static_cast<float>(juce::jlimit(0.0, 1.0, static_cast<double>(hillsVal)));
+        auto swapVal = obj->getProperty("swapPanels");
+        scene_.swapPanels = swapVal.isVoid() ? false : static_cast<bool>(swapVal);
+        auto labelsVal = obj->getProperty("showLabels");
+        scene_.showLabels = labelsVal.isVoid() ? true : static_cast<bool>(labelsVal);
+    }
 
     if (auto* av = obj->getProperty("avatar").getDynamicObject()) {
         auto readFloat = [&](const char* key, float fallback) -> float {
@@ -96,6 +118,12 @@ void UserPreferences::save() const
 {
     auto* root = new juce::DynamicObject();
     root->setProperty("themeIndex", themeIndex_);
+    root->setProperty("skyType",    scene_.skyType);
+    root->setProperty("groundType",   scene_.groundType);
+    root->setProperty("groundHeight", static_cast<double>(scene_.groundHeight));
+    root->setProperty("groundHills",  static_cast<double>(scene_.groundHills));
+    root->setProperty("swapPanels",   scene_.swapPanels);
+    root->setProperty("showLabels",   scene_.showLabels);
 
     auto* av = new juce::DynamicObject();
     av->setProperty("headElongation", static_cast<double>(avatar_.headElongation));

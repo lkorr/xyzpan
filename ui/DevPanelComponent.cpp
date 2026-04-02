@@ -141,7 +141,7 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "test_tone_gain_db",   "Output level of the test tone in dB. Keep low to avoid clipping when combined with input audio." },
         { "test_tone_pitch_hz",  "Fundamental frequency of the test tone. Mid-range tones (300-1000 Hz) are best for hearing ITD/ILD cues clearly." },
         { "test_tone_pulse_hz",  "Rate at which the test tone pulses on/off. Pulsing helps distinguish direct vs. reflected sound in the spatial field." },
-        { "test_tone_waveform",  "0=Saw 1=Square 2=Noise 3=PulseSaw 4=PulseSquare 5=PulseNoise 6=StereoNoiseSaw 7=Sine 8=Click. Click produces 1ms impulses at the pulse rate." },
+        { "test_tone_waveform",  "0=Saw 1=Square 2=Noise 3=PulseSaw 4=PulseSquare 5=PulseNoise 6=StereoNoiseSaw 7=Sine 8=Click 9=Triangle. Click produces 1ms impulses at the pulse rate." },
 
         // X-Axis: Left/Right
         { "itd_max_ms",          "Maximum interaural time difference in ms. Models the extra path length to the far ear (~0.7 ms for humans). Primary azimuth cue below ~1.5 kHz." },

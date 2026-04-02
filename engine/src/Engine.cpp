@@ -8,6 +8,19 @@
 
 namespace xyzpan {
 
+// Elevation factor from distance-difference between top/bottom virtual ear nodes.
+// Returns 0.0 (nadir) to 1.0 (zenith), matching the old atan2-based range.
+static inline float computeElevFactor(float x, float y, float z, float earOffset) {
+    const float h = earOffset;
+    if (h < 1e-7f) return 0.5f;
+    const float xy2 = x * x + y * y;
+    const float distTop    = std::sqrt(xy2 + (z - h) * (z - h));
+    const float distBottom = std::sqrt(xy2 + (z + h) * (z + h));
+    const float delta = distBottom - distTop;
+    const float maxDelta = 2.0f * h;
+    return std::clamp(delta / maxDelta * 0.5f + 0.5f, 0.0f, 1.0f);
+}
+
 // ============================================================================
 // prepare()
 // ============================================================================
@@ -308,7 +321,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     constexpr float kPI = 3.14159265358979323846f;
     constexpr float kTwoPI = 2.0f * kPI;
-    constexpr float kInvHalfPI = 1.0f / (kPI * 0.5f);  // 2/pi ≈ 0.6366
+
 
     // Pre-compute dB-to-linear conversions (std::pow) once per block
     const float chestGainLin   = std::pow(10.0f, currentParams.chestGainDb / 20.0f);
@@ -347,32 +360,57 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     blkY -= currentParams.listenerY;
     blkZ -= currentParams.listenerZ;
 
-    // Listener head rotation — angular-smooth yaw/pitch/roll to handle 360°↔0° wrap
-    {
-        const float b = 1.0f - angularSmA_;
-        yawSmCos_   = std::cos(currentParams.listenerYaw)   * b + yawSmCos_   * angularSmA_;
-        yawSmSin_   = std::sin(currentParams.listenerYaw)   * b + yawSmSin_   * angularSmA_;
-        pitchSmCos_ = std::cos(currentParams.listenerPitch) * b + pitchSmCos_ * angularSmA_;
-        pitchSmSin_ = std::sin(currentParams.listenerPitch) * b + pitchSmSin_ * angularSmA_;
-        rollSmCos_  = std::cos(currentParams.listenerRoll)  * b + rollSmCos_  * angularSmA_;
-        rollSmSin_  = std::sin(currentParams.listenerRoll)  * b + rollSmSin_  * angularSmA_;
-    }
-    // Normalize IIR vectors to extract cos/sin directly — avoids the
-    // atan2 → cos/sin round-trip (saves 3 atan2 + 6 trig per block).
-    auto normCS = [](float c, float s, float& outCos, float& outSin) {
-        const float mag = std::sqrt(c * c + s * s);
-        const float inv = (mag > 1e-12f) ? 1.0f / mag : 1.0f;
-        outCos = c * inv;
-        outSin = s * inv;
-    };
+    // Listener head rotation — angular-smooth yaw/pitch/roll to handle 360°↔0° wrap.
+    // Gated on parameter change: when listener is static, reuse cached cos/sin.
     float cosY, sinY, cosP, sinP, cosR, sinR;
-    normCS(yawSmCos_,   yawSmSin_,   cosY, sinY);
-    normCS(pitchSmCos_, pitchSmSin_, cosP, sinP);
-    normCS(rollSmCos_,  rollSmSin_,  cosR, sinR);
+    {
+        const bool listenerParamsChanged =
+            (currentParams.listenerYaw   != prevListenerYaw_) ||
+            (currentParams.listenerPitch != prevListenerPitch_) ||
+            (currentParams.listenerRoll  != prevListenerRoll_);
+
+        if (listenerParamsChanged) {
+            prevListenerYaw_   = currentParams.listenerYaw;
+            prevListenerPitch_ = currentParams.listenerPitch;
+            prevListenerRoll_  = currentParams.listenerRoll;
+
+            const float b = 1.0f - angularSmA_;
+            yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw)   * b + yawSmCos_   * angularSmA_;
+            yawSmSin_   = dsp::SineLUT::lookupAngle(currentParams.listenerYaw)       * b + yawSmSin_   * angularSmA_;
+            pitchSmCos_ = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch) * b + pitchSmCos_ * angularSmA_;
+            pitchSmSin_ = dsp::SineLUT::lookupAngle(currentParams.listenerPitch)     * b + pitchSmSin_ * angularSmA_;
+            rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll)  * b + rollSmCos_  * angularSmA_;
+            rollSmSin_  = dsp::SineLUT::lookupAngle(currentParams.listenerRoll)      * b + rollSmSin_  * angularSmA_;
+
+            // Normalize IIR vectors to extract cos/sin directly — avoids the
+            // atan2 → cos/sin round-trip (saves 3 atan2 + 6 trig per block).
+            auto normCS = [](float c, float s, float& outCos, float& outSin) {
+                const float mag = std::sqrt(c * c + s * s);
+                const float inv = (mag > 1e-12f) ? 1.0f / mag : 1.0f;
+                outCos = c * inv;
+                outSin = s * inv;
+            };
+            normCS(yawSmCos_,   yawSmSin_,   cosY, sinY);
+            normCS(pitchSmCos_, pitchSmSin_, cosP, sinP);
+            normCS(rollSmCos_,  rollSmSin_,  cosR, sinR);
+
+            cachedCosY_ = cosY; cachedSinY_ = sinY;
+            cachedCosP_ = cosP; cachedSinP_ = sinP;
+            cachedCosR_ = cosR; cachedSinR_ = sinR;
+        } else {
+            cosY = cachedCosY_; sinY = cachedSinY_;
+            cosP = cachedCosP_; sinP = cachedSinP_;
+            cosR = cachedCosR_; sinR = cachedSinR_;
+        }
+    }
 
     constexpr float kRotEps = 1e-7f;
     const bool listenerRotated = (std::abs(sinY) > kRotEps || std::abs(cosY - 1.0f) > kRotEps
                                || std::abs(sinP) > kRotEps || std::abs(sinR) > kRotEps);
+
+    // Save listener-relative (pre-head-rotation) coords for face-observer spread
+    const float blkRelX = blkX;
+    const float blkRelY = blkY;
 
     // Rotate block-start position into listener-relative frame for EQ targets.
     // Inverse yaw around Z, then inverse pitch around X, then roll around Y-forward.
@@ -395,8 +433,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // Block-start EQ targets (elevation-driven pinna, Y-driven presence/earCanal)
     const float blkPresenceGainDb  = currentParams.presenceShelfMaxDb * (-blkRearFactor);
     const float blkEarCanalGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-blkRearFactor));
-    const float blkElevation       = std::atan2(blkZ, blkHorizMag);                         // -pi/2 to +pi/2
-    const float blkElevFactor      = blkElevation * kInvHalfPI * 0.5f + 0.5f;               // 0=nadir, 1=zenith
+    const float blkElevFactor      = computeElevFactor(blkX, blkY, blkZ, currentParams.elevEarOffset);
     const float blkElevAbove       = std::max(0.0f, blkElevFactor * 2.0f - 1.0f);           // 0 at horizon, 1 at zenith
     const float blkPinnaGainDb     = -15.0f + 20.0f * blkElevAbove;
     const float blkShelfGainDb     = 3.0f * std::min(1.0f, blkElevFactor * 2.0f);           // 0 at nadir, 3 at horizon+
@@ -483,9 +520,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     {
         const float blkHalfSpread = currentParams.stereoWidth * kStereoMaxSpreadRadius;
         float blkSpreadX = 1.0f, blkSpreadY = 0.0f;
-        if (currentParams.stereoFaceListener && blkHorizMag > 1e-5f) {
-            blkSpreadX =  blkY / blkHorizMag;
-            blkSpreadY = -blkX / blkHorizMag;
+        const float blkRelHorizMag = std::sqrt(blkRelX * blkRelX + blkRelY * blkRelY);
+        if (currentParams.stereoFaceListener && blkRelHorizMag > 1e-5f) {
+            blkSpreadX =  blkRelY / blkRelHorizMag;
+            blkSpreadY = -blkRelX / blkRelHorizMag;
         }
 
         // Peek orbit LFOs to get block-start orbit state (before per-sample ticks)
@@ -554,8 +592,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float lRearFactor = (lHorizMag > 1e-7f) ? (-blkLNodeY / lHorizMag) : blkLNodeY;
         const float lPresGainDb = currentParams.presenceShelfMaxDb * (-lRearFactor);
         const float lEarGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-lRearFactor));
-        const float lElevation  = std::atan2(blkLNodeZ, lHorizMag);
-        const float lElevFactor = lElevation * kInvHalfPI * 0.5f + 0.5f;
+        const float lElevFactor = computeElevFactor(blkLNodeX, blkLNodeY, blkLNodeZ, currentParams.elevEarOffset);
         const float lElevAbove  = std::max(0.0f, lElevFactor * 2.0f - 1.0f);
         const float lPinnaGain  = -15.0f + 20.0f * lElevAbove;
         const float lShelfGain  = 3.0f * std::min(1.0f, lElevFactor * 2.0f);
@@ -579,8 +616,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float rRearFactor = (rHorizMag > 1e-7f) ? (-blkRNodeY / rHorizMag) : blkRNodeY;
         const float rPresGainDb = currentParams.presenceShelfMaxDb * (-rRearFactor);
         const float rEarGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-rRearFactor));
-        const float rElevation  = std::atan2(blkRNodeZ, rHorizMag);
-        const float rElevFactor = rElevation * kInvHalfPI * 0.5f + 0.5f;
+        const float rElevFactor = computeElevFactor(blkRNodeX, blkRNodeY, blkRNodeZ, currentParams.elevEarOffset);
         const float rElevAbove  = std::max(0.0f, rElevFactor * 2.0f - 1.0f);
         const float rPinnaGain  = -15.0f + 20.0f * rElevAbove;
         const float rShelfGain  = 3.0f * std::min(1.0f, rElevFactor * 2.0f);
@@ -760,6 +796,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     clickSamplesLeft_ = std::max(0.0f, clickSamplesLeft_ - 1.0f);
                     break;
                 }
+                case xyzpan::TestToneWaveform::Triangle:
+                    testSig = 4.0f * (sawPhase_ < 0.5f ? sawPhase_ : (1.0f - sawPhase_)) - 1.0f;
+                    sawPhase_ += sawIncrement;
+                    if (sawPhase_ >= 1.0f) sawPhase_ -= 1.0f;
+                    break;
                 case xyzpan::TestToneWaveform::Saw: default:
                     testSig = 2.0f * sawPhase_ - 1.0f;
                     sawPhase_ += sawIncrement;
@@ -882,12 +923,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Compute L/R node positions in world space, then rotate for DSP
             const float halfSpread = smoothedWidth * kStereoMaxSpreadRadius;
 
-            // Spread direction: perpendicular to listener→object in XY plane (listener-relative)
-            const float relHorizMag = std::sqrt(modX * modX + modY * modY);
+            // Spread direction: perpendicular to listener→source in XY plane (world-relative,
+            // NOT head-rotated — offsets are added to world-space positions)
+            const float relX = worldModX - currentParams.listenerX;
+            const float relY = worldModY - currentParams.listenerY;
+            const float relHorizMag = std::sqrt(relX * relX + relY * relY);
             float spreadX, spreadY;
             if (currentParams.stereoFaceListener && relHorizMag > 1e-5f) {
-                spreadX =  modY / relHorizMag;
-                spreadY = -modX / relHorizMag;
+                spreadX =  relY / relHorizMag;
+                spreadY = -relX / relHorizMag;
             } else {
                 spreadX = 1.0f;
                 spreadY = 0.0f;

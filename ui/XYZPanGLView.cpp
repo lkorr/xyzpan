@@ -137,6 +137,74 @@ void XYZPanGLView::newOpenGLContextCreated()
     // Text billboard quad
     uploadTextQuadVAO();
 
+    // Skybox fullscreen quad (clip-space [-1,1])
+    {
+        const float skyQuad[] = { -1.f,-1.f,  1.f,-1.f,  -1.f,1.f,  1.f,1.f };
+        glGenVertexArrays(1, &vaoSkybox_);
+        glGenBuffers(1, &vboSkybox_);
+        glBindVertexArray(vaoSkybox_);
+        glBindBuffer(GL_ARRAY_BUFFER, vboSkybox_);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(skyQuad), skyQuad, GL_STATIC_DRAW);
+        if (skyboxShader_) {
+            auto posAttr = glGetAttribLocation(skyboxShader_->getProgramID(), "position");
+            if (posAttr >= 0) {
+                glEnableVertexAttribArray(static_cast<GLuint>(posAttr));
+                glVertexAttribPointer(static_cast<GLuint>(posAttr), 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+            }
+        }
+        glBindVertexArray(0);
+    }
+
+    // Ground plane — subdivided grid for hills displacement
+    {
+        const float groundY = -4.5f;
+        const float halfExt = 150.0f;
+        const int gridN = 128;  // 128x128 grid = 16384 vertices
+        const int vertCount = (gridN + 1) * (gridN + 1);
+        std::vector<float> verts(vertCount * 3);
+        for (int iz = 0; iz <= gridN; ++iz) {
+            for (int ix = 0; ix <= gridN; ++ix) {
+                const int vi = (iz * (gridN + 1) + ix) * 3;
+                verts[vi + 0] = -halfExt + (2.0f * halfExt * ix) / gridN;
+                verts[vi + 1] = groundY;
+                verts[vi + 2] = -halfExt + (2.0f * halfExt * iz) / gridN;
+            }
+        }
+        // Triangle indices (two triangles per cell)
+        const int cellCount = gridN * gridN;
+        std::vector<unsigned> indices(cellCount * 6);
+        int idx = 0;
+        for (int iz = 0; iz < gridN; ++iz) {
+            for (int ix = 0; ix < gridN; ++ix) {
+                unsigned tl = static_cast<unsigned>(iz * (gridN + 1) + ix);
+                unsigned tr = tl + 1;
+                unsigned bl = tl + static_cast<unsigned>(gridN + 1);
+                unsigned br = bl + 1;
+                indices[idx++] = tl; indices[idx++] = bl; indices[idx++] = tr;
+                indices[idx++] = tr; indices[idx++] = bl; indices[idx++] = br;
+            }
+        }
+        groundIndexCount_ = static_cast<int>(indices.size());
+
+        glGenVertexArrays(1, &vaoGround_);
+        glGenBuffers(1, &vboGround_);
+        glGenBuffers(1, &iboGround_);
+        glBindVertexArray(vaoGround_);
+        glBindBuffer(GL_ARRAY_BUFFER, vboGround_);
+        glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(verts.size() * sizeof(float)),
+                     verts.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, iboGround_);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(unsigned)),
+                     indices.data(), GL_STATIC_DRAW);
+        if (groundShader_) {
+            auto posAttr = glGetAttribLocation(groundShader_->getProgramID(), "position");
+            if (posAttr >= 0) {
+                glEnableVertexAttribArray(static_cast<GLuint>(posAttr));
+                glVertexAttribPointer(static_cast<GLuint>(posAttr), 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+            }
+        }
+        glBindVertexArray(0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,6 +249,12 @@ void XYZPanGLView::setAvatarParams(const AvatarParams& params)
     avatarParams_ = params;
 }
 
+void XYZPanGLView::setSceneParams(const SceneParams& params)
+{
+    const juce::SpinLock::ScopedLockType lock(customizeLock_);
+    sceneParams_ = params;
+}
+
 // ---------------------------------------------------------------------------
 // renderOpenGL — called every frame on the GL thread
 // ---------------------------------------------------------------------------
@@ -188,13 +262,15 @@ void XYZPanGLView::renderOpenGL()
 {
     jassert(juce::OpenGLHelpers::isContextActive());
 
-    // Snapshot theme + avatar under lock (fast — POD copies)
+    // Snapshot theme + avatar + scene under lock (fast — POD copies)
     ColorTheme   theme;
     AvatarParams avatar;
+    SceneParams  scene;
     {
         const juce::SpinLock::ScopedLockType lock(customizeLock_);
         theme  = glTheme_;
         avatar = avatarParams_;
+        scene  = sceneParams_;
     }
 
     // Read current position snapshot from the lock-free bridge
@@ -286,6 +362,41 @@ void XYZPanGLView::renderOpenGL()
         trailListener_.push(listenerPos, now);
     else
         trailListener_.clear();
+
+    // --- Skybox (drawn behind everything) ---
+    if (scene.skyType != kSkyNone && skyboxShader_ && vaoSkybox_ != 0) {
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        skyboxShader_->use();
+        const glm::mat4 invVP = glm::inverse(projMatrix_ * viewMatrix_);
+        skyboxShader_->setUniformMat4("invViewProj", glm::value_ptr(invVP), 1, GL_FALSE);
+        skyboxShader_->setUniform("skyType", scene.skyType);
+        skyboxShader_->setUniform("iTime", static_cast<float>(std::fmod(now, 1000.0)));
+        glBindVertexArray(vaoSkybox_);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+        glEnable(GL_DEPTH_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT);
+    }
+
+    // --- Ground plane (drawn before scene geometry, with polygon offset to avoid z-fighting with grid) ---
+    if (scene.groundType != kGroundNone && groundShader_ && vaoGround_ != 0) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1.0f, 1.0f);
+        groundShader_->use();
+        groundShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+        groundShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+        groundShader_->setUniform("groundType", scene.groundType);
+        groundShader_->setUniform("iTime", static_cast<float>(std::fmod(now, 1000.0)));
+        groundShader_->setUniform("fogColor", theme.glBackground.x, theme.glBackground.y, theme.glBackground.z);
+        groundShader_->setUniform("groundYOffset", -4.5f * scene.groundHeight);
+        groundShader_->setUniform("groundHills", scene.groundHills);
+        glBindVertexArray(vaoGround_);
+        glDrawElements(GL_TRIANGLES, groundIndexCount_, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+        glDisable(GL_POLYGON_OFFSET_FILL);
+    }
 
     // Draw room wireframe — scaled by R, per-vertex axis colors
     drawColorLines(vaoRoom_, roomVertexCount_, 0.7f, roomModelMatrix);
@@ -458,7 +569,7 @@ void XYZPanGLView::renderOpenGL()
         glBindVertexArray(vaoSphere_);
 
         // Sound wave pulses — filled transparent spheres expanding outward
-        drawSoundWaves(sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+        drawSoundWaves(ownWaveEmitter_, sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
 
         glDepthMask(GL_TRUE);
     }
@@ -483,12 +594,12 @@ void XYZPanGLView::renderOpenGL()
     }
 
     // Draw L/R stereo node spheres (smaller than center, only when stereo active)
-    // Each node's opacity is based on its own distance to the listener (origin).
+    // Each node's opacity is based on its distance to the listener.
     // Draw back-to-front (farther node first) so the nearer semi-transparent
     // node blends correctly on top of the farther one.
     if (stereoActive) {
-        const float lDistFrac = std::clamp(glm::length(lNodePos) / sr, 0.0f, 1.0f);
-        const float rDistFrac = std::clamp(glm::length(rNodePos) / sr, 0.0f, 1.0f);
+        const float lDistFrac = std::clamp(glm::length(lNodePos - listenerPos) / sr, 0.0f, 1.0f);
+        const float rDistFrac = std::clamp(glm::length(rNodePos - listenerPos) / sr, 0.0f, 1.0f);
         const float lOpacity = 0.1f + 0.9f * (1.0f - lDistFrac);
         const float rOpacity = 0.1f + 0.9f * (1.0f - rDistFrac);
 
@@ -575,7 +686,7 @@ void XYZPanGLView::renderOpenGL()
             // Smooth foreign source RMS and draw sound waves
             const float fRmsCoeff = (fs.inputRms > foreignSmoothedRms_[ri]) ? kRmsAttack : kRmsRelease;
             foreignSmoothedRms_[ri] += fRmsCoeff * (fs.inputRms - foreignSmoothedRms_[ri]);
-            drawSoundWaves(fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            drawSoundWaves(foreignWaveEmitters_[ri], fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
         }
         glDepthMask(GL_TRUE);
 
@@ -634,7 +745,7 @@ void XYZPanGLView::renderOpenGL()
 
     // Billboard text labels — depth-test on (occluded by geometry), depth-write off
     glDepthMask(GL_FALSE);
-    {
+    if (scene.showLabels) {
         // Own source label (use brightGold theme color)
         if (ownInstanceName_.isNotEmpty()) {
             const juce::Colour goldCol(theme.brightGold);
@@ -726,6 +837,13 @@ void XYZPanGLView::openGLContextClosing()
         glDeleteTextures(1, &cached.textureId);
     textTextureCache_.clear();
 
+    skyboxShader_.reset();
+    groundShader_.reset();
+    if (vaoSkybox_) { glDeleteVertexArrays(1, &vaoSkybox_); vaoSkybox_ = 0; }
+    if (vboSkybox_) { glDeleteBuffers(1, &vboSkybox_); vboSkybox_ = 0; }
+    if (vaoGround_) { glDeleteVertexArrays(1, &vaoGround_); vaoGround_ = 0; }
+    if (vboGround_) { glDeleteBuffers(1, &vboGround_); vboGround_ = 0; }
+    if (iboGround_) { glDeleteBuffers(1, &iboGround_); iboGround_ = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -756,7 +874,7 @@ void XYZPanGLView::paint(juce::Graphics& g)
         int listY = 8;
         const int rowH = 20;
         const int focusedRowH = 26;
-        const int listW = 140;
+        const int listW = 180;
 
         // "Self" entry
         {
@@ -775,6 +893,8 @@ void XYZPanGLView::paint(juce::Graphics& g)
                 col = col.brighter(0.3f);
             g.setColour(col.withAlpha(isFocused ? 1.0f : 0.7f));
             juce::String selfName = ownInstanceName_.isNotEmpty() ? ownInstanceName_ : "Self";
+            if (ownIsPilot_.load(std::memory_order_relaxed))
+                selfName += " (Pilot)";
             g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + selfName,
                        listX, listY, listW, rh, juce::Justification::centredLeft, false);
 
@@ -799,6 +919,8 @@ void XYZPanGLView::paint(juce::Graphics& g)
 
             juce::String name(fs.name);
             if (name.isEmpty()) name = "Source " + juce::String(i + 1);
+            if (fs.isPilot)
+                name += " (Pilot)";
 
             juce::Colour col = kLabelPalette[fs.colorIndex % 8];
             if (isFocused)
@@ -1099,6 +1221,23 @@ void XYZPanGLView::compileShaders()
         return;
     }
 
+    // Skybox shader (procedural sky)
+    skyboxShader_ = std::make_unique<juce::OpenGLShaderProgram>(glContext_);
+    if (!skyboxShader_->addVertexShader(kSkyboxVertShader) ||
+        !skyboxShader_->addFragmentShader(kSkyboxFragShader) ||
+        !skyboxShader_->link()) {
+        skyboxShader_.reset();
+        jassertfalse;
+    }
+
+    // Ground plane shader (procedural ground)
+    groundShader_ = std::make_unique<juce::OpenGLShaderProgram>(glContext_);
+    if (!groundShader_->addVertexShader(kGroundVertShader) ||
+        !groundShader_->addFragmentShader(kGroundFragShader) ||
+        !groundShader_->link()) {
+        groundShader_.reset();
+        jassertfalse;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1366,40 +1505,65 @@ void XYZPanGLView::drawSphereRings(float radius, const glm::vec3& color, float o
 
 // ---------------------------------------------------------------------------
 // drawSoundWaves — expanding filled sphere pulses radiating outward from source.
-// Each wave is a semi-transparent filled sphere. Opacity fades from baseOpacity
-// near the source to 0 at the audible radius boundary. Multiple overlapping
-// spheres visually stack, making the center appear denser.
+// Each wave spawns at the source's averaged position and expands from that fixed
+// point. Waves do NOT follow the moving source — they emanate from where they
+// were born.
 // ---------------------------------------------------------------------------
-void XYZPanGLView::drawSoundWaves(const glm::vec3& center, float sphereRadius,
-                                   float inputRms, const glm::vec3& color,
-                                   double nowSeconds, float intensity,
-                                   float baseOpacity, float speed, int numWaves)
+void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
+                                   float sphereRadius, float inputRms,
+                                   const glm::vec3& color, double nowSeconds,
+                                   float intensity, float baseOpacity,
+                                   float speed, int numWaves)
 {
-    if (inputRms < 0.001f || sphereRadius < 0.001f || intensity < 0.001f
+    if (sphereRadius < 0.001f || intensity < 0.001f
         || baseOpacity < 0.0001f || numWaves < 1) return;
+
+    // Update position average
+    const double dt = (emitter.lastSpawnTime > 0.0)
+                      ? (nowSeconds - emitter.lastSpawnTime) : 0.0;
+    emitter.updateAverage(center, dt);
+
+    // Wave lifetime: time for a wave to expand from 0 to sphereRadius
+    const float waveLifetime = (speed > 1e-5f) ? (1.0f / speed) : 100.0f;
+    const float spawnInterval = waveLifetime / static_cast<float>(numWaves);
+
+    // Spawn new waves at regular intervals (only if there's audible signal)
+    if (inputRms >= 0.001f) {
+        if (emitter.lastSpawnTime < 0.0) {
+            emitter.lastSpawnTime = nowSeconds;
+            emitter.spawn(nowSeconds);
+        } else {
+            while (nowSeconds - emitter.lastSpawnTime >= spawnInterval) {
+                emitter.lastSpawnTime += spawnInterval;
+                emitter.spawn(emitter.lastSpawnTime);
+            }
+        }
+    }
 
     // Volume-based opacity multiplier: 0dB (rms=1.0) → 2x, -6dB → 1x, -12dB → 0.5x
     const float rmsMul = std::clamp(inputRms * 2.0f, 0.0f, 2.0f);
 
-    const float waveSpacing = 1.0f / static_cast<float>(numWaves);
+    // Draw all live waves
+    for (int i = 0; i < emitter.count; ++i) {
+        const int idx = (emitter.head - i + WaveEmitter::kMaxWaves) % WaveEmitter::kMaxWaves;
+        const auto& wave = emitter.waves[idx];
 
-    for (int i = 0; i < numWaves; ++i) {
-        float phase = static_cast<float>(std::fmod(nowSeconds * speed + i * waveSpacing, 1.0));
+        const float age = static_cast<float>(nowSeconds - wave.birthTime);
+        const float phase = age * speed;  // 0.0 = just born, 1.0 = at sphere boundary
 
-        float waveRadius = phase * sphereRadius;
+        if (phase >= 1.0f || phase < 0.0f) continue;
+
+        const float waveRadius = phase * sphereRadius;
         if (waveRadius < 0.005f) continue;
 
-        // Opacity: starts at baseOpacity near center, fades linearly to 0 at boundary.
-        // Volume (rmsMul) scales opacity — louder = more visible, quieter = more transparent
-        float fadeIn  = std::clamp(phase * 5.0f, 0.0f, 1.0f);  // quick ramp-in
-        float fadeOut = 1.0f - phase;                             // linear fade to edge
+        float fadeIn  = std::clamp(phase * 5.0f, 0.0f, 1.0f);
+        float fadeOut = 1.0f - phase;
         float waveOpacity = fadeIn * fadeOut * baseOpacity * intensity * rmsMul;
 
         if (waveOpacity < 0.001f) continue;
 
-        // Inline sphere draw with edgeFade=1.0 for soft-edged wave shells
         const glm::mat4 model = glm::scale(
-            glm::translate(glm::mat4(1.0f), center),
+            glm::translate(glm::mat4(1.0f), wave.birthPos),
             glm::vec3(waveRadius));
         sphereShader_->setUniformMat4("model", glm::value_ptr(model), 1, GL_FALSE);
         sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
