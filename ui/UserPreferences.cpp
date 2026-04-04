@@ -103,6 +103,7 @@ void UserPreferences::load()
 
         avatar_.noseSize   = readFloat("noseSize", 1.0f);
         avatar_.noseType   = readInt("noseType", xyzpan::kNoseCone);
+        avatar_.bodyType   = readInt("bodyType", xyzpan::kBodySolid);
 
         avatar_.headColor  = static_cast<uint32_t>(readInt("headColor",  0));
         // Read noseColor, falling back to old arrowColor key for backward compat
@@ -143,6 +144,7 @@ void UserPreferences::save() const
     av->setProperty("hatType",        avatar_.hatType);
     av->setProperty("noseSize",      static_cast<double>(avatar_.noseSize));
     av->setProperty("noseType",       avatar_.noseType);
+    av->setProperty("bodyType",       avatar_.bodyType);
     av->setProperty("headColor",      static_cast<int>(avatar_.headColor));
     av->setProperty("noseColor",      static_cast<int>(avatar_.noseColor));
     av->setProperty("hatColor",      static_cast<int>(avatar_.hatColor));

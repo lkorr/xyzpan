@@ -190,6 +190,9 @@ public:
     // When set, the GL view draws a highlight ring around that source.
     void setFocusedForeignSource(int index) { focusedForeignIndex_.store(index, std::memory_order_relaxed); }
 
+    // Temporarily show audible sphere while the Sphere knob is hovered/dragged
+    void setSphereKnobActive(bool active) { sphereKnobActive_.store(active ? 1 : 0, std::memory_order_relaxed); }
+
     // Set the name displayed above the own source node (message thread only)
     void setOwnInstanceName(const juce::String& name) { ownInstanceName_ = name; }
 
@@ -268,8 +271,18 @@ private:
     // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
     void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
 
+    // Draw sphere wireframe with arbitrary model matrix (for ellipsoid wireframes)
+    void drawSphereWireframeWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
+
     // Draw the cone with an arbitrary model matrix (reuses sphere shader)
     void drawCone(const glm::mat4& model, const glm::vec3& color, float opacity);
+
+    // Draw cone wireframe with arbitrary model matrix
+    void drawConeWireframeWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
+
+    // Body-type-aware drawing for avatar parts (dispatches based on bodyType)
+    void drawAvatarSphere(const glm::mat4& model, const glm::vec3& color, float opacity, int bodyType);
+    void drawAvatarCone(const glm::mat4& model, const glm::vec3& color, float opacity, int bodyType);
 
     // Project a 3D world position to screen (pixel) coordinates
     glm::vec2 projectToScreen(const glm::vec3& worldPos) const;
@@ -314,6 +327,8 @@ private:
     int    sphereRingsIndexCount_ = 0;
 
     GLuint vaoCone_ = 0, vboCone_ = 0, iboCone_ = 0;
+    GLuint vaoConeWire_ = 0, iboConeWire_ = 0;
+    int    coneWireIndexCount_ = 0;
     GLuint vaoArrow2D_ = 0, vboArrow2D_ = 0;
     int    arrow2DVertexCount_ = 0;
 
@@ -392,6 +407,7 @@ private:
     std::atomic<float>* waveSpeedParam_     = nullptr;
     std::atomic<float>* waveCountParam_     = nullptr;
     std::atomic<float>* showAudibleSphereParam_ = nullptr;
+    std::atomic<int>    sphereKnobActive_{0};  // 1 when sphere knob is hovered/dragged
     std::atomic<float>* sourceSphereOpacityParam_ = nullptr;
 
     // Ear/eye type draw dispatchers
@@ -462,6 +478,10 @@ private:
     float savedYawDeg_   = 0.0f;
     float savedPitchDeg_ = 0.0f;
     float savedRollDeg_  = 0.0f;
+    bool  headFollowsGestureActive_ = false;
+    juce::RangedAudioParameter* cachedYawParam_   = nullptr;
+    juce::RangedAudioParameter* cachedPitchParam_ = nullptr;
+    juce::RangedAudioParameter* cachedRollParam_  = nullptr;
 
     // Instance name for paint() overlay labels (message thread only)
     juce::String   ownInstanceName_;

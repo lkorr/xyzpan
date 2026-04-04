@@ -173,6 +173,25 @@ SphereGeometry buildCone(float baseRadius, float height, int slices)
 }
 
 // ---------------------------------------------------------------------------
+// buildConeWireframe — GL_LINES index pairs for cone wireframe
+// ---------------------------------------------------------------------------
+std::vector<unsigned> buildConeWireframe(int slices)
+{
+    std::vector<unsigned> idx;
+    // Tip-to-base edges
+    for (int i = 0; i < slices; ++i) {
+        idx.push_back(0);  // tip
+        idx.push_back(static_cast<unsigned>(1 + i));
+    }
+    // Base ring edges
+    for (int i = 0; i < slices; ++i) {
+        idx.push_back(static_cast<unsigned>(1 + i));
+        idx.push_back(static_cast<unsigned>(1 + (i + 1) % slices));
+    }
+    return idx;
+}
+
+// ---------------------------------------------------------------------------
 // buildRoomWireframe — 12 edges of a box
 // ---------------------------------------------------------------------------
 std::vector<float> buildRoomWireframe(float halfSize)

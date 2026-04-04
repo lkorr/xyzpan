@@ -44,6 +44,11 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
     apvts_.addParameterListener("listener_pitch",  this);
     apvts_.addParameterListener("listener_roll",   this);
 
+    // Cache param pointers for gesture management (automation recording)
+    cachedYawParam_   = apvts_.getParameter("listener_yaw");
+    cachedPitchParam_ = apvts_.getParameter("listener_pitch");
+    cachedRollParam_  = apvts_.getParameter("listener_roll");
+
     waveIntensityParam_    = apvts_.getRawParameterValue("wave_intensity");
     waveOpacityParam_      = apvts_.getRawParameterValue("wave_opacity");
     waveSpeedParam_        = apvts_.getRawParameterValue("wave_speed");
@@ -56,6 +61,14 @@ XYZPanGLView::~XYZPanGLView()
 {
     // Mark dead so any pending callAsync lambdas skip APVTS access
     glAlive_->store(false, std::memory_order_release);
+
+    // End any in-flight automation gesture before tearing down
+    if (headFollowsGestureActive_) {
+        if (cachedYawParam_)   cachedYawParam_->endChangeGesture();
+        if (cachedPitchParam_) cachedPitchParam_->endChangeGesture();
+        if (cachedRollParam_)  cachedRollParam_->endChangeGesture();
+        headFollowsGestureActive_ = false;
+    }
 
     apvts_.removeParameterListener("listener_yaw",   this);
     apvts_.removeParameterListener("listener_pitch",  this);
@@ -331,9 +344,15 @@ void XYZPanGLView::renderOpenGL()
     const float waveSpeed = waveSpeedParam_ ? waveSpeedParam_->load(std::memory_order_relaxed) : 0.3f;
     const int   waveCount = waveCountParam_ ? static_cast<int>(waveCountParam_->load(std::memory_order_relaxed)) : 3;
 
-    // Compute source opacity: full at close range, ~10% at sphere boundary
-    const float distFrac = std::clamp(snap.distance / sr, 0.0f, 1.0f);
-    const float sourceOpacity = 0.1f + 0.9f * (1.0f - distFrac);
+    // Distance-based opacity: full up to 50% of radius, gentle fade to 80%
+    // at the sphere boundary, then rapid exponential falloff outside.
+    auto distanceOpacity = [](float df) -> float {
+        if (df <= 0.5f) return 1.0f;
+        if (df <= 1.0f) return 1.0f - 0.4f * (df - 0.5f);   // 1.0 → 0.8
+        return std::max(0.8f * std::exp(-4.0f * (df - 1.0f)), 0.1f);
+    };
+    const float distFrac = snap.distance / std::max(sr, 0.001f);
+    const float sourceOpacity = distanceOpacity(distFrac);
 
     // Stereo L/R node positions (same coordinate mapping)
     const bool stereoActive = snap.stereoWidth > 0.0f;
@@ -446,13 +465,32 @@ void XYZPanGLView::renderOpenGL()
         if (headFollowsActive_ && !toggleOn) {
             // Exiting head-follows mode: retain current camera-driven angles
             headFollowsActive_ = false;
+            // End any in-flight automation gesture
+            if (headFollowsGestureActive_) {
+                headFollowsGestureActive_ = false;
+                auto* pYaw   = cachedYawParam_;
+                auto* pPitch = cachedPitchParam_;
+                auto* pRoll  = cachedRollParam_;
+                auto alive = glAlive_;
+                juce::MessageManager::callAsync([pYaw, pPitch, pRoll, alive]() {
+                    if (!alive->load(std::memory_order_acquire)) return;
+                    if (pYaw)   pYaw->endChangeGesture();
+                    if (pPitch) pPitch->endChangeGesture();
+                    if (pRoll)  pRoll->endChangeGesture();
+                });
+            }
         }
     }
 
     // Draw listener node at origin — themed color, avatar-parameterized geometry
     if (headAlpha > 0.0f) {
-        // Write depth only when fully opaque to avoid visual artifacts
-        if (headAlpha < 1.0f)
+        // Write depth only when fully opaque solid to avoid visual artifacts
+        const bool transparentBody = headAlpha < 1.0f
+                                   || avatar.bodyType == kBodyGrid
+                                   || avatar.bodyType == kBodyGhost
+                                   || avatar.bodyType == kBodyGlass
+                                   || avatar.bodyType == kBodyNone;
+        if (transparentBody)
             glDepthMask(GL_FALSE);
 
         const float hs = avatar.headSize;
@@ -470,14 +508,15 @@ void XYZPanGLView::renderOpenGL()
         headRot = glm::rotate(headRot, snap.listenerRoll,  glm::vec3(0.0f, 0.0f, -1.0f));
 
         // Head sphere — rotated by headRot so elongation follows face orientation,
-        // Y-scaled by headElongation, uniformly scaled by headSize
+        // Y-scaled by headElongation, uniformly scaled by headSize.
+        // Body type selects rendering style via drawAvatarSphere.
         {
             constexpr float kBaseHeadRadius = 0.045f;
             glm::mat4 headModel = headRot;
             headModel = glm::scale(headModel, glm::vec3(kBaseHeadRadius * hs,
                                                          kBaseHeadRadius * hs * avatar.headElongation,
                                                          kBaseHeadRadius * hs));
-            drawSphereWithModel(headModel, headCol, headAlpha);
+            drawAvatarSphere(headModel, headCol, headAlpha, avatar.bodyType);
         }
 
         // Nose — dispatched by nose type
@@ -546,14 +585,18 @@ void XYZPanGLView::renderOpenGL()
             drawArrow2D(ma, noseCol, 0.9f * headAlpha);
         }
 
-        if (headAlpha < 1.0f)
+        if (transparentBody)
             glDepthMask(GL_TRUE);
     }
 
+    // Audible sphere visibility: always-on toggle OR sphere knob hover/drag
+    const bool alwaysShowSphere = showAudibleSphereParam_ == nullptr
+                                  || showAudibleSphereParam_->load(std::memory_order_relaxed) >= 0.5f;
+    const bool sphereKnobActive = sphereKnobActive_.load(std::memory_order_relaxed) != 0;
+    const bool showSphere = alwaysShowSphere || sphereKnobActive;
+
     // Draw audible radius sphere + wireframe centered on the source node
     {
-        const bool showSphere = showAudibleSphereParam_ == nullptr
-                                || showAudibleSphereParam_->load(std::memory_order_relaxed) >= 0.5f;
         glDepthMask(GL_FALSE);
         if (showSphere) {
             drawSphere(sourcePos, sr, theme.glAudibleSphere, 0.04f);
@@ -598,10 +641,10 @@ void XYZPanGLView::renderOpenGL()
     // Draw back-to-front (farther node first) so the nearer semi-transparent
     // node blends correctly on top of the farther one.
     if (stereoActive) {
-        const float lDistFrac = std::clamp(glm::length(lNodePos - listenerPos) / sr, 0.0f, 1.0f);
-        const float rDistFrac = std::clamp(glm::length(rNodePos - listenerPos) / sr, 0.0f, 1.0f);
-        const float lOpacity = 0.1f + 0.9f * (1.0f - lDistFrac);
-        const float rOpacity = 0.1f + 0.9f * (1.0f - rDistFrac);
+        const float lDistFrac = glm::length(lNodePos - listenerPos) / std::max(sr, 0.001f);
+        const float rDistFrac = glm::length(rNodePos - listenerPos) / std::max(sr, 0.001f);
+        const float lOpacity = distanceOpacity(lDistFrac);
+        const float rOpacity = distanceOpacity(rDistFrac);
 
         const glm::vec3 leftColor  = theme.glStereoL;
         const glm::vec3 rightColor = theme.glStereoR;
@@ -632,6 +675,9 @@ void XYZPanGLView::renderOpenGL()
                                         fs.lNodeX, fs.lNodeY, fs.lNodeZ,
                                         fs.rNodeX, fs.rNodeY, fs.rNodeZ,
                                         fs.sphereRadius };
+            // Reset wave emitter + RMS so new source gets fresh wave spawning
+            foreignWaveEmitters_[ri] = WaveEmitter{};
+            foreignSmoothedRms_[ri] = 0.0f;
         }
     }
     foreignPrevCount_ = fp.count;
@@ -672,8 +718,10 @@ void XYZPanGLView::renderOpenGL()
 
             const glm::vec3 fPos(sp.x, sp.z, -sp.y);
             const float fsr = sp.sphereRadius * 0.25f;
-            drawSphere(fPos, fsr, color, 0.03f);
-            drawSphereWireframe(fsr, color, 0.02f, fPos);
+            if (showSphere) {
+                drawSphere(fPos, fsr, color, 0.03f);
+                drawSphereWireframe(fsr, color, 0.02f, fPos);
+            }
 
             // Re-establish sphere shader for sound wave filled spheres
             sphereShader_->use();
@@ -723,10 +771,10 @@ void XYZPanGLView::renderOpenGL()
         }
 
         if (stereoActive) {
-            const float lDistFracT = std::clamp(glm::length(lNodePos) / sr, 0.0f, 1.0f);
-            const float rDistFracT = std::clamp(glm::length(rNodePos) / sr, 0.0f, 1.0f);
-            const float lTrailOpacity = (0.1f + 0.9f * (1.0f - lDistFracT)) * 0.5f;
-            const float rTrailOpacity = (0.1f + 0.9f * (1.0f - rDistFracT)) * 0.5f;
+            const float lDistFracT = glm::length(lNodePos) / std::max(sr, 0.001f);
+            const float rDistFracT = glm::length(rNodePos) / std::max(sr, 0.001f);
+            const float lTrailOpacity = distanceOpacity(lDistFracT) * 0.5f;
+            const float rTrailOpacity = distanceOpacity(rDistFracT) * 0.5f;
 
             drawTrail(trailL_, vaoTrailL_, vboTrailL_,
                       theme.glStereoL, lTrailOpacity, now);
@@ -818,6 +866,8 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoCone_)   { glDeleteVertexArrays(1, &vaoCone_);   vaoCone_   = 0; }
     if (vboCone_)   { glDeleteBuffers(1, &vboCone_);        vboCone_   = 0; }
     if (iboCone_)   { glDeleteBuffers(1, &iboCone_);        iboCone_   = 0; }
+    if (vaoConeWire_) { glDeleteVertexArrays(1, &vaoConeWire_); vaoConeWire_ = 0; }
+    if (iboConeWire_) { glDeleteBuffers(1, &iboConeWire_);      iboConeWire_ = 0; }
     if (vaoArrow2D_) { glDeleteVertexArrays(1, &vaoArrow2D_); vaoArrow2D_ = 0; }
     if (vboArrow2D_) { glDeleteBuffers(1, &vboArrow2D_);      vboArrow2D_ = 0; }
 
@@ -1087,18 +1137,25 @@ void XYZPanGLView::mouseDrag(const juce::MouseEvent& e)
         auto* accum = accumulator_;
         auto alive = glAlive_;
         auto driving = accum->drivingFromInput;
-        auto* apvtsPtr = &apvts_;
-        juce::MessageManager::callAsync([accum, alive, driving, apvtsPtr, dx, dy]() {
+        auto* pYaw   = cachedYawParam_;
+        auto* pPitch = cachedPitchParam_;
+        auto* pRoll  = cachedRollParam_;
+        const bool needGestureBegin = !headFollowsGestureActive_;
+        headFollowsGestureActive_ = true;
+        juce::MessageManager::callAsync([accum, alive, driving, pYaw, pPitch, pRoll, dx, dy, needGestureBegin]() {
             if (!alive->load(std::memory_order_acquire)) return;
+            // Begin automation gesture on first drag delta (DAWs require this for recording)
+            if (needGestureBegin) {
+                if (pYaw)   pYaw->beginChangeGesture();
+                if (pPitch) pPitch->beginChangeGesture();
+                if (pRoll)  pRoll->beginChangeGesture();
+            }
             driving->store(true, std::memory_order_relaxed);
             accum->applyMouseDelta(dx, dy, kSensitivity);
             auto rpy = accum->bakeRPY();
-            if (auto* p = apvtsPtr->getParameter("listener_yaw"))
-                p->setValueNotifyingHost(p->convertTo0to1(rpy.yawDeg));
-            if (auto* p = apvtsPtr->getParameter("listener_pitch"))
-                p->setValueNotifyingHost(p->convertTo0to1(rpy.pitchDeg));
-            if (auto* p = apvtsPtr->getParameter("listener_roll"))
-                p->setValueNotifyingHost(p->convertTo0to1(rpy.rollDeg));
+            if (pYaw)   pYaw->setValueNotifyingHost(pYaw->convertTo0to1(rpy.yawDeg));
+            if (pPitch) pPitch->setValueNotifyingHost(pPitch->convertTo0to1(rpy.pitchDeg));
+            if (pRoll)  pRoll->setValueNotifyingHost(pRoll->convertTo0to1(rpy.rollDeg));
             driving->store(false, std::memory_order_relaxed);
         });
     } else {
@@ -1119,6 +1176,21 @@ void XYZPanGLView::mouseUp(const juce::MouseEvent& /*e*/)
     isDraggingSource_ = false;
     isDraggingCamera_ = false;
     setMouseCursor(juce::MouseCursor(juce::MouseCursor::NormalCursor));
+
+    // End head-follows automation gesture
+    if (headFollowsGestureActive_) {
+        headFollowsGestureActive_ = false;
+        auto* pYaw   = cachedYawParam_;
+        auto* pPitch = cachedPitchParam_;
+        auto* pRoll  = cachedRollParam_;
+        auto alive = glAlive_;
+        juce::MessageManager::callAsync([pYaw, pPitch, pRoll, alive]() {
+            if (!alive->load(std::memory_order_acquire)) return;
+            if (pYaw)   pYaw->endChangeGesture();
+            if (pPitch) pPitch->endChangeGesture();
+            if (pRoll)  pRoll->endChangeGesture();
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1481,6 +1553,26 @@ void XYZPanGLView::drawSphereWireframe(float radius, const glm::vec3& color, flo
 }
 
 // ---------------------------------------------------------------------------
+// drawSphereWireframeWithModel — wireframe with arbitrary model matrix
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawSphereWireframeWithModel(const glm::mat4& model,
+                                                  const glm::vec3& color, float opacity)
+{
+    if (!lineShader_ || vaoSphereWire_ == 0 || sphereWireIndexCount_ == 0) return;
+
+    lineShader_->use();
+    lineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+    lineShader_->setUniform("lineColor", color.r, color.g, color.b);
+    lineShader_->setUniform("opacity",   opacity);
+
+    glBindVertexArray(vaoSphereWire_);
+    glDrawElements(GL_LINES, sphereWireIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
 // drawSphereRings — latitude rings only (no longitude meridians)
 // ---------------------------------------------------------------------------
 void XYZPanGLView::drawSphereRings(float radius, const glm::vec3& color, float opacity,
@@ -1624,6 +1716,32 @@ void XYZPanGLView::uploadConeVAO()
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    // --- Cone wireframe VAO: shares vboCone_ data, uses separate line indices ---
+    if (vaoConeWire_) glDeleteVertexArrays(1, &vaoConeWire_);
+    if (iboConeWire_) glDeleteBuffers(1, &iboConeWire_);
+
+    auto coneWireIdx = buildConeWireframe(16);
+    coneWireIndexCount_ = static_cast<int>(coneWireIdx.size());
+
+    glGenVertexArrays(1, &vaoConeWire_);
+    glGenBuffers(1, &iboConeWire_);
+
+    glBindVertexArray(vaoConeWire_);
+    glBindBuffer(GL_ARRAY_BUFFER, vboCone_);
+
+    const GLsizei coneWireStride = 6 * sizeof(float);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, coneWireStride, nullptr);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, iboConeWire_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(coneWireIdx.size() * sizeof(unsigned)),
+                 coneWireIdx.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1644,6 +1762,106 @@ void XYZPanGLView::drawCone(const glm::mat4& model,
     glDrawElements(GL_TRIANGLES, coneIndexCount_, GL_UNSIGNED_INT, nullptr);
     // Restore sphere VAO since cone is drawn mid-batch
     glBindVertexArray(vaoSphere_);
+}
+
+// ---------------------------------------------------------------------------
+// drawConeWireframeWithModel — cone wireframe with arbitrary model matrix
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawConeWireframeWithModel(const glm::mat4& model,
+                                                const glm::vec3& color, float opacity)
+{
+    if (!lineShader_ || vaoConeWire_ == 0 || coneWireIndexCount_ == 0) return;
+
+    lineShader_->use();
+    lineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+    lineShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+    lineShader_->setUniform("lineColor", color.r, color.g, color.b);
+    lineShader_->setUniform("opacity",   opacity);
+
+    glBindVertexArray(vaoConeWire_);
+    glDrawElements(GL_LINES, coneWireIndexCount_, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// drawAvatarSphere / drawAvatarCone — body-type-aware rendering
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawAvatarSphere(const glm::mat4& model, const glm::vec3& color,
+                                      float opacity, int bodyType)
+{
+    switch (static_cast<BodyType>(bodyType)) {
+        case kBodyNone:
+            break;
+        case kBodyGrid:
+            drawSphereWireframeWithModel(model, color, 0.6f * opacity);
+            // Re-establish sphere shader after lineShader switch
+            sphereShader_->use();
+            sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+            sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+            { const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+              sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z); }
+            glBindVertexArray(vaoSphere_);
+            break;
+        case kBodyGhost:
+            // Semi-transparent filled sphere with rim edge-fade
+            sphereShader_->setUniformMat4("model", glm::value_ptr(model), 1, GL_FALSE);
+            sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
+            sphereShader_->setUniform("opacity",   0.15f * opacity);
+            sphereShader_->setUniform("edgeFade",  1.0f);
+            glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
+            // Wireframe overlay
+            drawSphereWireframeWithModel(model, color, 0.25f * opacity);
+            sphereShader_->use();
+            sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+            sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+            { const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+              sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z); }
+            glBindVertexArray(vaoSphere_);
+            break;
+        case kBodyGlass:
+            drawSphereWithModel(model, color, 0.3f * opacity);
+            break;
+        default: // kBodySolid
+            drawSphereWithModel(model, color, opacity);
+            break;
+    }
+}
+
+void XYZPanGLView::drawAvatarCone(const glm::mat4& model, const glm::vec3& color,
+                                    float opacity, int bodyType)
+{
+    switch (static_cast<BodyType>(bodyType)) {
+        case kBodyNone:
+            break;
+        case kBodyGrid:
+            drawConeWireframeWithModel(model, color, 0.6f * opacity);
+            // Re-establish sphere shader after lineShader switch
+            sphereShader_->use();
+            sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+            sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+            { const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+              sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z); }
+            glBindVertexArray(vaoSphere_);
+            break;
+        case kBodyGhost:
+            // Semi-transparent filled cone with low opacity + wireframe overlay
+            drawCone(model, color, 0.15f * opacity);
+            drawConeWireframeWithModel(model, color, 0.25f * opacity);
+            sphereShader_->use();
+            sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+            sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+            { const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+              sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z); }
+            glBindVertexArray(vaoSphere_);
+            break;
+        case kBodyGlass:
+            drawCone(model, color, 0.3f * opacity);
+            break;
+        default: // kBodySolid
+            drawCone(model, color, opacity);
+            break;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1941,7 +2159,7 @@ void XYZPanGLView::drawNoseCone(const glm::mat4& headRot, const AvatarParams& av
     m = glm::translate(m, glm::vec3(0.0f, 0.0f, -kOffset * hs));
     m = glm::rotate(m, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     m = glm::scale(m, glm::vec3(kBaseRadius * hs * ns, kLength * hs * ns, kBaseRadius * hs * ns));
-    drawCone(m, noseCol, 0.9f * alpha);
+    drawAvatarCone(m, noseCol, 0.9f * alpha, avatar.bodyType);
 }
 
 // Button — small rounded sphere sitting on the face
@@ -1955,7 +2173,7 @@ void XYZPanGLView::drawNoseButton(const glm::mat4& headRot, const AvatarParams& 
     glm::mat4 m = headRot;
     m = glm::translate(m, glm::vec3(0.0f, 0.0f, -kOffset * hs));
     m = glm::scale(m, glm::vec3(kRadius * hs * ns));
-    drawSphereWithModel(m, noseCol, 0.9f * alpha);
+    drawAvatarSphere(m, noseCol, 0.9f * alpha, avatar.bodyType);
 }
 
 // Snout — elongated ellipsoid protruding forward
@@ -1970,7 +2188,7 @@ void XYZPanGLView::drawNoseSnout(const glm::mat4& headRot, const AvatarParams& a
     glm::mat4 m = headRot;
     m = glm::translate(m, glm::vec3(0.0f, 0.0f, -kOffset * hs));
     m = glm::scale(m, glm::vec3(kRadiusXY * hs * ns, kRadiusXY * hs * ns, kRadiusZ * hs * ns));
-    drawSphereWithModel(m, noseCol, 0.9f * alpha);
+    drawAvatarSphere(m, noseCol, 0.9f * alpha, avatar.bodyType);
 }
 
 // Clown — big red sphere (color defaults to theme nose but looks best overridden red)
@@ -1984,7 +2202,7 @@ void XYZPanGLView::drawNoseClown(const glm::mat4& headRot, const AvatarParams& a
     glm::mat4 m = headRot;
     m = glm::translate(m, glm::vec3(0.0f, 0.0f, -kOffset * hs));
     m = glm::scale(m, glm::vec3(kRadius * hs * ns));
-    drawSphereWithModel(m, noseCol, 0.95f * alpha);
+    drawAvatarSphere(m, noseCol, 0.95f * alpha, avatar.bodyType);
 }
 
 // Pointed — thin long cone, more exaggerated than Cone
@@ -2000,7 +2218,7 @@ void XYZPanGLView::drawNosePointed(const glm::mat4& headRot, const AvatarParams&
     m = glm::translate(m, glm::vec3(0.0f, 0.0f, -kOffset * hs));
     m = glm::rotate(m, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     m = glm::scale(m, glm::vec3(kBaseRadius * hs * ns, kLength * hs * ns, kBaseRadius * hs * ns));
-    drawCone(m, noseCol, 0.9f * alpha);
+    drawAvatarCone(m, noseCol, 0.9f * alpha, avatar.bodyType);
 }
 
 // ---------------------------------------------------------------------------
@@ -2021,7 +2239,7 @@ void XYZPanGLView::drawEarsDefault(const glm::mat4& headRot, const AvatarParams&
         m = glm::translate(m, glm::vec3(side * eo, 0.0f, 0.0f));
         m = glm::rotate(m, glm::radians(side * avatar.earRotation), glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::scale(m, glm::vec3(er * kEarFlatten, er, er));
-        drawSphereWithModel(m, earCol, 0.9f * alpha);
+        drawAvatarSphere(m, earCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2042,7 +2260,7 @@ void XYZPanGLView::drawEarsPointy(const glm::mat4& headRot, const AvatarParams& 
         m = glm::rotate(m, glm::radians(side * avatar.earRotation), glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::rotate(m, side * kTiltAngle, glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::scale(m, glm::vec3(kEarRadius * es, kEarLength * es, kEarRadius * es));
-        drawCone(m, earCol, 0.9f * alpha);
+        drawAvatarCone(m, earCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2060,7 +2278,7 @@ void XYZPanGLView::drawEarsRound(const glm::mat4& headRot, const AvatarParams& a
         m = glm::translate(m, glm::vec3(side * eo, 0.0f, 0.0f));
         m = glm::rotate(m, glm::radians(side * avatar.earRotation), glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::scale(m, glm::vec3(er, er, er));
-        drawSphereWithModel(m, earCol, 0.9f * alpha);
+        drawAvatarSphere(m, earCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2083,7 +2301,7 @@ void XYZPanGLView::drawEarsCat(const glm::mat4& headRot, const AvatarParams& ava
         m = glm::rotate(m, glm::radians(side * avatar.earRotation), glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::rotate(m, side * kTiltAngle, glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::scale(m, glm::vec3(kEarRadius * es, kEarLength * es, kEarRadius * es));
-        drawCone(m, earCol, 0.9f * alpha);
+        drawAvatarCone(m, earCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2101,7 +2319,7 @@ void XYZPanGLView::drawHatParty(const glm::mat4& headRot, const AvatarParams& av
     glm::mat4 m = headRot;
     m = glm::translate(m, glm::vec3(0.0f, topY, 0.0f));
     m = glm::scale(m, glm::vec3(kConeRadius * hs * sz, kConeHeight * hs * sz, kConeRadius * hs * sz));
-    drawCone(m, hatCol, 0.9f * alpha);
+    drawAvatarCone(m, hatCol, 0.9f * alpha, avatar.bodyType);
 }
 
 void XYZPanGLView::drawHatTopHat(const glm::mat4& headRot, const AvatarParams& avatar,
@@ -2115,14 +2333,14 @@ void XYZPanGLView::drawHatTopHat(const glm::mat4& headRot, const AvatarParams& a
         glm::mat4 m = headRot;
         m = glm::translate(m, glm::vec3(0.0f, topY, 0.0f));
         m = glm::scale(m, glm::vec3(0.042f * hs * sz, 0.12f * 0.042f * hs * sz, 0.042f * hs * sz));
-        drawSphereWithModel(m, hatCol, 0.9f * alpha);
+        drawAvatarSphere(m, hatCol, 0.9f * alpha, avatar.bodyType);
     }
     // Body — tall sphere above brim
     {
         glm::mat4 m = headRot;
         m = glm::translate(m, glm::vec3(0.0f, topY + 0.035f * hs * sz, 0.0f));
         m = glm::scale(m, glm::vec3(0.026f * hs * sz, 0.035f * hs * sz, 0.026f * hs * sz));
-        drawSphereWithModel(m, hatCol, 0.9f * alpha);
+        drawAvatarSphere(m, hatCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2144,7 +2362,7 @@ void XYZPanGLView::drawHatHalo(const glm::mat4& headRot, const AvatarParams& ava
         glm::mat4 m = headRot;
         m = glm::translate(m, glm::vec3(px, topY + kHoverHeight * hs * sz, pz));
         m = glm::scale(m, glm::vec3(kSphereRadius * hs * sz));
-        drawSphereWithModel(m, hatCol, 0.9f * alpha);
+        drawAvatarSphere(m, hatCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2157,7 +2375,7 @@ void XYZPanGLView::drawHatBeanie(const glm::mat4& headRot, const AvatarParams& a
     glm::mat4 m = headRot;
     m = glm::translate(m, glm::vec3(0.0f, topY, 0.0f));
     m = glm::scale(m, glm::vec3(0.048f * hs * sz, 0.018f * hs * sz, 0.048f * hs * sz));
-    drawSphereWithModel(m, hatCol, 0.9f * alpha);
+    drawAvatarSphere(m, hatCol, 0.9f * alpha, avatar.bodyType);
 }
 
 void XYZPanGLView::drawHatDevilHorns(const glm::mat4& headRot, const AvatarParams& avatar,
@@ -2177,7 +2395,7 @@ void XYZPanGLView::drawHatDevilHorns(const glm::mat4& headRot, const AvatarParam
         // Tilt horns outward
         m = glm::rotate(m, side * kHornTilt, glm::vec3(0.0f, 0.0f, 1.0f));
         m = glm::scale(m, glm::vec3(kHornRadius * hs * sz, kHornHeight * hs * sz, kHornRadius * hs * sz));
-        drawCone(m, hatCol, 0.9f * alpha);
+        drawAvatarCone(m, hatCol, 0.9f * alpha, avatar.bodyType);
     }
 }
 
@@ -2202,7 +2420,7 @@ void XYZPanGLView::drawHatPonytail(const glm::mat4& headRot, const AvatarParams&
         glm::mat4 m = headRot;
         m = glm::translate(m, glm::vec3(px, topY + kTieY * hs * sz + py, kTieZ * hs * sz));
         m = glm::scale(m, glm::vec3(kTieBead * hs * sz));
-        drawSphereWithModel(m, hatCol, 0.9f * alpha);
+        drawAvatarSphere(m, hatCol, 0.9f * alpha, avatar.bodyType);
     }
 
     // Tail segments — chain of spheres drooping downward behind the head
@@ -2221,7 +2439,7 @@ void XYZPanGLView::drawHatPonytail(const glm::mat4& headRot, const AvatarParams&
                                          topY + kTieY * hs * sz - kDropPer * (fi + 1.0f) * hs * sz,
                                          (kTieZ + kBackPer * (fi + 1.0f)) * hs * sz));
         m = glm::scale(m, glm::vec3(r * hs * sz, r * 0.8f * hs * sz, r * hs * sz));
-        drawSphereWithModel(m, hatCol, 0.85f * alpha);
+        drawAvatarSphere(m, hatCol, 0.85f * alpha, avatar.bodyType);
     }
 }
 
@@ -2256,14 +2474,14 @@ void XYZPanGLView::drawEyesNormal(const glm::mat4& headRot, const AvatarParams& 
             glm::mat4 m = headRot;
             m = glm::translate(m, glm::vec3(side * spacing, eyeY, -eyeZ));
             m = glm::scale(m, glm::vec3(eyeR));
-            drawSphereWithModel(m, eyeWhite, 0.95f * headAlpha);
+            drawAvatarSphere(m, eyeWhite, 0.95f * headAlpha, avatar.bodyType);
         }
         if (avatar.pupilSize > 0.0f) {
             glm::mat4 m = headRot;
             m = glm::translate(m, glm::vec3(side * spacing, eyeY, -eyeZ));
             m = glm::translate(m, glm::vec3(0.0f, 0.0f, -pupilForward));
             m = glm::scale(m, glm::vec3(pupilR));
-            drawSphereWithModel(m, pupilColor, 0.95f * headAlpha);
+            drawAvatarSphere(m, pupilColor, 0.95f * headAlpha, avatar.bodyType);
         }
     }
 }
@@ -2301,7 +2519,7 @@ void XYZPanGLView::drawEyesGoogly(const glm::mat4& headRot, const AvatarParams& 
             glm::mat4 m = headRot;
             m = glm::translate(m, glm::vec3(side * spacing, eyeY, -eyeZ));
             m = glm::scale(m, glm::vec3(eyeR));
-            drawSphereWithModel(m, eyeWhite, 0.95f * headAlpha);
+            drawAvatarSphere(m, eyeWhite, 0.95f * headAlpha, avatar.bodyType);
         }
         // Pupil — offset by physics state, projected onto eyeball sphere surface
         if (avatar.pupilSize > 0.0f) {
@@ -2321,7 +2539,7 @@ void XYZPanGLView::drawEyesGoogly(const glm::mat4& headRot, const AvatarParams& 
                                              poy * (1.0f - centerBlend),
                                              -zProj * 0.6f * (1.0f - centerBlend)));
             m = glm::scale(m, glm::vec3(pupilR));
-            drawSphereWithModel(m, pupilColor, 0.95f * headAlpha);
+            drawAvatarSphere(m, pupilColor, 0.95f * headAlpha, avatar.bodyType);
         }
     }
 }
@@ -2356,7 +2574,7 @@ void XYZPanGLView::drawEyesXEyes(const glm::mat4& headRot, const AvatarParams& a
             glm::mat4 m = base;
             m = glm::rotate(m, glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             m = glm::scale(m, glm::vec3(cr * 0.4f, cl, cr * 0.4f));
-            drawCone(m, xColor, 0.9f * headAlpha);
+            drawAvatarCone(m, xColor, 0.9f * headAlpha, avatar.bodyType);
         }
         // Diagonal 1 reverse
         {
@@ -2364,14 +2582,14 @@ void XYZPanGLView::drawEyesXEyes(const glm::mat4& headRot, const AvatarParams& a
             m = glm::rotate(m, glm::radians(45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             m = glm::rotate(m, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
             m = glm::scale(m, glm::vec3(cr * 0.4f, cl, cr * 0.4f));
-            drawCone(m, xColor, 0.9f * headAlpha);
+            drawAvatarCone(m, xColor, 0.9f * headAlpha, avatar.bodyType);
         }
         // Diagonal 2: upper-left to lower-right (-45°)
         {
             glm::mat4 m = base;
             m = glm::rotate(m, glm::radians(-45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             m = glm::scale(m, glm::vec3(cr * 0.4f, cl, cr * 0.4f));
-            drawCone(m, xColor, 0.9f * headAlpha);
+            drawAvatarCone(m, xColor, 0.9f * headAlpha, avatar.bodyType);
         }
         // Diagonal 2 reverse
         {
@@ -2379,7 +2597,7 @@ void XYZPanGLView::drawEyesXEyes(const glm::mat4& headRot, const AvatarParams& a
             m = glm::rotate(m, glm::radians(-45.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             m = glm::rotate(m, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
             m = glm::scale(m, glm::vec3(cr * 0.4f, cl, cr * 0.4f));
-            drawCone(m, xColor, 0.9f * headAlpha);
+            drawAvatarCone(m, xColor, 0.9f * headAlpha, avatar.bodyType);
         }
     }
 }
@@ -2411,14 +2629,14 @@ void XYZPanGLView::drawEyesCyclops(const glm::mat4& headRot, const AvatarParams&
         glm::mat4 m = headRot;
         m = glm::translate(m, glm::vec3(0.0f, eyeY, -eyeZ));
         m = glm::scale(m, glm::vec3(eyeR));
-        drawSphereWithModel(m, eyeWhite, 0.95f * headAlpha);
+        drawAvatarSphere(m, eyeWhite, 0.95f * headAlpha, avatar.bodyType);
     }
     if (avatar.pupilSize > 0.0f) {
         glm::mat4 m = headRot;
         m = glm::translate(m, glm::vec3(0.0f, eyeY, -eyeZ));
         m = glm::translate(m, glm::vec3(0.0f, 0.0f, -pupilForward));
         m = glm::scale(m, glm::vec3(pupilR));
-        drawSphereWithModel(m, pupilColor, 0.95f * headAlpha);
+        drawAvatarSphere(m, pupilColor, 0.95f * headAlpha, avatar.bodyType);
     }
 }
 

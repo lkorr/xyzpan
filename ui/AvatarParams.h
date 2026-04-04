@@ -9,6 +9,7 @@ enum NoseType : int { kNoseCone = 0, kNoseButton = 1, kNoseSnout = 2, kNoseClown
                       kNosePointed = 4, kNoseNone = 5 };
 enum HatType : int { kHatNone = 0, kHatParty = 1, kHatTopHat = 2, kHatHalo = 3, kHatBeanie = 4,
                      kHatDevilHorns = 5, kHatPonytail = 6 };
+enum BodyType : int { kBodySolid = 0, kBodyGrid = 1, kBodyGhost = 2, kBodyGlass = 3, kBodyNone = 4 };
 
 // POD struct for RuneScape-style avatar deformation of the listener head.
 // All values are unitless multipliers (1.0 = default/undeformed).
@@ -30,6 +31,7 @@ struct AvatarParams {
     int   hatType        = kHatNone;    // HatType (stored as int for POD trivial-copy)
     float noseSize       = 1.0f;  // uniform scale of nose (0.2..3.0)
     int   noseType       = kNoseCone;   // NoseType (stored as int for POD trivial-copy)
+    int   bodyType       = kBodySolid;  // BodyType (stored as int for POD trivial-copy)
 
     // Per-user color overrides (0xFFRRGGBB format). 0 = inherit from active theme.
     uint32_t headColor   = 0;   // also applies to ears

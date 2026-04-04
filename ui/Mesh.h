@@ -35,6 +35,10 @@ std::vector<unsigned> buildSphereLatitudeRings(int stacks, int slices);
 // Returns same format as SphereGeometry (interleaved pos+normal, indexed).
 SphereGeometry buildCone(float baseRadius, float height, int slices);
 
+// Build index pairs (GL_LINES) for a cone wireframe.
+// Uses the same vertex indexing as buildCone: tip (0), base ring (1..slices), base center (slices+1).
+std::vector<unsigned> buildConeWireframe(int slices);
+
 // Build a box wireframe (12 edges of a cube) centred at origin.
 // halfSize controls the half-extent of the box on each axis.
 // Returns interleaved [x,y,z, r,g,b] per vertex — each pair of consecutive
