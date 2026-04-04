@@ -38,6 +38,25 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Apply alchemy look and feel to this editor; child components inherit via addAndMakeVisible
     setLookAndFeel(&lookAndFeel_);
 
+    // Tooltip window — nullptr parent makes it an independent desktop window
+    // so it floats above OpenGL surfaces
+    tooltipWindow_ = std::make_unique<juce::TooltipWindow>(nullptr, 600);
+
+    // Tooltip toggle — "?" button, checked by default
+    tooltipToggle_.setClickingTogglesState(true);
+    tooltipToggle_.setToggleState(true, juce::dontSendNotification);
+    tooltipToggle_.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
+    tooltipToggle_.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0x40FFD700));
+    tooltipToggle_.setColour(juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha(0.4f));
+    tooltipToggle_.setColour(juce::TextButton::textColourOnId,   juce::Colours::gold);
+    tooltipToggle_.onClick = [this] {
+        if (tooltipToggle_.getToggleState())
+            tooltipWindow_ = std::make_unique<juce::TooltipWindow>(nullptr, 600);
+        else
+            tooltipWindow_.reset();
+    };
+    addAndMakeVisible(tooltipToggle_);
+
     // ----- GL view — added FIRST so devPanel_ (added later) paints on top of it -----
     addAndMakeVisible(glView_);
     glView_.setAccumulator(&listenerAccum_);
@@ -111,8 +130,20 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     configOrbitSlider(stereoWidthKnob_, stereoWidthLabel_, "Width");
     // Width is the gateway control — bold label, slightly larger
     stereoWidthLabel_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
-    configOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_,  "Phase");
-    configOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_, "Offset");
+    // Phase + Offset — rotary knobs (placed in row with Face Observer)
+    for (auto* knob : {&orbitPhaseKnob_, &orbitOffsetKnob_}) {
+        knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 14);
+        addAndMakeVisible(knob);
+    }
+    orbitPhaseLabel_.setText("Phase", juce::dontSendNotification);
+    orbitPhaseLabel_.setJustificationType(juce::Justification::centred);
+    orbitPhaseLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addAndMakeVisible(orbitPhaseLabel_);
+    orbitOffsetLabel_.setText("Offset", juce::dontSendNotification);
+    orbitOffsetLabel_.setJustificationType(juce::Justification::centred);
+    orbitOffsetLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    addAndMakeVisible(orbitOffsetLabel_);
 
     // Speed — stays as LinearHorizontal (horizontal slot at bottom of orbit LFO section)
     orbitSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -133,10 +164,15 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
 
-    faceListenerToggle_.setButtonText("Always Face Observer");
+    faceListenerToggle_.setButtonText("");
     faceListenerToggle_.setClickingTogglesState(true);
     addAndMakeVisible(faceListenerToggle_);
     faceListenerAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
+
+    faceListenerLabel_.setText("Face Observer", juce::dontSendNotification);
+    faceListenerLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    faceListenerLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(faceListenerLabel_);
 
     // ----- Listener head orientation knobs (icon above, value below) -----
     for (auto* knob : {&listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_}) {
@@ -167,7 +203,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Roll lock toggle — prevents mouse movement from changing roll
     rollLockBtn_.setButtonText(juce::String::fromUTF8("\xF0\x9F\x94\x93"));  // 🔓 unlock icon
     rollLockBtn_.setClickingTogglesState(true);
-    rollLockBtn_.setTooltip("Lock roll during mouse movement");
+    rollLockBtn_.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
+    rollLockBtn_.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0x40FFD700));  // subtle gold when locked
+    rollLockBtn_.setColour(juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha(0.6f));
+    rollLockBtn_.setColour(juce::TextButton::textColourOnId,   juce::Colours::gold);
     rollLockBtn_.onClick = [this]() {
         const bool locked = rollLockBtn_.getToggleState();
         listenerAccum_.setRollLocked(locked);
@@ -357,49 +396,64 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // ----- Preset controls (top bar) -----
     addAndMakeVisible(presetCombo_);
-    for (int i = 0; i < XYZPresets::kNumPresets; ++i)
-        presetCombo_.addItem(XYZPresets::kFactoryPresets[i].name, i + 1); // ComboBox IDs are 1-based
-    presetCombo_.setSelectedId(proc_.getCurrentProgram() + 1, juce::dontSendNotification);
+    rebuildPresetCombo();
     presetCombo_.onChange = [this]() {
         int idx = presetCombo_.getSelectedId() - 1; // Convert back to 0-based
-        if (idx >= 0 && idx < XYZPresets::kNumPresets)
-            proc_.setCurrentProgram(idx);
+        if (idx >= 0 && idx < proc_.presetManager.getNumPresets())
+            proc_.presetManager.loadPreset(idx);
+    };
+
+    addAndMakeVisible(presetPrevBtn_);
+    presetPrevBtn_.onClick = [this]() {
+        int n = proc_.presetManager.getNumPresets();
+        if (n == 0) return;
+        int cur = proc_.presetManager.getCurrentIndex();
+        int next = (cur <= 0) ? n - 1 : cur - 1;
+        proc_.presetManager.loadPreset(next);
+        presetCombo_.setSelectedId(next + 1, juce::dontSendNotification);
+    };
+
+    addAndMakeVisible(presetNextBtn_);
+    presetNextBtn_.onClick = [this]() {
+        int n = proc_.presetManager.getNumPresets();
+        if (n == 0) return;
+        int cur = proc_.presetManager.getCurrentIndex();
+        int next = (cur + 1) % n;
+        proc_.presetManager.loadPreset(next);
+        presetCombo_.setSelectedId(next + 1, juce::dontSendNotification);
     };
 
     addAndMakeVisible(presetSaveBtn_);
     presetSaveBtn_.onClick = [this]() {
+        auto userDir = PresetManager::getUserPresetDir();
         auto chooser = std::make_shared<juce::FileChooser>(
-            "Save Preset", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-            "*.xml");
+            "Save Preset", userDir, "*.xml");
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
             [this, chooser](const juce::FileChooser& fc) {
                 auto file = fc.getResult();
                 if (file == juce::File{})
                     return;
-                // Ensure .xml extension
-                if (!file.hasFileExtension("xml"))
-                    file = file.withFileExtension("xml");
-                auto state = proc_.apvts.copyState();
-                auto xml = state.createXml();
-                if (xml != nullptr)
-                    xml->writeTo(file);
+                auto name = file.getFileNameWithoutExtension();
+                proc_.presetManager.saveUserPreset(name);
+                rebuildPresetCombo();
             });
     };
 
     addAndMakeVisible(presetLoadBtn_);
     presetLoadBtn_.onClick = [this]() {
+        auto userDir = PresetManager::getUserPresetDir();
         auto chooser = std::make_shared<juce::FileChooser>(
-            "Load Preset", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-            "*.xml");
+            "Load Preset", userDir, "*.xml");
         chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [this, chooser](const juce::FileChooser& fc) {
                 auto file = fc.getResult();
                 if (file == juce::File{} || !file.existsAsFile())
                     return;
                 auto xml = juce::parseXML(file);
-                if (xml != nullptr && xml->hasTagName(proc_.apvts.state.getType()))
+                if (xml != nullptr && xml->hasTagName(proc_.apvts.state.getType())) {
                     proc_.apvts.replaceState(juce::ValueTree::fromXml(*xml));
-                // After loading user preset, deselect factory preset in combo
+                    proc_.presetManager.setCurrentIndex(-1);
+                }
                 presetCombo_.setSelectedId(0, juce::dontSendNotification);
             });
     };
@@ -742,6 +796,27 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
     customizeContent_.addAndMakeVisible(noseTypeCombo_);
 
+    // ----- Customize tab: body type combo -----
+    bodyTypeLabel_.setText("Body", juce::dontSendNotification);
+    bodyTypeLabel_.setJustificationType(juce::Justification::centredLeft);
+    bodyTypeLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(bodyTypeLabel_);
+    bodyTypeCombo_.addItem("Solid",  1);
+    bodyTypeCombo_.addItem("Grid",   2);
+    bodyTypeCombo_.addItem("Ghost",  3);
+    bodyTypeCombo_.addItem("Glass",  4);
+    bodyTypeCombo_.addItem("None",   5);
+    bodyTypeCombo_.setSelectedId(userPrefs_->avatarParams().bodyType + 1, juce::dontSendNotification);
+    bodyTypeCombo_.onChange = [this] {
+        if (bodyTypeCombo_.getSelectedId() > 0) {
+            auto ap = userPrefs_->avatarParams();
+            ap.bodyType = bodyTypeCombo_.getSelectedId() - 1;
+            userPrefs_->setAvatarParams(ap);
+            pushAvatarToGL();
+        }
+    };
+    customizeContent_.addAndMakeVisible(bodyTypeCombo_);
+
     // Apply initial Cyclops state for eyeSpacing/eyeHeight mode
     syncEyeSpacingSliderMode(userPrefs_->avatarParams().eyeType == xyzpan::kEyeCyclops);
     // Googly slider only active for Googly eyes
@@ -749,11 +824,12 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // ----- Customize tab: avatar sliders -----
     auto configAvatarSlider = [this](juce::Slider& s, juce::Label& l, const juce::String& name,
-                                      float min, float max, float def) {
+                                      float min, float max, float val, float resetVal) {
         s.setSliderStyle(juce::Slider::LinearHorizontal);
         s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 16);
         s.setRange(static_cast<double>(min), static_cast<double>(max), 0.01);
-        s.setValue(static_cast<double>(def), juce::dontSendNotification);
+        s.setDoubleClickReturnValue(true, static_cast<double>(resetVal));
+        s.setValue(static_cast<double>(val), juce::dontSendNotification);
         l.setText(name, juce::dontSendNotification);
         l.setJustificationType(juce::Justification::centredLeft);
         l.setFont(juce::Font(juce::FontOptions(10.0f)));
@@ -762,22 +838,22 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
 
     const auto& ap = userPrefs_->avatarParams();
-    configAvatarSlider(headElongationSlider_, headElongationLabel_, "Elongation", 0.3f, 2.5f, ap.headElongation);
-    configAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_,        "Eye Size",   0.2f, 3.0f, ap.eyeSize);
-    configAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_,     "Eye Space",  0.2f, 3.0f, ap.eyeSpacing);
-    configAvatarSlider(earSizeSlider_,        earSizeLabel_,        "Ear Size",   0.2f, 3.0f, ap.earSize);
-    configAvatarSlider(headSizeSlider_,       headSizeLabel_,       "Head Size",  0.7f, 1.5f, ap.headSize);
-    configAvatarSlider(pupilSizeSlider_,     pupilSizeLabel_,     "Pupil Size", 0.0f, 1.0f, ap.pupilSize);
+    configAvatarSlider(headElongationSlider_, headElongationLabel_, "Elongation", 0.3f, 2.5f, ap.headElongation, 1.0f);
+    configAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_,        "Eye Size",   0.2f, 3.0f, ap.eyeSize,        1.0f);
+    configAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_,     "Eye Space",  0.2f, 3.0f, ap.eyeSpacing,     1.0f);
+    configAvatarSlider(earSizeSlider_,        earSizeLabel_,        "Ear Size",   0.2f, 3.0f, ap.earSize,        1.0f);
+    configAvatarSlider(headSizeSlider_,       headSizeLabel_,       "Head Size",  0.7f, 1.5f, ap.headSize,       1.0f);
+    configAvatarSlider(pupilSizeSlider_,     pupilSizeLabel_,     "Pupil Size", 0.0f, 1.0f, ap.pupilSize,      0.35f);
     // Single "Googly" slider drives both gravity (0→1) and spring (1→0) via exponential curves.
     // Curve: gravity = t^0.322, spring = (1-t)^0.322  — concentrates resolution around 0.8.
     // Invert to find initial slider position from stored gravity: t = gravity^(1/0.322)
     {
         float initT = std::pow(std::clamp(ap.googlyGravity, 0.0f, 1.0f), 1.0f / 0.322f);
-        configAvatarSlider(googlySlider_, googlyLabel_, "Googly", 0.0f, 1.0f, initT);
+        configAvatarSlider(googlySlider_, googlyLabel_, "Googly", 0.0f, 1.0f, initT, 0.0f);
     }
-    configAvatarSlider(earRotationSlider_,   earRotationLabel_,   "Ear Rot",    -180.0f, 180.0f, ap.earRotation);
-    configAvatarSlider(hatSizeSlider_,       hatSizeLabel_,       "Hat Size",   0.2f, 2.0f, ap.hatSize);
-    configAvatarSlider(noseSizeSlider_,      noseSizeLabel_,      "Nose Size",  0.2f, 3.0f, ap.noseSize);
+    configAvatarSlider(earRotationSlider_,   earRotationLabel_,   "Ear Rot",    -180.0f, 180.0f, ap.earRotation, 0.0f);
+    configAvatarSlider(hatSizeSlider_,       hatSizeLabel_,       "Hat Size",   0.2f, 2.0f, ap.hatSize,        1.0f);
+    configAvatarSlider(noseSizeSlider_,      noseSizeLabel_,      "Nose Size",  0.2f, 3.0f, ap.noseSize,       1.0f);
 
     auto onAvatarChange = [this] {
         auto a = userPrefs_->avatarParams();
@@ -960,6 +1036,40 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     cachedRawPitch_      = proc_.apvts.getRawParameterValue(ParamID::LISTENER_PITCH);
     cachedRawRoll_       = proc_.apvts.getRawParameterValue(ParamID::LISTENER_ROLL);
 
+    // ----- Tooltips for non-obvious controls -----
+    sphereRadiusKnob_.setTooltip("Spatial boundary radius");
+    dopplerKnob_.setTooltip("Distance delay (adds latency, not compensated)");
+    inputGainKnob_.setTooltip("Pre-processing input boost");
+    binauralToggle_.setTooltip("3D spatial cues (ITD, ILD, head shadow, pinna)");
+    earlyReflToggle_.setTooltip("Simulated wall reflections");
+    faceListenerToggle_.setTooltip("L/R nodes rotate to face the listener");
+    rollLockBtn_.setTooltip("Lock roll during head rotation");
+    headFollowsToggle_.setTooltip("Head orientation tracks camera angle");
+    wasdToggle_.setTooltip("WASD keys move listener position");
+    listenerLinkToggle_.setTooltip("Share listener across instances");
+    listenerPilotToggle_.setTooltip("Only the pilot moves the shared listener");
+    stereoWidthKnob_.setTooltip("Split input into orbiting L/R nodes (0 = mono)");
+    orbitPhaseKnob_.setTooltip("L/R orbit starting phase");
+    orbitSpeedMulKnob_.setTooltip("Orbit LFO speed multiplier");
+    orbitOffsetKnob_.setTooltip("Angular offset between L and R orbits");
+    lfoSpeedMulKnob_.setTooltip("Position LFO speed multiplier");
+    resetXYZPhasesBtn_.setTooltip("Reset position LFO phases");
+    resetOrbitPhasesBtn_.setTooltip("Reset orbit LFO phases");
+    devToggle_.setTooltip("Advanced DSP tuning panel");
+    listenerYawKnob_.setTooltip("Head yaw (horizontal)");
+    listenerPitchKnob_.setTooltip("Head pitch (up/down)");
+    listenerRollKnob_.setTooltip("Head roll (tilt)");
+    walkerXKnob_.setTooltip("Listener left/right");
+    walkerYKnob_.setTooltip("Listener front/back");
+    walkerZKnob_.setTooltip("Listener up/down");
+    xKnob_.setTooltip("Source left/right position");
+    yKnob_.setTooltip("Source front/back position");
+    zKnob_.setTooltip("Source up/down position");
+    verbSize_.setTooltip("Reverb room size");
+    verbDecay_.setTooltip("Reverb tail length");
+    verbDamping_.setTooltip("HF absorption in reverb tail");
+    verbWet_.setTooltip("Reverb wet/dry mix");
+
     // Keyboard shortcut listener (captures Alt+R for module randomization, WASD for movement)
     addKeyListener(this);
     startTimerHz(60);  // 60 Hz poll for WASD movement
@@ -1103,13 +1213,12 @@ void XYZPanEditor::paint(juce::Graphics& g)
 
     // Options sub-panel: darkest, prominent sheen (hero knobs)
     if (activeLeftTab_ == LeftTab::Source) {
-        const int optionsH = 140;
         const int optTop = lo.leftContentTop;
-        paintMetallicPanel({0, optTop, kLeftColW, optionsH},
+        paintMetallicPanel({0, optTop, kLeftColW, kOptionsH},
                            0.25f, 0.40f, 0.12f, 0.035f);
 
         // Source/XYZ position section: slightly lighter, sheen shifted right
-        const int srcTop = optTop + optionsH;
+        const int srcTop = optTop + kOptionsH;
         const int srcH = lo.bottomY - srcTop;
         if (srcH > 0)
             paintMetallicPanel({0, srcTop, kLeftColW, srcH},
@@ -1234,11 +1343,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
     if (activeLeftTab_ == LeftTab::Source) {
         const int subColW = kLeftColW / 3;
         const int lfoSpeedRowH = 32;
-        const int optionsH = 140;
 
         // Horizontal separator between Options and Source sections
         // (painted by the metallic panel treatment above, just draw dividers below it)
-        const int optionsSepY = lo.leftContentTop + optionsH;
+        const int optionsSepY = lo.leftContentTop + kOptionsH;
 
         // Vertical dividers between X | Y | Z sub-columns (source section to speed row)
         const float divTop = static_cast<float>(optionsSepY);
@@ -1260,27 +1368,24 @@ void XYZPanEditor::paint(juce::Graphics& g)
         const int lw = lo.listenerW;
         const int walkerColW = lw / 3;
         const int walkerKnobSz = 80;
-        const int bigLabelH = 18;
-        const int dividerY = lo.contentTop + bigLabelH + walkerKnobSz + 6;
+        const int bigLabelH = 16;
+        const int dividerY = lo.contentTop + bigLabelH + walkerKnobSz + 4;
 
         // Vertical dividers between Walker X | Y | Z columns (down to orientation divider)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
         g.drawVerticalLine(lx + walkerColW,     static_cast<float>(lo.contentTop), static_cast<float>(dividerY));
         g.drawVerticalLine(lx + walkerColW * 2, static_cast<float>(lo.contentTop), static_cast<float>(dividerY));
 
-        // "HEAD ORIENTATION" horizontal divider with label
+        // Horizontal divider between walker knobs and YPR knobs
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
         g.drawHorizontalLine(dividerY, static_cast<float>(lx), static_cast<float>(lx + lw));
-        g.setColour(juce::Colour(ct.bronze).withAlpha(0.7f));
-        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-        g.drawText("HEAD ORIENTATION", lx + 6, dividerY + 2, lw - 12, 14, juce::Justification::centredLeft);
 
         // --- YPR labels + engraved arrows flanking knobs ---
         {
-            const int yprTop = dividerY + 20;
+            const int yprTop = dividerY + 6;
             const int yprColW = lw / 3;
-            const int yprLabelH = 16;
-            const int yprKnobSz = 50;
+            const int yprLabelH = 14;
+            const int yprKnobSz = 46;
             const char* yprNames[3] = { "Yaw", "Pitch", "Roll" };
 
             // Multi-pass engraving: deep shadow, broad glow, highlight catch, main groove
@@ -1343,20 +1448,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
                     drawEngraved(upArrow, leftR);
                     drawEngraved(downArrow, rightR);
                 }
-                else // Roll: 4 curved arrows encircling the knob
+                else // Roll: curved arrows on left and right of knob only
                 {
-                    const int arrowSz = 24;
-                    g.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
                     int knobCX = kx + yprKnobSz / 2;
-                    int off = yprKnobSz / 2 + 2; // just outside knob edge
 
-                    // Cardinal positions: right, bottom, left, top
-                    auto rightR  = juce::Rectangle<int>(knobCX + off - arrowSz / 2, knobCY - arrowSz / 2, arrowSz, arrowSz);
-                    auto bottomR = juce::Rectangle<int>(knobCX - arrowSz / 2, knobCY + off - arrowSz / 2, arrowSz, arrowSz);
-                    auto leftR   = juce::Rectangle<int>(knobCX - off - arrowSz / 2, knobCY - arrowSz / 2, arrowSz, arrowSz);
-                    auto topR    = juce::Rectangle<int>(knobCX - arrowSz / 2, knobCY - off - arrowSz / 2, arrowSz, arrowSz);
-
-                    const float deg45 = juce::MathConstants<float>::pi / 4.0f;
                     auto drawRotated = [&](const juce::String& sym, juce::Rectangle<int> r, float angle) {
                         float cx = static_cast<float>(r.getCentreX());
                         float cy = static_cast<float>(r.getCentreY());
@@ -1364,19 +1459,24 @@ void XYZPanEditor::paint(juce::Graphics& g)
                         g.addTransform(juce::AffineTransform::rotation(angle, cx, cy));
                         drawEngraved(sym, r);
                     };
-                    auto drawFlippedRotated = [&](const juce::String& sym, juce::Rectangle<int> r, float angle) {
-                        float cx = static_cast<float>(r.getCentreX());
-                        float cy = static_cast<float>(r.getCentreY());
-                        juce::Graphics::ScopedSaveState sss(g);
-                        g.addTransform(juce::AffineTransform::scale(1.0f, -1.0f, cx, cy)
-                                       .followedBy(juce::AffineTransform::rotation(angle, cx, cy)));
-                        drawEngraved(sym, r);
-                    };
 
-                    drawRotated(curveBotR, rightR, deg45);        // ⤵ on right, tilted 45°
-                    drawRotated(curveTopL, bottomR, deg45);        // ⤶ on bottom, tilted 45°
-                    drawFlippedRotated(curveBotL, leftR, deg45);   // ⤷ flipped+tilted on left
-                    drawFlippedRotated(curveTopR, topR, deg45);    // ⤴ flipped+tilted on top
+                    // Left arrow: ⤶ rotated 215° clockwise
+                    {
+                        const int arrowSz = 28;
+                        g.setFont(juce::Font(juce::FontOptions(26.0f, juce::Font::bold)));
+                        int off = yprKnobSz / 2 + 6;
+                        auto leftR = juce::Rectangle<int>(knobCX - off - arrowSz / 2, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                        drawRotated(curveTopL, leftR, juce::degreesToRadians(125.0f));
+                    }
+
+                    // Right arrow: ⤵ rotated 55° clockwise, bigger and further out
+                    {
+                        const int arrowSz = 32;
+                        g.setFont(juce::Font(juce::FontOptions(30.0f, juce::Font::bold)));
+                        int off = yprKnobSz / 2 + 8;
+                        auto rightR = juce::Rectangle<int>(knobCX + off - arrowSz / 2, knobCY - arrowSz / 2, arrowSz, arrowSz);
+                        drawRotated(curveBotR, rightR, juce::degreesToRadians(55.0f));
+                    }
                 }
             }
         }
@@ -1394,23 +1494,24 @@ void XYZPanEditor::paint(juce::Graphics& g)
         const int ox = lo.orbitX;
         const int ow = lo.orbitW;
         const int stripW = ow / 3;
-        // Layout must match resized(): Width + FaceListener + divGap, then LFOs, then divGap + bottom ctrls
-        const int widthSliderH = 22, gap = 2, btnH = 18, divGap = 6;
-        const int sliderH = 18;
-        const int topCtrlH = widthSliderH + gap + btnH + divGap;
-        const int bottomCtrlH = (sliderH + gap) * 2 + sliderH;
+        // Layout must match resized(): single top row (knobs + width slider) + divGap, then LFOs, then speedRow
+        const int sliderH = 20, divGap = 6;
+        const int knobSz = 40, knobLabelH = 12;
+        const int topRowH = knobSz + knobLabelH;
+        const int speedRowH = sliderH + 4;
+        const int topCtrlH = topRowH + divGap;
         const int lfoTop = lo.contentTop + topCtrlH;
         const int contentH = lo.bottomY + kBottomH - lo.contentTop;
-        const int lfoH = contentH - topCtrlH - divGap - bottomCtrlH;
+        const int lfoH = contentH - topCtrlH - divGap - speedRowH;
         const int lfoBot = lfoTop + lfoH;
 
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
         g.drawVerticalLine(ox + stripW,     static_cast<float>(lfoTop), static_cast<float>(lfoBot));
         g.drawVerticalLine(ox + stripW * 2, static_cast<float>(lfoTop), static_cast<float>(lfoBot));
-        // Horizontal separator above LFOs (below Width + Face Listener)
+        // Horizontal separator above LFOs (below Width + Phase)
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
         g.drawHorizontalLine(lfoTop - divGap / 2, static_cast<float>(ox), static_cast<float>(ox + ow));
-        // Horizontal separator below LFOs (above Offset/Phase/Speed)
+        // Horizontal separator above Speed row (below LFOs)
         g.drawHorizontalLine(lfoBot + divGap / 2, static_cast<float>(ox), static_cast<float>(ox + ow));
     }
 
@@ -1479,6 +1580,12 @@ void XYZPanEditor::resized()
         auto presetBar = leftCol.removeFromTop(kPresetBarH);
         auto saveBtnArea = presetBar.removeFromRight(54);
         auto loadBtnArea = presetBar.removeFromRight(54);
+        auto nextBtnArea = presetBar.removeFromRight(24);
+        auto prevBtnArea = presetBar.removeFromRight(24);
+        auto tooltipBtnArea = presetBar.removeFromLeft(28);
+        tooltipToggle_.setBounds(tooltipBtnArea.reduced(2));
+        presetPrevBtn_.setBounds(prevBtnArea.reduced(1, 2));
+        presetNextBtn_.setBounds(nextBtnArea.reduced(1, 2));
         presetCombo_.setBounds(presetBar.reduced(kPadding, 2));
         presetSaveBtn_.setBounds(saveBtnArea.reduced(2));
         presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
@@ -1522,65 +1629,61 @@ void XYZPanEditor::resized()
     // ===== LEFT COLUMN — SOURCE | CUSTOMIZE tabs =====
     if (activeLeftTab_ == LeftTab::Source) {
         const int posColW = kLeftColW / 3;
-        const int knobH   = 100;
+        const int knobH   = 108;
         const int posPad  = 10;
         const int lfoSpeedRowH = 32;
-        const int optionsH = 140;  // space for options section at top (taller for bigger knobs)
 
         // --- OPTIONS SECTION (top of left column) ---
+        // Single horizontal row: 3 knobs + 2 checkboxes
         const int optTop = lo.leftContentTop;
         {
-            const int ox = 0;
-            const int ow = kLeftColW;
+            const int knobSz = 67;           // 20% bigger than 56
             const int labelH_b = 14;
-
-            // Hero knobs: Sphere & Doppler are larger (dominant), Input Gain slightly smaller
-            const int heroKnobSz = 74;
-            const int smallKnobSz = 62;
             const int doppSubLabelH = 12;
 
-            // Layout: three equal columns, centered within the section
-            const int colW = ow / 3;
-            const int knobY = optTop + 10;
+            // 3 knob columns (90px) + 2 checkbox columns (100px) = 470
+            const int knobColW = 90;
+            const int cbColW   = 100;
+            const int knobY    = optTop + 6;
 
-            // Sphere (leftmost, hero size)
-            int sKnobX = ox + (colW - heroKnobSz) / 2;
-            sphereRadiusKnob_.setBounds(sKnobX, knobY, heroKnobSz, heroKnobSz);
-            sphereRadiusLabel_.setBounds(ox, knobY + heroKnobSz, colW, labelH_b);
+            // Sphere (column 0)
+            int col0X = 0;
+            int sKnobX = col0X + (knobColW - knobSz) / 2;
+            sphereRadiusKnob_.setBounds(sKnobX, knobY, knobSz, knobSz);
+            sphereRadiusLabel_.setBounds(col0X, knobY + knobSz, knobColW, labelH_b);
 
-            // Doppler (middle, hero size)
-            int dKnobX = ox + colW + (colW - heroKnobSz) / 2;
-            dopplerKnob_.setBounds(dKnobX, knobY, heroKnobSz, heroKnobSz);
-            dopplerLabel_.setBounds(ox + colW, knobY + heroKnobSz, colW, labelH_b);
-            dopplerSubLabel_.setBounds(ox + colW, knobY + heroKnobSz + labelH_b, colW, doppSubLabelH);
+            // Doppler (column 1)
+            int col1X = knobColW;
+            int dKnobX = col1X + (knobColW - knobSz) / 2;
+            dopplerKnob_.setBounds(dKnobX, knobY, knobSz, knobSz);
+            dopplerLabel_.setBounds(col1X, knobY + knobSz, knobColW, labelH_b);
+            dopplerSubLabel_.setBounds(col1X, knobY + knobSz + labelH_b, knobColW, doppSubLabelH);
 
-            // Input Gain (right, smaller)
-            int gKnobX = ox + colW * 2 + (colW - smallKnobSz) / 2;
-            int gainNudgeDown = (heroKnobSz - smallKnobSz) / 2;  // vertically center with hero knobs
-            inputGainKnob_.setBounds(gKnobX, knobY + gainNudgeDown, smallKnobSz, smallKnobSz);
-            inputGainLabel_.setBounds(ox + colW * 2, knobY + heroKnobSz, colW, labelH_b);
+            // Input Gain (column 2)
+            int col2X = knobColW * 2;
+            int gKnobX = col2X + (knobColW - knobSz) / 2;
+            inputGainKnob_.setBounds(gKnobX, knobY, knobSz, knobSz);
+            inputGainLabel_.setBounds(col2X, knobY + knobSz, knobColW, labelH_b);
 
-            // Checkbox row: Binaural | Early Reflections — centered in each half
-            {
-                const int cbY = optTop + 105;
-                const int boxSz = 22;
-                const int cbLabelW = 90;
-                const int cbGap = 6;
-                const int pairW = boxSz + cbGap + cbLabelW;
-                const int halfW = ow / 2;
+            // Checkboxes — vertically centered on the knobs
+            const int boxSz = 22;
+            const int cbGap = 6;
+            const int cbY = knobY + (knobSz - boxSz) / 2;
 
-                int binPairX = ox + (halfW - pairW) / 2;
-                binauralToggle_.setBounds(binPairX, cbY, boxSz, boxSz);
-                binauralLabel_.setBounds(binPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
+            // Binaural (column 3)
+            int col3X = knobColW * 3;
+            int cbLabelW = cbColW - boxSz - cbGap - 4;
+            binauralToggle_.setBounds(col3X + 4, cbY, boxSz, boxSz);
+            binauralLabel_.setBounds(col3X + 4 + boxSz + cbGap, cbY, cbLabelW, boxSz);
 
-                int erPairX = ox + halfW + (halfW - pairW) / 2;
-                earlyReflToggle_.setBounds(erPairX, cbY, boxSz, boxSz);
-                earlyReflLabel_.setBounds(erPairX + boxSz + cbGap, cbY, cbLabelW, boxSz);
-            }
+            // Early Reflections (column 4)
+            int col4X = knobColW * 3 + cbColW;
+            earlyReflToggle_.setBounds(col4X + 4, cbY, boxSz, boxSz);
+            earlyReflLabel_.setBounds(col4X + 4 + boxSz + cbGap, cbY, cbColW - boxSz - cbGap - 4, boxSz);
         }
 
         // --- SOURCE POSITION SECTION (below options) ---
-        const int sourceTop = optTop + optionsH;
+        const int sourceTop = optTop + kOptionsH;
         const int posSectionBottom = lo.bottomY - lfoSpeedRowH;
 
         const int bigLabelH = 20;
@@ -1665,6 +1768,7 @@ void XYZPanEditor::resized()
 
         // All avatar components — toggled visible/invisible based on collapse state
         auto avatarComponents = {
+            (juce::Component*)&bodyTypeCombo_,   (juce::Component*)&bodyTypeLabel_,
             (juce::Component*)&headColorSwatch_, (juce::Component*)&headColorLabel_,
             (juce::Component*)&headSizeSlider_,  (juce::Component*)&headSizeLabel_,
             (juce::Component*)&headElongationSlider_, (juce::Component*)&headElongationLabel_,
@@ -1704,6 +1808,9 @@ void XYZPanEditor::resized()
                 cy += sliderH + gap;
             };
 
+            bodyTypeLabel_.setBounds(pad, cy, labelW, comboH);
+            bodyTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+            cy += comboH + gap;
             placeColorSwatch(headColorSwatch_,  headColorLabel_);
             placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
             placeAvatarSlider(headElongationSlider_, headElongationLabel_);
@@ -1760,7 +1867,7 @@ void XYZPanEditor::resized()
             const int lx = lo.listenerX;
             const int lw = lo.listenerW;
             const int walkerKnobSz = 80;
-            const int bigLabelH = 18;
+            const int bigLabelH = 16;
             const int posPad = 10;
             const int walkerColW = lw / 3;
 
@@ -1777,16 +1884,15 @@ void XYZPanEditor::resized()
             layoutWalkerKnob(walkerYKnob_, walkerYLabel_, walkerColW,     contentTop);
             layoutWalkerKnob(walkerZKnob_, walkerZLabel_, walkerColW * 2, contentTop);
 
-            // --- "HEAD ORIENTATION" divider label (painted in paint()) ---
-            // Y position stored for paint() to draw the divider
-            const int dividerY = contentTop + bigLabelH + walkerKnobSz + 6;
+            // Divider between walker knobs and YPR knobs (painted in paint())
+            const int dividerY = contentTop + bigLabelH + walkerKnobSz + 4;
 
-            // Yaw/Pitch/Roll — vertical stack: label (16) + knob (50) + textBelow (16)
-            const int yprLabelH   = 16;
-            const int yprKnobSz   = 50;
-            const int yprTextH    = 16;
-            const int yprTotalH   = yprLabelH + yprKnobSz + yprTextH; // 82
-            const int yprTop = dividerY + 20;  // 20px for divider + label
+            // Yaw/Pitch/Roll — vertical stack: label (14) + knob (46) + textBelow (14)
+            const int yprLabelH   = 14;
+            const int yprKnobSz   = 46;
+            const int yprTextH    = 14;
+            const int yprTotalH   = yprLabelH + yprKnobSz + yprTextH; // 74
+            const int yprTop = dividerY + 6;  // small gap after divider line
 
             auto layoutYPRKnob = [&](juce::Slider& knob, int colX, int top) {
                 const int colW = lw / 3;
@@ -1803,7 +1909,7 @@ void XYZPanEditor::resized()
 
             // Roll lock button — to the right of "Roll" label text
             {
-                const int lockSz = 16;
+                const int lockSz = 24;
                 const int rollColX = yprColW * 2;
                 const int lockX = lx + rollColX + yprColW - lockSz - 4;
                 const int lockY = yprTop + (yprLabelH - lockSz) / 2;
@@ -1811,8 +1917,8 @@ void XYZPanEditor::resized()
             }
 
             // Toggles below YPR knobs
-            const int toggleY = yprTop + yprTotalH + 8;
-            const int bigToggleH = 22;
+            const int toggleY = yprTop + yprTotalH + 4;
+            const int bigToggleH = 20;
             const int togglePad = 10;
             const int toggleW = lw - togglePad * 2;
 
@@ -1834,29 +1940,56 @@ void XYZPanEditor::resized()
             const int ow = lo.orbitW;
             const int pad = 10;
             const int labelW = 46;
-            const int sliderH = 18;
-            const int widthSliderH = 22;
-            const int gap = 2;
-            const int btnH = 18;
+            const int sliderH = 20;
             const int divGap = 6;  // space for horizontal divider
-            const int topCtrlH = widthSliderH + gap + btnH + divGap;  // width + face listener + divider
-            const int bottomCtrlH = (sliderH + gap) * 2 + sliderH;   // offset + phase + speed
-            const int lfoH = contentH - topCtrlH - divGap - bottomCtrlH;
+
+            // Single top row: Width slider (left) | Phase knob | Offset knob | Face Observer (right)
+            const int knobSz = 40;
+            const int knobLabelH = 12;
+            const int topRowH = knobSz + knobLabelH;  // knob + label below
+            const int topCtrlH = topRowH + divGap;
+
+            const int speedRowH = sliderH + 4;  // speed row just below LFOs
+            const int lfoH = contentH - topCtrlH - divGap - speedRowH;
             const int maxStripW = 185;
             const int lfoTotalW = juce::jmin(ow, maxStripW * 3);
             const int stripW = lfoTotalW / 3;
             const int lastStripW = lfoTotalW - stripW * 2;
 
-            // Width + Face Listener at top
+            // Right-side controls: Phase knob + Offset knob + Face Observer
+            const int knobCellW = knobSz + 6;
+            const int boxSz = 18;
+            const int cbGap = 4;
+            const int cbLabelW = 90;  // enough for "Face Observer"
+            const int rightCtrlW = knobCellW * 2 + 4 + boxSz + cbGap + cbLabelW + pad;
+
+            // Width slider fills the remaining left portion
+            const int widthSliderW = ow - pad * 2 - labelW - rightCtrlW;
+
             {
-                int sy = contentTop;
+                const int rowY = contentTop;
 
-                // Width — taller row
-                stereoWidthLabel_.setBounds(ox + pad, sy, labelW + 8, widthSliderH);
-                stereoWidthKnob_.setBounds(ox + pad + labelW + 8, sy, ow - pad * 2 - labelW - 8, widthSliderH);
-                sy += widthSliderH + gap;
+                // Width slider — left side
+                stereoWidthLabel_.setBounds(ox + pad, rowY + (topRowH - sliderH) / 2, labelW, sliderH);
+                stereoWidthKnob_.setBounds(ox + pad + labelW, rowY + (topRowH - sliderH) / 2,
+                                            widthSliderW, sliderH);
 
-                faceListenerToggle_.setBounds(ox + pad, sy, ow - pad * 2, btnH);
+                // Phase knob — right of width slider
+                const int phaseX = ox + pad + labelW + widthSliderW + 4;
+                orbitPhaseKnob_.setBounds(phaseX, rowY, knobSz, knobSz);
+                orbitPhaseLabel_.setBounds(phaseX - 3, rowY + knobSz, knobCellW, knobLabelH);
+
+                // Offset knob — right of phase
+                const int offsetX = phaseX + knobCellW + 4;
+                orbitOffsetKnob_.setBounds(offsetX, rowY, knobSz, knobSz);
+                orbitOffsetLabel_.setBounds(offsetX - 3, rowY + knobSz, knobCellW, knobLabelH);
+
+                // Face Observer checkbox + label — right of offset, vertically centered
+                const int cbX = offsetX + knobCellW + 6;
+                const int cbCenterY = rowY + (topRowH - boxSz) / 2;
+                faceListenerToggle_.setBounds(cbX, cbCenterY, boxSz, boxSz);
+                faceListenerLabel_.setBounds(cbX + boxSz + cbGap, cbCenterY - 2,
+                                              cbLabelW, boxSz + 4);
             }
 
             // LFO strips below top controls (after divider gap)
@@ -1865,21 +1998,9 @@ void XYZPanEditor::resized()
             orbitXZLFO_.setBounds(ox + stripW,     lfoTop, stripW,     lfoH);
             orbitYZLFO_.setBounds(ox + stripW * 2, lfoTop, lastStripW, lfoH);
 
-            // Offset, Phase, Speed below LFOs (after divider gap)
-            const int bottomTop = lfoTop + lfoH + divGap;
+            // Speed + Reset — just below LFOs (tight)
             {
-                int sy = bottomTop;
-
-                auto placeOrbitSlider = [&](juce::Slider& slider, juce::Label& label) {
-                    label.setBounds(ox + pad, sy, labelW, sliderH);
-                    slider.setBounds(ox + pad + labelW, sy, ow - pad * 2 - labelW, sliderH);
-                    sy += sliderH + gap;
-                };
-
-                placeOrbitSlider(orbitOffsetKnob_, orbitOffsetLabel_);
-                placeOrbitSlider(orbitPhaseKnob_,  orbitPhaseLabel_);
-
-                // Speed + Reset in last row — same label width as Offset/Phase
+                const int sy = lfoTop + lfoH + 2;
                 const int resetBtnW = 44;
                 const int resetBtnGap = 4;
                 orbitSpeedMulLabel_.setBounds(ox + pad, sy, labelW, sliderH);
@@ -1889,6 +2010,7 @@ void XYZPanEditor::resized()
                 resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, sy,
                                                resetBtnW, sliderH);
             }
+
         }
 
         // --- REVERB KNOBS (2×2 grid in 120px column) ---
@@ -1939,7 +2061,7 @@ void XYZPanEditor::updateOrbitEnabled()
     for (auto* c : {(juce::Component*)&orbitSpeedMulKnob_,  (juce::Component*)&orbitSpeedMulLabel_,
                     (juce::Component*)&orbitOffsetKnob_,     (juce::Component*)&orbitOffsetLabel_,
                     (juce::Component*)&orbitPhaseKnob_,      (juce::Component*)&orbitPhaseLabel_,
-                    (juce::Component*)&faceListenerToggle_,
+                    (juce::Component*)&faceListenerToggle_,  (juce::Component*)&faceListenerLabel_,
                     (juce::Component*)&resetOrbitPhasesBtn_})
         c->setEnabled(active);
 
@@ -2119,6 +2241,10 @@ void XYZPanEditor::updateListenerControlsEnabled() {
         knob->setEnabled(canControl);
     wasdToggle_.setEnabled(canControl);
     headFollowsToggle_.setEnabled(canControl);
+
+    // Force head-follows OFF when linked-non-pilot to prevent broken camera movement
+    if (linked && !isPilot && headFollowsToggle_.getToggleState())
+        headFollowsToggle_.setToggleState(false, juce::sendNotificationSync);
 }
 
 // Source|Customize toggled by left column tab; Listener + Orbit always visible in bottom row.
@@ -2236,6 +2362,10 @@ void XYZPanEditor::endWasdGestureIfActive()
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
 {
+    // Show audible sphere while sphere knob is hovered or being dragged
+    glView_.setSphereKnobActive(sphereRadiusKnob_.isMouseOver(true)
+                                || sphereRadiusKnob_.isMouseButtonDown());
+
     // Validate remote focus — hubAlive_ check is lock-free (every frame),
     // full linked-index check is throttled to ~6Hz to avoid unnecessary spinlock traffic.
     if (remoteFocusProc_ != nullptr) {
@@ -2846,4 +2976,27 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
         auto* target = remoteFocusProc_ != nullptr ? remoteFocusProc_ : &proc_;
         target->resetOrbitLfoPhases.store(true);
     };
+}
+
+// ---------------------------------------------------------------------------
+// rebuildPresetCombo — repopulate from PresetManager (factory + user)
+// ---------------------------------------------------------------------------
+void XYZPanEditor::rebuildPresetCombo()
+{
+    presetCombo_.clear(juce::dontSendNotification);
+
+    auto& presets = proc_.presetManager.getPresets();
+    bool addedSeparator = false;
+
+    for (int i = 0; i < static_cast<int>(presets.size()); ++i) {
+        if (!presets[static_cast<size_t>(i)].isFactory && !addedSeparator) {
+            presetCombo_.addSeparator();
+            addedSeparator = true;
+        }
+        presetCombo_.addItem(presets[static_cast<size_t>(i)].name, i + 1);
+    }
+
+    int cur = proc_.presetManager.getCurrentIndex();
+    if (cur >= 0 && cur < static_cast<int>(presets.size()))
+        presetCombo_.setSelectedId(cur + 1, juce::dontSendNotification);
 }

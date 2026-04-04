@@ -10,7 +10,7 @@
 #include "OutputMeter.h"
 #include "UserPreferences.h"
 #include "ParamIDs.h"
-#include "Presets.h"
+#include "PresetManager.h"
 
 // Forward declaration to break circular include; full type used in .cpp
 class XYZPanProcessor;
@@ -99,6 +99,8 @@ public:
 private:
     XYZPanProcessor& proc_;
     xyzpan::AlchemyLookAndFeel lookAndFeel_;
+    std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
+    juce::TextButton tooltipToggle_{"?"};
 
     // GL spatial view (fills majority of window)
     xyzpan::XYZPanGLView glView_;
@@ -112,7 +114,7 @@ private:
 
     // Layout constants
     static constexpr int kLeftColW      = 470;     // position column width
-    static constexpr int kBottomH       = 310;     // bottom row height (listener + orbit + reverb)
+    static constexpr int kBottomH       = 275;     // bottom row height (listener + orbit + reverb)
     static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
@@ -122,10 +124,11 @@ private:
     static constexpr int kDividerW      = 1;       // vertical divider width
     static constexpr int kPadding       = 10;      // general inner padding
     static constexpr int kReverbSectionW = 120;     // vertical reverb column
+    static constexpr int kOptionsH       = 100;     // top options panel height
     static constexpr int kMeterW         = 24;       // output meter strip width
 
     static constexpr int kMinW = 1119;
-    static constexpr int kMinH = 829;
+    static constexpr int kMinH = 794;
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -159,6 +162,7 @@ private:
     juce::TextButton resetOrbitPhasesBtn_{"Reset"};
 
     juce::ToggleButton faceListenerToggle_;
+    juce::Label        faceListenerLabel_;
     juce::ToggleButton binauralToggle_;
     juce::Label        binauralLabel_;
     juce::ToggleButton earlyReflToggle_;
@@ -239,7 +243,7 @@ private:
     std::atomic<float>* cachedRawYaw_   = nullptr;
     std::atomic<float>* cachedRawPitch_ = nullptr;
     std::atomic<float>* cachedRawRoll_  = nullptr;
-    juce::ToggleButton rollLockBtn_;
+    juce::TextButton rollLockBtn_;
     void endWasdGestureIfActive();
     void timerCallback() override;
 
@@ -268,8 +272,11 @@ private:
 
     // Preset controls -- top bar
     juce::ComboBox presetCombo_;
+    juce::TextButton presetPrevBtn_{"<"};
+    juce::TextButton presetNextBtn_{">"};
     juce::TextButton presetSaveBtn_{"Save"};
     juce::TextButton presetLoadBtn_{"Load"};
+    void rebuildPresetCombo();
 
     // Customize tab controls
     std::unique_ptr<xyzpan::UserPreferences> userPrefs_;
@@ -285,7 +292,7 @@ private:
     juce::Label       groundHillsLabel_;
     juce::ToggleButton swapPanelsToggle_{"Swap Listener/Orbit"};
     juce::ToggleButton showLabelsToggle_{"Show Object Labels"};
-    juce::ToggleButton showAudibleSphereToggle_{"Show Audible Sphere"};
+    juce::ToggleButton showAudibleSphereToggle_{"Always Show Audible Sphere"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> showAudibleSphereAtt_;
     juce::Slider waveCountSlider_;
     juce::Label  waveCountLabel_;
@@ -332,6 +339,10 @@ private:
     // Pupil size / ear rotation / googly sliders
     juce::Slider pupilSizeSlider_, earRotationSlider_, googlySlider_;
     juce::Label  pupilSizeLabel_, earRotationLabel_, googlyLabel_;
+
+    // Body type combo
+    juce::ComboBox bodyTypeCombo_;
+    juce::Label    bodyTypeLabel_;
 
     void applyCurrentTheme();
     void pushAvatarToGL();

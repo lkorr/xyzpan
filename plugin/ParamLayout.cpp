@@ -603,7 +603,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_COUNT, 1}, "Wave Count",
         NR(3.0f, 30.0f, 1.0f), 3.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        PID{ParamID::SHOW_AUDIBLE_SPHERE, 1}, "Show Audible Sphere", true));
+        PID{ParamID::SHOW_AUDIBLE_SPHERE, 1}, "Always Show Audible Sphere", true));
     layout.add(std::make_unique<APF>(PID{ParamID::SOURCE_SPHERE_OPACITY, 1}, "Source Sphere Opacity",
         NR(0.0f, 1.0f, 0.01f), 1.0f));
 
