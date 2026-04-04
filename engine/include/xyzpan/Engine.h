@@ -181,7 +181,8 @@ private:
     // the 0↔1 boundary correctly: the smoother always takes the shortest path.
     float phaseSmCos_ = 1.0f, phaseSmSin_ = 0.0f;   // unit-circle state for phase
     float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
-    float angularSmA_ = 0.0f;  // smoothing coefficient (shared, prepared once)
+    float angularSmA_ = 0.0f;     // per-sample IIR coefficient (used during movement)
+    float listenerBlkSmA_ = 0.0f; // per-block IIR coefficient (used after movement stops)
 
     // Circular (angular) smoothers for listener yaw/pitch — prevents clicks at 360°↔0° wrap.
     float yawSmCos_ = 1.0f, yawSmSin_ = 0.0f;
@@ -195,6 +196,7 @@ private:
     float cachedCosY_ = 1.0f, cachedSinY_ = 0.0f;
     float cachedCosP_ = 1.0f, cachedSinP_ = 0.0f;
     float cachedCosR_ = 1.0f, cachedSinR_ = 0.0f;
+    bool  listenerSettled_ = true;  // true when cos/sin have snapped to exact target
 
     // Last L/R node positions for position bridge
     StereoNodePositions lastStereoNodes_{};

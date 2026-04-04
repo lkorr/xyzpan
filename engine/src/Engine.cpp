@@ -120,6 +120,14 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;   // angle = 0
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;  // angle = 0
 
+    // Block-rate IIR coefficient for listener rotation convergence after movement.
+    // 20ms time constant → converges within ~100ms (5 time constants).
+    {
+        constexpr float kConvergeMs = 20.0f;
+        const float blockPeriod = static_cast<float>(inMaxBlockSize) / sr;
+        listenerBlkSmA_ = std::exp(-blockPeriod / (kConvergeMs * 0.001f));
+    }
+
     // Angular smoothers for listener yaw/pitch/roll (continuous knobs, 5ms)
     yawSmCos_ = 1.0f; yawSmSin_ = 0.0f;
     pitchSmCos_ = 1.0f; pitchSmSin_ = 0.0f;
@@ -361,7 +369,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     blkZ -= currentParams.listenerZ;
 
     // Listener head rotation — angular-smooth yaw/pitch/roll to handle 360°↔0° wrap.
-    // Gated on parameter change: when listener is static, reuse cached cos/sin.
+    // While the parameter is actively changing, the IIR tracks the target using the
+    // per-sample coefficient (for circle-wrap handling).  Once movement stops, the
+    // IIR continues running with a block-rate coefficient (~100ms convergence) so
+    // the transition is smooth.  Once converged, snap to exact target for
+    // deterministic steady-state.
     float cosY, sinY, cosP, sinP, cosR, sinR;
     {
         const bool listenerParamsChanged =
@@ -373,7 +385,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             prevListenerYaw_   = currentParams.listenerYaw;
             prevListenerPitch_ = currentParams.listenerPitch;
             prevListenerRoll_  = currentParams.listenerRoll;
+            listenerSettled_ = false;
 
+            // While knob is moving: use per-sample IIR (tracks angular target)
             const float b = 1.0f - angularSmA_;
             yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw)   * b + yawSmCos_   * angularSmA_;
             yawSmSin_   = dsp::SineLUT::lookupAngle(currentParams.listenerYaw)       * b + yawSmSin_   * angularSmA_;
@@ -382,8 +396,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll)  * b + rollSmCos_  * angularSmA_;
             rollSmSin_  = dsp::SineLUT::lookupAngle(currentParams.listenerRoll)      * b + rollSmSin_  * angularSmA_;
 
-            // Normalize IIR vectors to extract cos/sin directly — avoids the
-            // atan2 → cos/sin round-trip (saves 3 atan2 + 6 trig per block).
+            // Normalize IIR vectors to extract cos/sin directly
             auto normCS = [](float c, float s, float& outCos, float& outSin) {
                 const float mag = std::sqrt(c * c + s * s);
                 const float inv = (mag > 1e-12f) ? 1.0f / mag : 1.0f;
@@ -393,6 +406,52 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             normCS(yawSmCos_,   yawSmSin_,   cosY, sinY);
             normCS(pitchSmCos_, pitchSmSin_, cosP, sinP);
             normCS(rollSmCos_,  rollSmSin_,  cosR, sinR);
+
+            cachedCosY_ = cosY; cachedSinY_ = sinY;
+            cachedCosP_ = cosP; cachedSinP_ = sinP;
+            cachedCosR_ = cosR; cachedSinR_ = sinR;
+        } else if (!listenerSettled_) {
+            // Knob stopped — continue IIR toward target with block-rate coefficient
+            // for smooth convergence (~100ms).
+            const float aBlk = listenerBlkSmA_;
+            const float bBlk = 1.0f - aBlk;
+            const float tYC = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw);
+            const float tYS = dsp::SineLUT::lookupAngle(currentParams.listenerYaw);
+            const float tPC = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch);
+            const float tPS = dsp::SineLUT::lookupAngle(currentParams.listenerPitch);
+            const float tRC = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll);
+            const float tRS = dsp::SineLUT::lookupAngle(currentParams.listenerRoll);
+
+            yawSmCos_   = tYC * bBlk + yawSmCos_   * aBlk;
+            yawSmSin_   = tYS * bBlk + yawSmSin_   * aBlk;
+            pitchSmCos_ = tPC * bBlk + pitchSmCos_ * aBlk;
+            pitchSmSin_ = tPS * bBlk + pitchSmSin_ * aBlk;
+            rollSmCos_  = tRC * bBlk + rollSmCos_  * aBlk;
+            rollSmSin_  = tRS * bBlk + rollSmSin_  * aBlk;
+
+            auto normCS = [](float c, float s, float& outCos, float& outSin) {
+                const float mag = std::sqrt(c * c + s * s);
+                const float inv = (mag > 1e-12f) ? 1.0f / mag : 1.0f;
+                outCos = c * inv;
+                outSin = s * inv;
+            };
+            normCS(yawSmCos_,   yawSmSin_,   cosY, sinY);
+            normCS(pitchSmCos_, pitchSmSin_, cosP, sinP);
+            normCS(rollSmCos_,  rollSmSin_,  cosR, sinR);
+
+            // Snap to exact when close enough (avoid infinite asymptotic tail)
+            constexpr float kSnapThresh = 1e-6f;
+            if (std::abs(yawSmCos_   - tYC) < kSnapThresh && std::abs(yawSmSin_   - tYS) < kSnapThresh &&
+                std::abs(pitchSmCos_ - tPC) < kSnapThresh && std::abs(pitchSmSin_ - tPS) < kSnapThresh &&
+                std::abs(rollSmCos_  - tRC) < kSnapThresh && std::abs(rollSmSin_  - tRS) < kSnapThresh) {
+                cosY = tYC; sinY = tYS;
+                cosP = tPC; sinP = tPS;
+                cosR = tRC; sinR = tRS;
+                yawSmCos_ = tYC;   yawSmSin_ = tYS;
+                pitchSmCos_ = tPC; pitchSmSin_ = tPS;
+                rollSmCos_ = tRC;  rollSmSin_ = tRS;
+                listenerSettled_ = true;
+            }
 
             cachedCosY_ = cosY; cachedSinY_ = sinY;
             cachedCosP_ = cosP; cachedSinP_ = sinP;
@@ -421,8 +480,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         blkY = ry * cosP + blkZ * sinP;
         blkZ = -ry * sinP + blkZ * cosP;
         // Roll around forward axis (Y in engine coords)
-        const float rrx =  blkX * cosR + blkZ * sinR;
-        const float rrz = -blkX * sinR + blkZ * cosR;
+        const float rrx =  blkX * cosR - blkZ * sinR;
+        const float rrz =  blkX * sinR + blkZ * cosR;
         blkX = rrx;
         blkZ = rrz;
     }
@@ -855,8 +914,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             modY = ry * cosP + modZ * sinP;
             modZ = -ry * sinP + modZ * cosP;
             // Roll around forward axis (Y in engine coords)
-            const float rrx =  modX * cosR + modZ * sinR;
-            const float rrz = -modX * sinR + modZ * cosR;
+            const float rrx =  modX * cosR - modZ * sinR;
+            const float rrz =  modX * sinR + modZ * cosR;
             modX = rrx;
             modZ = rrz;
         }
@@ -1020,8 +1079,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 dspLY = ry * cosP + lRelZ * sinP;
                 dspLZ = -ry * sinP + lRelZ * cosP;
                 // Roll around forward axis (Y in engine coords)
-                float rrx =  dspLX * cosR + dspLZ * sinR;
-                float rrz = -dspLX * sinR + dspLZ * cosR;
+                float rrx =  dspLX * cosR - dspLZ * sinR;
+                float rrz =  dspLX * sinR + dspLZ * cosR;
                 dspLX = rrx;
                 dspLZ = rrz;
 
@@ -1031,8 +1090,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 dspRY = ry * cosP + rRelZ * sinP;
                 dspRZ = -ry * sinP + rRelZ * cosP;
                 // Roll around forward axis (Y in engine coords)
-                rrx =  dspRX * cosR + dspRZ * sinR;
-                rrz = -dspRX * sinR + dspRZ * cosR;
+                rrx =  dspRX * cosR - dspRZ * sinR;
+                rrz =  dspRX * sinR + dspRZ * cosR;
                 dspRX = rrx;
                 dspRZ = rrz;
             }
