@@ -6,7 +6,7 @@
 #include "xyzpan/dsp/OnePoleSmooth.h"
 #include "ParamLayout.h"
 #include "PositionBridge.h"
-#include "Presets.h"
+#include "PresetManager.h"
 #include "SharedListenerHub.h"
 
 class XYZPanProcessor : public juce::AudioProcessor,
@@ -57,6 +57,9 @@ public:
     // APVTS — public so editor and parameter attachments can access it
     juce::AudioProcessorValueTreeState apvts;
 
+    // Preset management (factory + user presets)
+    PresetManager presetManager;
+
     // Phase 6: PositionBridge for audio-to-GL position transfer (UI-07)
     // Public so XYZPanEditor / XYZPanGLView can hold a reference
     xyzpan::PositionBridge positionBridge;
@@ -90,10 +93,6 @@ public:
 
 private:
     xyzpan::XYZPanEngine engine;
-
-    // Current factory preset index (not serialized in APVTS state; parameter
-    // values themselves are saved/restored by APVTS XML)
-    int currentPresetIndex_ = 0;
 
     // Raw parameter value pointers (thread-safe atomics managed by APVTS)
     // Spatial position (Phase 1)

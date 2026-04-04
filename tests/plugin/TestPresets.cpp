@@ -2,7 +2,6 @@
 #include <catch2/catch_approx.hpp>
 #include "PluginProcessor.h"
 #include "ParamIDs.h"
-#include "Presets.h"
 
 // ---------------------------------------------------------------------------
 // PARAM-04: State round-trip tests

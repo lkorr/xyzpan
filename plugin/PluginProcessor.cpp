@@ -1,7 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "ParamIDs.h"
-#include "Presets.h"
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
 #include <cmath>
@@ -10,7 +9,8 @@ XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input",   juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "XYZPanState", createParameterLayout()) {
+      apvts(*this, nullptr, "XYZPanState", createParameterLayout()),
+      presetManager(apvts) {
     // Spatial position (Phase 1)
     xParam = apvts.getRawParameterValue(ParamID::X);
     yParam = apvts.getRawParameterValue(ParamID::Y);
@@ -427,6 +427,11 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(bypassDopplerParam    != nullptr);
     jassert(bypassAirAbsParam     != nullptr);
     jassert(bypassReverbParam     != nullptr);
+
+    // Initialize preset manager — extract factory presets to disk if missing,
+    // then scan for all available presets (factory + user)
+    presetManager.ensureFactoryPresetsOnDisk();
+    presetManager.refreshPresetList();
 
     // Start 30Hz timer for collecting foreign source positions
     startTimerHz(30);
@@ -846,14 +851,18 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     snap.sphereRadius = sphereRadiusParam->load();
     // Estimate dry (pre-distance) RMS: use input RMS for external audio,
     // and output RMS / distance gain for internal test tone.
-    // This ensures waves reflect source loudness regardless of distance.
+    // Only use dryFromOutput when the test tone is active — otherwise
+    // reverb/delay tails in the output create phantom wave emissions.
     {
-        auto dspState = engine.getLastDSPState();
-        const float distGain = std::max(dspState.distGainLinear, 0.001f);
-        const float outputRms = std::max(outputRmsL.load(std::memory_order_relaxed),
-                                         outputRmsR.load(std::memory_order_relaxed));
-        const float dryFromOutput = outputRms / distGain;
-        snap.inputRms = std::max(inputRmsValue, dryFromOutput);
+        snap.inputRms = inputRmsValue;
+        if (params.testToneEnabled) {
+            auto dspState = engine.getLastDSPState();
+            const float distGain = std::max(dspState.distGainLinear, 0.001f);
+            const float outputRms = std::max(outputRmsL.load(std::memory_order_relaxed),
+                                             outputRmsR.load(std::memory_order_relaxed));
+            const float dryFromOutput = outputRms / distGain;
+            snap.inputRms = std::max(inputRmsValue, dryFromOutput);
+        }
     }
 
     positionBridge.write(snap);
@@ -948,10 +957,13 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
             if (listenerPilotParam->load() >= 0.5f)
                 listenerHub_->claimPilot(this);
         } else {
-            listenerHub_->releasePilot(this);
+            // removeLinkedInstance handles pilot revocation + auto-promotion
+            // of the next linked instance. Clear the param AFTER removal so
+            // the hub still sees us as pilot during the removal (enabling
+            // auto-promotion of the remaining instance).
+            listenerHub_->removeLinkedInstance(this);
             if (auto* p = apvts.getParameter(ParamID::LISTENER_PILOT))
                 p->setValue(0.0f);
-            listenerHub_->removeLinkedInstance(this);
         }
         return;
     }
@@ -959,8 +971,9 @@ void XYZPanProcessor::parameterChanged(const juce::String& parameterID, float ne
     // Pilot toggle — claim or release pilot role
     if (parameterID == ParamID::LISTENER_PILOT) {
         if (newValue >= 0.5f) {
-            if (listenerLinkParam->load() >= 0.5f)
-                listenerHub_->claimPilot(this);
+            // claimPilot checks linked_ membership internally, so no need
+            // to also gate on listenerLinkParam here.
+            listenerHub_->claimPilot(this);
         } else {
             listenerHub_->releasePilot(this);
         }
@@ -1071,7 +1084,7 @@ void XYZPanProcessor::getStateInformation(juce::MemoryBlock& destData) {
     }
 
     xml->setAttribute("stateVersion", 2);
-    xml->setAttribute("currentProgram", currentPresetIndex_);
+    xml->setAttribute("currentProgram", presetManager.getCurrentIndex());
     copyXmlToBinary(*xml, destData);
 }
 
@@ -1083,7 +1096,7 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
         // Restore instance name and program index before replacing state
         instanceName_     = xml->getStringAttribute("instanceName", "");
         nameManuallySet_  = xml->getIntAttribute("nameManuallySet", 0) != 0;
-        currentPresetIndex_ = xml->getIntAttribute("currentProgram", 0);
+        presetManager.setCurrentIndex(xml->getIntAttribute("currentProgram", 0));
 
         // Migrate v1 presets: yaw/pitch/roll were 0–360, now -180–180.
         // APVTS stores normalized 0–1 values. Old: norm = deg/360.
@@ -1152,34 +1165,29 @@ void XYZPanProcessor::setInstanceName(const juce::String& name) {
 // replaceState() uses internal APVTS locks and is NOT realtime-safe; this is
 // correct because processBlock reads only pre-cached std::atomic<float>* pointers,
 // never the ValueTree itself (INFRA-04).
+//
+// getNumPrograms() returns only factory preset count (7) to avoid DAW caching
+// issues. User presets are managed exclusively through the plugin UI.
 // ---------------------------------------------------------------------------
 
 int XYZPanProcessor::getNumPrograms() {
-    return XYZPresets::kNumPresets;
+    return presetManager.getNumFactoryPresets();
 }
 
 int XYZPanProcessor::getCurrentProgram() {
-    return currentPresetIndex_;
+    int idx = presetManager.getCurrentIndex();
+    // Clamp to factory range for DAW API
+    return (idx >= 0 && idx < presetManager.getNumFactoryPresets()) ? idx : 0;
 }
 
 const juce::String XYZPanProcessor::getProgramName(int index) {
-    if (index >= 0 && index < XYZPresets::kNumPresets)
-        return XYZPresets::kFactoryPresets[index].name;
-    return "Unknown";
+    return presetManager.getFactoryPresetName(index);
 }
 
 void XYZPanProcessor::setCurrentProgram(int index) {
-    if (index < 0 || index >= XYZPresets::kNumPresets)
+    if (index < 0 || index >= presetManager.getNumFactoryPresets())
         return;
-
-    currentPresetIndex_ = index;
-
-    // Parse XML and replace APVTS state.
-    // replaceState() is thread-safe (uses internal locks) but NOT realtime-safe.
-    // setCurrentProgram is called from the message thread by all major DAWs.
-    auto xml = juce::parseXML(XYZPresets::kFactoryPresets[index].xml);
-    if (xml != nullptr && xml->hasTagName(apvts.state.getType()))
-        apvts.replaceState(juce::ValueTree::fromXml(*xml));
+    presetManager.loadPreset(index);
 }
 
 // Plugin entry point

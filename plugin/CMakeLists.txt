@@ -12,11 +12,26 @@ juce_add_plugin(XYZPan
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
+# Factory presets embedded as binary data (fallback when not installed)
+juce_add_binary_data(XYZPanPresets
+    HEADER_NAME "FactoryPresetData.h"
+    NAMESPACE FactoryPresetData
+    SOURCES
+        ${CMAKE_SOURCE_DIR}/presets/factory/Default.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Orbit_XY.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Slow_Drift.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Behind_You.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Fly_Around.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Overhead.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Near_Whisper.xml
+)
+
 target_sources(XYZPan
     PRIVATE
         PluginProcessor.cpp
         PluginEditor.cpp
         ParamLayout.cpp
+        PresetManager.cpp
 )
 
 target_include_directories(XYZPan
@@ -39,6 +54,7 @@ endif()
 
 target_link_libraries(XYZPan
     PRIVATE
+        XYZPanPresets
         xyzpan_engine
         xyzpan_ui           # Phase 6: OpenGL renderer and alchemy look and feel
         juce::juce_audio_utils

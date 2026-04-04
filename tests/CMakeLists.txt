@@ -10,6 +10,7 @@ add_executable(XYZPanTests
     engine/TestDelayInterpolation.cpp
     engine/TestGoldenReference.cpp
     engine/TestOrientationMath.cpp
+    engine/TestListenerRoll.cpp
 )
 
 target_link_libraries(XYZPanTests
@@ -43,6 +44,7 @@ add_executable(XYZPanPluginTests
 target_link_libraries(XYZPanPluginTests
     PRIVATE
         XYZPan
+        XYZPanPresets
         xyzpan_ui
         xyzpan_engine
         juce::juce_audio_utils
