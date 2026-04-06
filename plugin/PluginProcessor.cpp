@@ -9,7 +9,7 @@ XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input",   juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "XYZPanState", createParameterLayout()),
+      apvts(*this, &undoManager_, "XYZPanState", createParameterLayout()),
       presetManager(apvts) {
     // Spatial position (Phase 1)
     xParam = apvts.getRawParameterValue(ParamID::X);
@@ -85,17 +85,21 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(airAbsMinHzParam    != nullptr);
 
     // Phase 5: Reverb (VERB-03)
-    verbSizeParam     = apvts.getRawParameterValue(ParamID::VERB_SIZE);
-    verbDecayParam    = apvts.getRawParameterValue(ParamID::VERB_DECAY);
-    verbDampingParam  = apvts.getRawParameterValue(ParamID::VERB_DAMPING);
-    verbWetParam      = apvts.getRawParameterValue(ParamID::VERB_WET);
-    verbPreDelayParam = apvts.getRawParameterValue(ParamID::VERB_PRE_DELAY);
+    verbSizeParam      = apvts.getRawParameterValue(ParamID::VERB_SIZE);
+    verbDecayParam     = apvts.getRawParameterValue(ParamID::VERB_DECAY);
+    verbDampingParam   = apvts.getRawParameterValue(ParamID::VERB_DAMPING);
+    verbWetParam       = apvts.getRawParameterValue(ParamID::VERB_WET);
+    verbPreDelayParam  = apvts.getRawParameterValue(ParamID::VERB_PRE_DELAY);
+    verbModDepthParam  = apvts.getRawParameterValue(ParamID::VERB_MOD_DEPTH);
+    verbDiffusionParam = apvts.getRawParameterValue(ParamID::VERB_DIFFUSION);
 
-    jassert(verbSizeParam     != nullptr);
-    jassert(verbDecayParam    != nullptr);
-    jassert(verbDampingParam  != nullptr);
-    jassert(verbWetParam      != nullptr);
-    jassert(verbPreDelayParam != nullptr);
+    jassert(verbSizeParam      != nullptr);
+    jassert(verbDecayParam     != nullptr);
+    jassert(verbDampingParam   != nullptr);
+    jassert(verbWetParam       != nullptr);
+    jassert(verbPreDelayParam  != nullptr);
+    jassert(verbModDepthParam  != nullptr);
+    jassert(verbDiffusionParam != nullptr);
 
     // Phase 5: LFO — per axis (LFO-01 through LFO-05)
     lfoXRateParam     = apvts.getRawParameterValue(ParamID::LFO_X_RATE);
@@ -562,6 +566,8 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.verbDamping     = verbDampingParam->load();
     params.verbWet         = verbWetParam->load();
     params.verbPreDelayMax = verbPreDelayParam->load();
+    params.verbModDepth    = verbModDepthParam->load();
+    params.verbDiffusion   = verbDiffusionParam->load();
 
     // Phase 5: LFO (LFO-01 through LFO-05)
     params.lfoXRate      = lfoXRateParam->load();
@@ -904,6 +910,15 @@ void XYZPanProcessor::timerCallback() {
     payload.count = listenerHub_->getLinkedSources(
         this, payload.sources, xyzpan::kMaxLinkedSources);
     foreignSourceBridge.write(payload);
+
+    // Scale timer frequency based on instance count to reduce contention
+    const int linkedCount = listenerHub_->getLinkedCount();
+    const int targetHz = linkedCount > 50 ? 15 : (linkedCount > 20 ? 20 : 30);
+    if (targetHz != lastTimerHz_) {
+        lastTimerHz_ = targetHz;
+        stopTimer();
+        startTimerHz(targetHz);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1119,6 +1134,7 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
         }
 
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+        undoManager_.clearUndoHistory();
 
         // Force-snap bool params after state replacement — JUCE's ValueTree may
         // retain raw floats that AudioParameterBool doesn't snap on replaceState.

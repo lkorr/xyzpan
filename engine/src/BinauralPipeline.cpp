@@ -59,9 +59,11 @@ BinauralPipeline::BinauralResult BinauralPipeline::processSample(
     float inputSample, float nodeX, float nodeY, float nodeZ,
     float sr, float binBlend,
     float ildGainBase, float hardpanGainBase,
-    const EngineParams& params) {
-    // Per-node position-derived values
-    const float nodeHorizMag = std::sqrt(nodeX * nodeX + nodeY * nodeY);
+    const EngineParams& params,
+    float nodeHorizMag) {
+    // Per-node position-derived values — use caller's precomputed value when available
+    if (nodeHorizMag < 0.0f)
+        nodeHorizMag = std::sqrt(nodeX * nodeX + nodeY * nodeY);
     const float nodeAzimuthFactor = (nodeHorizMag > 1e-7f)
         ? nodeX / nodeHorizMag : 0.0f;
 

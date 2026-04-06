@@ -33,6 +33,9 @@ public:
         // Called when this instance gains or loses pilot status.
         virtual void pilotStatusChanged(bool /*isPilot*/) {}
 
+        // Returns this instance's source shape enum value (for cross-instance rendering).
+        virtual int getSourceShape() const { return 0; }
+
         // Safety flag — cleared by the instance before destruction begins.
         // The hub checks this under the spinlock before dispatching to skip
         // any instance whose destructor is in progress on another thread.
@@ -253,21 +256,36 @@ public:
 
     // Collect source positions from all linked instances except caller.
     // Returns number of sources written.
+    // Lock is held only to snapshot pointers; virtual calls happen outside.
     int getLinkedSources(const Listener* caller,
                          xyzpan::ForeignSourceSnapshot* out, int maxOut) {
-        const juce::SpinLock::ScopedLockType lock(spinLock_);
+        constexpr int kMaxSnapshot = 128;
+        Listener* snapshot[kMaxSnapshot];
+        bool isPilotFlags[kMaxSnapshot];
+        int snapshotCount = 0;
+        {
+            const juce::SpinLock::ScopedLockType lock(spinLock_);
+            for (auto* l : linked_) {
+                if (l == caller) continue;
+                if (!l->hubAlive_.load(std::memory_order_acquire)) continue;
+                if (snapshotCount >= kMaxSnapshot) break;
+                isPilotFlags[snapshotCount] = (l == pilot_);
+                snapshot[snapshotCount++] = l;
+            }
+        }
+        // Iterate outside lock — virtual calls + string copies are safe because
+        // hubAlive_ is checked again and detachInstance() clears it before destruction.
         int count = 0;
         int colorIdx = 0;
-        for (auto* l : linked_) {
-            if (l == caller) continue;
+        for (int i = 0; i < snapshotCount && count < maxOut; ++i) {
+            auto* l = snapshot[i];
             if (!l->hubAlive_.load(std::memory_order_acquire)) continue;
             auto* buf = l->getSourceExportBuffer();
             if (buf == nullptr) continue;
-            if (count >= maxOut) break;
             out[count] = buf->read();
             out[count].colorIndex = colorIdx++;
-            out[count].isPilot = (l == pilot_);
-            // Copy instance name (truncated to fit fixed-size buffer)
+            out[count].sourceShape = l->getSourceShape();
+            out[count].isPilot = isPilotFlags[i];
             auto nameStr = l->getInstanceName();
             if (nameStr.isEmpty())
                 nameStr = "Source " + juce::String(colorIdx);

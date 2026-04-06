@@ -53,6 +53,24 @@ public:
         return readHermite(delayInSamples);
     }
 
+    // Read the buffer at a fractional delay using linear interpolation.
+    // Cheaper than Hermite (2 taps vs 4, ~3 FLOPs vs ~11). Use for fixed-delay
+    // paths where modulation artifacts are not a concern (pre-delay, fixed allpass,
+    // output taps in reverb).
+    float readLinear(float delayInSamples) const {
+        int d   = static_cast<int>(delayInSamples);
+        float t = delayInSamples - static_cast<float>(d);
+
+        if (t > 0.0f) { t = 1.0f - t; d += 1; }
+
+        int base = writePos_ - 1 - d;
+
+        float A = buf_[static_cast<size_t>((base    ) & mask_)];
+        float B = buf_[static_cast<size_t>((base + 1) & mask_)];
+
+        return A + t * (B - A);
+    }
+
 private:
     // Cubic Hermite interpolation (Catmull-Rom) — 4 taps.
     float readHermite(float delayInSamples) const {

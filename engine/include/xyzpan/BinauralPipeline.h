@@ -53,7 +53,8 @@ struct BinauralPipeline {
     BinauralResult processSample(float inputSample, float nodeX, float nodeY, float nodeZ,
                                   float sr, float binBlend,
                                   float ildGainBase, float hardpanGainBase,
-                                  const EngineParams& params);
+                                  const EngineParams& params,
+                                  float nodeHorizMag = -1.0f);
 };
 
 } // namespace xyzpan

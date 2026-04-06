@@ -48,11 +48,16 @@ public:
     void updateTrackProperties(const TrackProperties& properties) override;
     void setInstanceName(const juce::String& name);
     juce::String getInstanceNameValue() const { return instanceName_; }
+    void setSourceShape(int shape) { sourceShape_.store(shape, std::memory_order_relaxed); }
 
     // Pilot queries — for editor UI to check whether listener controls should be enabled
     bool isLinkedPilot() const;
     bool isLinkedNonPilot() const;
     juce::String getPilotName() const;
+
+    // Undo/redo support — declared before apvts (member init order)
+    juce::UndoManager undoManager_ { 30000, 30 };
+    juce::UndoManager& getUndoManager() { return undoManager_; }
 
     // APVTS — public so editor and parameter attachments can access it
     juce::AudioProcessorValueTreeState apvts;
@@ -92,6 +97,7 @@ public:
     std::atomic<float> outputRmsL{0.f}, outputRmsR{0.f};
 
 private:
+    int lastTimerHz_ = 30;
     xyzpan::XYZPanEngine engine;
 
     // Raw parameter value pointers (thread-safe atomics managed by APVTS)
@@ -138,11 +144,13 @@ private:
     std::atomic<float>* airAbsMinHzParam    = nullptr;
 
     // Phase 5: Reverb (VERB-03)
-    std::atomic<float>* verbSizeParam     = nullptr;
-    std::atomic<float>* verbDecayParam    = nullptr;
-    std::atomic<float>* verbDampingParam  = nullptr;
-    std::atomic<float>* verbWetParam      = nullptr;
-    std::atomic<float>* verbPreDelayParam = nullptr;
+    std::atomic<float>* verbSizeParam      = nullptr;
+    std::atomic<float>* verbDecayParam     = nullptr;
+    std::atomic<float>* verbDampingParam   = nullptr;
+    std::atomic<float>* verbWetParam       = nullptr;
+    std::atomic<float>* verbPreDelayParam  = nullptr;
+    std::atomic<float>* verbModDepthParam  = nullptr;
+    std::atomic<float>* verbDiffusionParam = nullptr;
 
     // Phase 5: LFO — per axis
     std::atomic<float>* lfoXRateParam     = nullptr;
@@ -228,6 +236,9 @@ private:
     juce::String trackName_;           // last DAW-reported track name
     bool nameManuallySet_ = false;
 
+    // Source shape for cross-instance rendering (set by editor from SceneParams)
+    std::atomic<int> sourceShape_{0};
+
     // Listener link across instances
     std::atomic<float>* listenerLinkParam         = nullptr;
     std::atomic<float>* listenerPilotParam        = nullptr;
@@ -243,6 +254,7 @@ private:
     xyzpan::SourceExportBuffer* getSourceExportBuffer() override { return &sourceExport; }
     juce::AudioProcessor* getProcessor() override { return this; }
     juce::String getInstanceName() const override { return instanceName_; }
+    int getSourceShape() const override { return sourceShape_.load(std::memory_order_relaxed); }
 
     // juce::Timer override — collects foreign source positions for GL view
     void timerCallback() override;

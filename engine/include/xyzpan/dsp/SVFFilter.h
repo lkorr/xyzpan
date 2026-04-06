@@ -55,7 +55,7 @@ public:
     // Safe to call every sample for smooth cutoff modulation.
     void setCoefficients(float cutoffHz, float sampleRate, float Q = 0.7071f) {
         float safeHz = std::min(cutoffHz, 0.45f * sampleRate);
-        if (std::abs(safeHz - lastCutoff_) < 0.5f) return;  // skip when delta < 0.5 Hz
+        if (std::abs(safeHz - lastCutoff_) < 2.0f) return;  // skip when delta < 2 Hz (imperceptible at audio freqs)
         lastCutoff_ = safeHz;
         float g = SineLUT::fastTan(3.14159265f * safeHz / sampleRate);
         k_  = 1.0f / Q;

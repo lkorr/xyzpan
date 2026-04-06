@@ -2,6 +2,7 @@
 #include "xyzpan/Coordinates.h"
 #include "xyzpan/Constants.h"
 #include "xyzpan/dsp/SineLUT.h"
+#include "xyzpan/dsp/FastMath.h"
 #include <algorithm>
 #include <cstring>
 #include <cmath>
@@ -65,6 +66,8 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     reverb_.setSize(kVerbDefaultSize);
     reverb_.setDecay(kVerbDefaultDecay);
     reverb_.setDamping(kVerbDefaultDamping);
+    reverb_.setDiffusion(kVerbDefaultDiffusion);
+    reverb_.setModDepth(kVerbDefaultModDepth);
     reverb_.setWetDry(1.0f);
     reverb_.reset();
     verbWetSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
@@ -248,6 +251,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     reverb_.setDecay(currentParams.verbDecay);
     reverb_.setDamping(currentParams.verbDamping);
+    reverb_.setDiffusion(currentParams.verbDiffusion);
+    reverb_.setModDepth(currentParams.verbModDepth);
 
     // -------------------------------------------------------------------------
     // Phase 5: LFO — set rate and waveform per block
@@ -521,42 +526,46 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * blkDistFrac;
 
     // --- Mono path per-block setCoefficients ---
-    // Pinna EQ biquads — smoothed to avoid clicks from coefficient jumps at block boundaries
-    src_.presenceShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
-        currentParams.presenceShelfFreqHz, sr, 0.7071f, blkPresenceGainDb, numSamples);
-    src_.earCanalPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-        currentParams.earCanalFreqHz, sr, currentParams.earCanalQ, blkEarCanalGainDb, numSamples);
-    src_.pinnaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-        blkPinnaN1Freq, sr, currentParams.pinnaNotchQ, blkPinnaGainDb, numSamples);
-    src_.pinnaNotch2.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-        blkPinnaN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb, numSamples);
-    src_.pinnaShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
-        currentParams.pinnaShelfFreqHz, sr, 0.7071f, blkShelfGainDb, numSamples);
+    // Skip when stereo is active — the stereo path below overwrites src_.* coefficients
+    const bool blkStereoLikely = stereoWidthSmooth_.current() > 0.001f && inputR != nullptr;
+    if (!blkStereoLikely) {
+        // Pinna EQ biquads — smoothed to avoid clicks from coefficient jumps at block boundaries
+        src_.presenceShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
+            currentParams.presenceShelfFreqHz, sr, 0.7071f, blkPresenceGainDb, numSamples);
+        src_.earCanalPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            currentParams.earCanalFreqHz, sr, currentParams.earCanalQ, blkEarCanalGainDb, numSamples);
+        src_.pinnaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            blkPinnaN1Freq, sr, currentParams.pinnaNotchQ, blkPinnaGainDb, numSamples);
+        src_.pinnaNotch2.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+            blkPinnaN2Freq, sr, currentParams.pinnaN2Q, currentParams.pinnaN2GainDb, numSamples);
+        src_.pinnaShelf.setCoefficientsSmoothed(dsp::BiquadType::HighShelf,
+            currentParams.pinnaShelfFreqHz, sr, 0.7071f, blkShelfGainDb, numSamples);
 
-    // Expanded pinna EQ (P5) — 4 additional bands, mono path
-    {
-        const float belowFactor = 1.0f - blkElevFactor;
-        const float aboveFactor = blkElevFactor;
-        const float blkShoulderGainDb = currentParams.shoulderPeakMaxDb * belowFactor;
-        const float blkConchaGainDb   = currentParams.conchaNotchMaxDb * belowFactor;
-        const float blkUpperPinnaGainDb = currentParams.upperPinnaMinDb
-            + (currentParams.upperPinnaMaxDb - currentParams.upperPinnaMinDb) * aboveFactor;
-        const float blkTragusRear  = std::max(0.0f, blkRearFactor);
-        const float blkTragusGainDb = currentParams.tragusNotchMaxDb * blkTragusRear * belowFactor;
+        // Expanded pinna EQ (P5) — 4 additional bands, mono path
+        {
+            const float belowFactor = 1.0f - blkElevFactor;
+            const float aboveFactor = blkElevFactor;
+            const float blkShoulderGainDb = currentParams.shoulderPeakMaxDb * belowFactor;
+            const float blkConchaGainDb   = currentParams.conchaNotchMaxDb * belowFactor;
+            const float blkUpperPinnaGainDb = currentParams.upperPinnaMinDb
+                + (currentParams.upperPinnaMaxDb - currentParams.upperPinnaMinDb) * aboveFactor;
+            const float blkTragusRear  = std::max(0.0f, blkRearFactor);
+            const float blkTragusGainDb = currentParams.tragusNotchMaxDb * blkTragusRear * belowFactor;
 
-        src_.shoulderPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-            currentParams.shoulderPeakFreqHz, sr, currentParams.shoulderPeakQ, blkShoulderGainDb, numSamples);
-        src_.conchaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-            currentParams.conchaNotchFreqHz, sr, currentParams.conchaNotchQ, blkConchaGainDb, numSamples);
-        src_.upperPinna.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-            currentParams.upperPinnaFreqHz, sr, currentParams.upperPinnaQ, blkUpperPinnaGainDb, numSamples);
-        src_.tragusNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
-            currentParams.tragusNotchFreqHz, sr, currentParams.tragusNotchQ, blkTragusGainDb, numSamples);
+            src_.shoulderPeak.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+                currentParams.shoulderPeakFreqHz, sr, currentParams.shoulderPeakQ, blkShoulderGainDb, numSamples);
+            src_.conchaNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+                currentParams.conchaNotchFreqHz, sr, currentParams.conchaNotchQ, blkConchaGainDb, numSamples);
+            src_.upperPinna.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+                currentParams.upperPinnaFreqHz, sr, currentParams.upperPinnaQ, blkUpperPinnaGainDb, numSamples);
+            src_.tragusNotch.setCoefficientsSmoothed(dsp::BiquadType::PeakingEQ,
+                currentParams.tragusNotchFreqHz, sr, currentParams.tragusNotchQ, blkTragusGainDb, numSamples);
+        }
+
+        // Near-field ILD biquads (mono path) — smoothed, continuous blend through azimuth zero
+        src_.nearFieldLF_R.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainR, numSamples);
+        src_.nearFieldLF_L.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainL, numSamples);
     }
-
-    // Near-field ILD biquads (mono path) — smoothed, continuous blend through azimuth zero
-    src_.nearFieldLF_R.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainR, numSamples);
-    src_.nearFieldLF_L.setCoefficientsSmoothed(dsp::BiquadType::LowShelf, currentParams.nearFieldLFHz, sr, 0.7071f, blkNFGainL, numSamples);
 
     // Head shadow + rear shadow SVFs: coefficients updated per-sample in inner loop
 
@@ -576,6 +585,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // For the stereo path, compute L-node and R-node block-start positions using
     // unmodulated params. The orbit LFO modulation changes slowly; per-block
     // coefficient update is sufficient (LFO phase delta per block is negligible for EQ).
+    // Pre-cache orbit XY trig for inner loop when orbit XY depth is zero
+    // (angle is block-constant, saves 8 LUT lookups per sample)
+    bool orbitXYBlockConstant = false;
+    float blkLCosXY = 1.0f, blkLSinXY = 0.0f;
+    float blkRCosXY = 1.0f, blkRSinXY = 0.0f;
     {
         const float blkHalfSpread = currentParams.stereoWidth * kStereoMaxSpreadRadius;
         float blkSpreadX = 1.0f, blkSpreadY = 0.0f;
@@ -596,6 +610,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float blkOrbitAngleXY = blkOrbitRawXY * blkOrbitDepXY * kPI;
         const float blkLAngle = blkOrbitAngleXY + blkSmoothedOffset;
         const float blkRAngle = blkOrbitAngleXY + blkSmoothedOffset + blkRPhaseOffset;
+
+        orbitXYBlockConstant = blkOrbitDepXY < 1e-7f;
+        blkLCosXY = dsp::SineLUT::cosLookupAngle(blkSmoothedOffset);
+        blkLSinXY = dsp::SineLUT::lookupAngle(blkSmoothedOffset);
+        blkRCosXY = dsp::SineLUT::cosLookupAngle(blkSmoothedOffset + blkRPhaseOffset);
+        blkRSinXY = dsp::SineLUT::lookupAngle(blkSmoothedOffset + blkRPhaseOffset);
 
         // L offset in XY plane
         float blkLOffX = blkHalfSpread * (blkSpreadX * dsp::SineLUT::cosLookupAngle(blkLAngle) - blkSpreadY * dsp::SineLUT::lookupAngle(blkLAngle));
@@ -798,6 +818,18 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                                         + relPosZ * relPosZ);
     // blkHorizMag is already computed above (sqrt(blkX^2+blkY^2)) -- reused in zero-LFO path
 
+    // Pre-converge block-constant smoothers (targets don't change within a block)
+    for (int j = 0; j < numSamples; ++j) {
+        lfoDepthXSmooth_.process(currentParams.lfoXDepth);
+        lfoDepthYSmooth_.process(currentParams.lfoYDepth);
+        lfoDepthZSmooth_.process(currentParams.lfoZDepth);
+        orbitDepthXYSmooth_.process(currentParams.stereoOrbitXYDepth);
+        orbitDepthXZSmooth_.process(currentParams.stereoOrbitXZDepth);
+        orbitDepthYZSmooth_.process(currentParams.stereoOrbitYZDepth);
+        stereoWidthSmooth_.process(currentParams.stereoWidth);
+        binauralBlendSmooth_.process(currentParams.binauralEnabled ? 1.0f : 0.0f);
+    }
+
     for (int i = 0; i < numSamples; ++i) {
         // ----------------------------------------------------------------
         // Test tone generation
@@ -872,9 +904,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // ----------------------------------------------------------------
         // Position LFOs
         // ----------------------------------------------------------------
-        const float depthX = lfoDepthXSmooth_.process(currentParams.lfoXDepth);
-        const float depthY = lfoDepthYSmooth_.process(currentParams.lfoYDepth);
-        const float depthZ = lfoDepthZSmooth_.process(currentParams.lfoZDepth);
+        const float depthX = lfoDepthXSmooth_.current();
+        const float depthY = lfoDepthYSmooth_.current();
+        const float depthZ = lfoDepthZSmooth_.current();
 
         // Detect if any LFO depth is active -- when all are zero, position is block-constant
         const bool lfoActive = depthX > 1e-7f || depthY > 1e-7f || depthZ > 1e-7f;
@@ -925,8 +957,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // horizontalMag uses rotated values (needed for azimuth/rear factor)
         float rawModDist, horizontalMag;
         if (lfoActive) {
-            rawModDist    = std::sqrt(modX * modX + modY * modY + modZ * modZ);
-            horizontalMag = std::sqrt(modX * modX + modY * modY);
+            rawModDist    = dsp::fastSqrt(modX * modX + modY * modY + modZ * modZ);
+            horizontalMag = dsp::fastSqrt(modX * modX + modY * modY);
         } else {
             rawModDist    = blkRawModDist;
             horizontalMag = blkHorizMag;
@@ -954,13 +986,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // ----------------------------------------------------------------
         // Stereo width smooth + orbit LFOs
         // ----------------------------------------------------------------
-        const float smoothedWidth = stereoWidthSmooth_.process(currentParams.stereoWidth);
+        const float smoothedWidth = stereoWidthSmooth_.current();
         const bool stereoActive = smoothedWidth > 0.001f && inputR != nullptr;
 
         // Orbit LFO ticks — always tick to keep phase accumulation consistent
-        const float orbitDepXY = orbitDepthXYSmooth_.process(currentParams.stereoOrbitXYDepth);
-        const float orbitDepXZ = orbitDepthXZSmooth_.process(currentParams.stereoOrbitXZDepth);
-        const float orbitDepYZ = orbitDepthYZSmooth_.process(currentParams.stereoOrbitYZDepth);
+        const float orbitDepXY = orbitDepthXYSmooth_.current();
+        const float orbitDepXZ = orbitDepthXZSmooth_.current();
+        const float orbitDepYZ = orbitDepthYZSmooth_.current();
         const float orbitRawXY = orbitLfoXY_.tick();
         const float orbitRawXZ = orbitLfoXZ_.tick();
         const float orbitRawYZ = orbitLfoYZ_.tick();
@@ -968,9 +1000,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float orbitValXZ = orbitRawXZ * orbitDepXZ;
         const float orbitValYZ = orbitRawYZ * orbitDepYZ;
 
-        // Binaural blend smoother — once per sample, shared across mono/stereo paths
-        const float binBlend = binauralBlendSmooth_.process(
-            currentParams.binauralEnabled ? 1.0f : 0.0f);
+        // Binaural blend — pre-converged above, read cached value
+        const float binBlend = binauralBlendSmooth_.current();
 
         float dL, dR;
         float effectiveDistGain = 1.0f;
@@ -986,7 +1017,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // NOT head-rotated — offsets are added to world-space positions)
             const float relX = worldModX - currentParams.listenerX;
             const float relY = worldModY - currentParams.listenerY;
-            const float relHorizMag = std::sqrt(relX * relX + relY * relY);
+            const float relHorizMag = dsp::fastSqrt(relX * relX + relY * relY);
             float spreadX, spreadY;
             if (currentParams.stereoFaceListener && relHorizMag > 1e-5f) {
                 spreadX =  relY / relHorizMag;
@@ -1004,17 +1035,28 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // XZ/YZ orbit LFO cos/sin remain per-sample because orbitRawXZ/YZ change per sample.
 
             // L node: angle = orbitAngle + offset, R node: angle + offset + PI + phase
-            const float lAngle = orbitAngleXY + blkSmoothedOffset;
-            const float rAngle = orbitAngleXY + blkSmoothedOffset + blkRPhaseOffset;
+            // Use block-cached trig when orbit XY depth is zero (angle is block-constant)
+            float lCos, lSin, rCos, rSin;
+            if (orbitXYBlockConstant) {
+                lCos = blkLCosXY; lSin = blkLSinXY;
+                rCos = blkRCosXY; rSin = blkRSinXY;
+            } else {
+                const float lAngle = orbitAngleXY + blkSmoothedOffset;
+                const float rAngle = orbitAngleXY + blkSmoothedOffset + blkRPhaseOffset;
+                lCos = dsp::SineLUT::cosLookupAngle(lAngle);
+                lSin = dsp::SineLUT::lookupAngle(lAngle);
+                rCos = dsp::SineLUT::cosLookupAngle(rAngle);
+                rSin = dsp::SineLUT::lookupAngle(rAngle);
+            }
 
             // Compute L offset in XY plane
-            float lOffX = halfSpread * (spreadX * dsp::SineLUT::cosLookupAngle(lAngle) - spreadY * dsp::SineLUT::lookupAngle(lAngle));
-            float lOffY = halfSpread * (spreadX * dsp::SineLUT::lookupAngle(lAngle) + spreadY * dsp::SineLUT::cosLookupAngle(lAngle));
+            float lOffX = halfSpread * (spreadX * lCos - spreadY * lSin);
+            float lOffY = halfSpread * (spreadX * lSin + spreadY * lCos);
             float lOffZ = 0.0f;
 
             // Compute R offset in XY plane
-            float rOffX = halfSpread * (spreadX * dsp::SineLUT::cosLookupAngle(rAngle) - spreadY * dsp::SineLUT::lookupAngle(rAngle));
-            float rOffY = halfSpread * (spreadX * dsp::SineLUT::lookupAngle(rAngle) + spreadY * dsp::SineLUT::cosLookupAngle(rAngle));
+            float rOffX = halfSpread * (spreadX * rCos - spreadY * rSin);
+            float rOffY = halfSpread * (spreadX * rSin + spreadY * rCos);
             float rOffZ = 0.0f;
 
             // Apply XZ orbit rotation to both offsets
@@ -1103,8 +1145,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Doppler FIRST — per-node mono doppler before comb/pinna/binaural
             // Distance is rotation-invariant, use listener-relative node positions
             const bool effectiveDoppler = dopplerOn && !currentParams.bypassDoppler;
-            const float lNodeRawDist = std::sqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ);
-            const float rNodeRawDist = std::sqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ);
+            const float lNodeRawDist = dsp::fastSqrt(lRelX*lRelX + lRelY*lRelY + lRelZ*lRelZ);
+            const float rNodeRawDist = dsp::fastSqrt(rRelX*rRelX + rRelY*rRelY + rRelZ*rRelZ);
             const float lRawDistFrac = std::clamp(lNodeRawDist / kSqrt3, 0.0f, 1.0f);
             const float rRawDistFrac = std::clamp(rNodeRawDist / kSqrt3, 0.0f, 1.0f);
 
@@ -1116,14 +1158,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             float chestROut = chestR_.processSample(sampleR, dspRZ, sr, chestGainLin, currentParams);
 
             // Process L channel through L pipeline — listener-relative positions
+            const float lHorizMag = dsp::fastSqrt(dspLX * dspLX + dspLY * dspLY);
             auto [dL_L, dR_L] = src_.processSample(
                 sampleL, dspLX, dspLY, dspLZ, sr, binBlend,
-                ildGainBase_, hardpanGainBase_, currentParams);
+                ildGainBase_, hardpanGainBase_, currentParams, lHorizMag);
 
             // Process R channel through R pipeline — listener-relative positions
+            const float rHorizMag = dsp::fastSqrt(dspRX * dspRX + dspRY * dspRY);
             auto [dL_R, dR_R] = srcR_.processSample(
                 sampleR, dspRX, dspRY, dspRZ, sr, binBlend,
-                ildGainBase_, hardpanGainBase_, currentParams);
+                ildGainBase_, hardpanGainBase_, currentParams, rHorizMag);
 
             // Add chest to per-node binaural (both ears, before distance)
             dL_L += chestL; dR_L += chestL;
@@ -1208,7 +1252,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             {
                 auto [binL, binR] = src_.processSample(
                     mono, modX, modY, modZ, sr, binBlend,
-                    ildGainBase_, hardpanGainBase_, currentParams);
+                    ildGainBase_, hardpanGainBase_, currentParams, horizontalMag);
                 dL = binL;
                 dR = binR;
             }
