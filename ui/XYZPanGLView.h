@@ -111,6 +111,7 @@ private:
 struct WaveEmitter {
     static constexpr int kMaxWaves = 32;
     static constexpr float kAvgWindow = 0.03f; // position averaging window (seconds)
+    static constexpr float kVelSmooth = 0.08f;  // velocity smoothing window (seconds)
 
     struct Wave {
         glm::vec3 birthPos{0.0f};
@@ -126,13 +127,23 @@ struct WaveEmitter {
     glm::vec3 avgPos{0.0f};
     bool      avgInitialized = false;
 
+    // Smoothed velocity magnitude (GL units / second)
+    float smoothedSpeed = 0.0f;
+
     void updateAverage(const glm::vec3& pos, double dt) {
         if (!avgInitialized) {
             avgPos = pos;
             avgInitialized = true;
         } else {
             const float alpha = (dt > 0.0) ? std::min(1.0f, static_cast<float>(dt / kAvgWindow)) : 1.0f;
+            const glm::vec3 prev = avgPos;
             avgPos += alpha * (pos - avgPos);
+            // Track velocity magnitude
+            if (dt > 1e-6) {
+                const float instantSpeed = glm::length(avgPos - prev) / static_cast<float>(dt);
+                const float vAlpha = std::min(1.0f, static_cast<float>(dt / kVelSmooth));
+                smoothedSpeed += vAlpha * (instantSpeed - smoothedSpeed);
+            }
         }
     }
 
@@ -199,6 +210,11 @@ public:
     // Set whether this instance is the current pilot (for overlay label)
     void setOwnIsPilot(bool pilot) { ownIsPilot_.store(pilot ? 1 : 0, std::memory_order_relaxed); }
 
+    // Set whether this instance is a linked non-pilot.
+    // When true, head-follows-camera is forcibly disabled on the GL thread
+    // to prevent camera lock on non-pilot instances.
+    void setLinkedNonPilot(bool nonPilot) { linkedNonPilot_.store(nonPilot ? 1 : 0, std::memory_order_relaxed); }
+
     // Instance list overlay — clickable list in top-left of GL view
     void setShowInstanceList(bool show) { showInstanceList_ = show; repaint(); }
     bool getShowInstanceList() const { return showInstanceList_; }
@@ -235,6 +251,15 @@ private:
 
     // Upload cone geometry (interleaved pos+normal) with index buffer
     void uploadConeVAO();
+
+    // Upload source shape meshes (pyramid, cube, octahedron, torus)
+    void uploadSourceShapeVAOs();
+
+    // Draw a source node using the active source shape (dispatches by shape enum).
+    // Handles rotation animation internally using wall-clock time.
+    void drawSourceShape(const glm::vec3& position, float radius,
+                         const glm::vec3& color, float opacity, int shape,
+                         double timeSeconds, int clusterCount = 7);
 
     // Upload flat 2D arrow geometry (position-only triangles) for direction indicator
     void uploadArrow2DVAO();
@@ -331,6 +356,27 @@ private:
     int    coneWireIndexCount_ = 0;
     GLuint vaoArrow2D_ = 0, vboArrow2D_ = 0;
     int    arrow2DVertexCount_ = 0;
+
+    // Source shape meshes
+    GLuint vaoPyramid_ = 0, vboPyramid_ = 0, iboPyramid_ = 0;
+    int    pyramidIndexCount_ = 0;
+    GLuint vaoPyramidWire_ = 0, iboPyramidWire_ = 0;
+    int    pyramidWireIndexCount_ = 0;
+
+    GLuint vaoCube_ = 0, vboCube_ = 0, iboCube_ = 0;
+    int    cubeIndexCount_ = 0;
+    GLuint vaoCubeWire_ = 0, iboCubeWire_ = 0;
+    int    cubeWireIndexCount_ = 0;
+
+    GLuint vaoOcta_ = 0, vboOcta_ = 0, iboOcta_ = 0;
+    int    octaIndexCount_ = 0;
+    GLuint vaoOctaWire_ = 0, iboOctaWire_ = 0;
+    int    octaWireIndexCount_ = 0;
+
+    GLuint vaoTorus_ = 0, vboTorus_ = 0, iboTorus_ = 0;
+    int    torusIndexCount_ = 0;
+    GLuint vaoTorusWire_ = 0, iboTorusWire_ = 0;
+    int    torusWireIndexCount_ = 0;
 
     GLuint vaoTrailSource_   = 0, vboTrailSource_   = 0;
     GLuint vaoTrailL_        = 0, vboTrailL_        = 0;
@@ -486,6 +532,7 @@ private:
     // Instance name for paint() overlay labels (message thread only)
     juce::String   ownInstanceName_;
     std::atomic<int> ownIsPilot_{0};  // 1 if this instance is the pilot
+    std::atomic<int> linkedNonPilot_{0};  // 1 if linked but NOT the pilot
 
     // Instance list overlay state (message thread only)
     bool showInstanceList_ = false;  // shown when link listener is active
@@ -501,7 +548,12 @@ private:
 
     // Wave emitters: each tracks spawned waves + position averaging
     WaveEmitter ownWaveEmitter_;
+    WaveEmitter ownWaveEmitterL_;   // stereo left node waves
+    WaveEmitter ownWaveEmitterR_;   // stereo right node waves
+    bool prevStereoActive_ = false; // track mode transitions to reset emitters
     WaveEmitter foreignWaveEmitters_[kMaxLinkedSources];
+    WaveEmitter foreignWaveEmittersL_[kMaxLinkedSources];
+    WaveEmitter foreignWaveEmittersR_[kMaxLinkedSources];
 
     // Smoothed foreign source positions for per-frame interpolation (GL thread only)
     struct SmoothedForeignPos {

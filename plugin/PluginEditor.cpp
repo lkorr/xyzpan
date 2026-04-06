@@ -127,9 +127,14 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         addAndMakeVisible(&s);
         addAndMakeVisible(&l);
     };
-    configOrbitSlider(stereoWidthKnob_, stereoWidthLabel_, "Width");
-    // Width is the gateway control — bold label, slightly larger
-    stereoWidthLabel_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+    // Width — hero rotary knob (gateway control for stereo orbit)
+    stereoWidthKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    stereoWidthKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 52, 14);
+    addAndMakeVisible(&stereoWidthKnob_);
+    stereoWidthLabel_.setText("Width", juce::dontSendNotification);
+    stereoWidthLabel_.setJustificationType(juce::Justification::centredRight);
+    stereoWidthLabel_.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+    addAndMakeVisible(&stereoWidthLabel_);
     // Phase + Offset — rotary knobs (placed in row with Face Observer)
     for (auto* knob : {&orbitPhaseKnob_, &orbitOffsetKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -137,11 +142,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         addAndMakeVisible(knob);
     }
     orbitPhaseLabel_.setText("Phase", juce::dontSendNotification);
-    orbitPhaseLabel_.setJustificationType(juce::Justification::centred);
+    orbitPhaseLabel_.setJustificationType(juce::Justification::centredRight);
     orbitPhaseLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     addAndMakeVisible(orbitPhaseLabel_);
     orbitOffsetLabel_.setText("Offset", juce::dontSendNotification);
-    orbitOffsetLabel_.setJustificationType(juce::Justification::centred);
+    orbitOffsetLabel_.setJustificationType(juce::Justification::centredRight);
     orbitOffsetLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     addAndMakeVisible(orbitOffsetLabel_);
 
@@ -170,7 +175,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     faceListenerAtt_ = std::make_unique<BA>(p.apvts, ParamID::STEREO_FACE_LISTENER, faceListenerToggle_);
 
     faceListenerLabel_.setText("Face Observer", juce::dontSendNotification);
-    faceListenerLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    faceListenerLabel_.setFont(juce::Font(juce::FontOptions(9.0f)));
     faceListenerLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(faceListenerLabel_);
 
@@ -399,8 +404,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     rebuildPresetCombo();
     presetCombo_.onChange = [this]() {
         int idx = presetCombo_.getSelectedId() - 1; // Convert back to 0-based
-        if (idx >= 0 && idx < proc_.presetManager.getNumPresets())
+        if (idx >= 0 && idx < proc_.presetManager.getNumPresets()) {
             proc_.presetManager.loadPreset(idx);
+            proc_.getUndoManager().clearUndoHistory();
+        }
     };
 
     addAndMakeVisible(presetPrevBtn_);
@@ -410,6 +417,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         int cur = proc_.presetManager.getCurrentIndex();
         int next = (cur <= 0) ? n - 1 : cur - 1;
         proc_.presetManager.loadPreset(next);
+        proc_.getUndoManager().clearUndoHistory();
         presetCombo_.setSelectedId(next + 1, juce::dontSendNotification);
     };
 
@@ -420,6 +428,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         int cur = proc_.presetManager.getCurrentIndex();
         int next = (cur + 1) % n;
         proc_.presetManager.loadPreset(next);
+        proc_.getUndoManager().clearUndoHistory();
         presetCombo_.setSelectedId(next + 1, juce::dontSendNotification);
     };
 
@@ -452,11 +461,23 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
                 auto xml = juce::parseXML(file);
                 if (xml != nullptr && xml->hasTagName(proc_.apvts.state.getType())) {
                     proc_.apvts.replaceState(juce::ValueTree::fromXml(*xml));
+                    proc_.getUndoManager().clearUndoHistory();
                     proc_.presetManager.setCurrentIndex(-1);
                 }
                 presetCombo_.setSelectedId(0, juce::dontSendNotification);
             });
     };
+
+    // ----- Undo / Redo buttons -----
+    addAndMakeVisible(undoBtn_);
+    undoBtn_.onClick = [this]() { proc_.getUndoManager().undo(); };
+    undoBtn_.setTooltip("Undo (Ctrl+Z)");
+    undoBtn_.setEnabled(false);
+
+    addAndMakeVisible(redoBtn_);
+    redoBtn_.onClick = [this]() { proc_.getUndoManager().redo(); };
+    redoBtn_.setTooltip("Redo (Ctrl+Y)");
+    redoBtn_.setEnabled(false);
 
     // ----- User preferences (theme + avatar persistence) -----
     userPrefs_ = std::make_unique<xyzpan::UserPreferences>();
@@ -595,6 +616,71 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         glView_.setSceneParams(sp);
     };
     customizeContent_.addAndMakeVisible(showLabelsToggle_);
+
+    showArrowToggle_.setToggleState(userPrefs_->sceneParams().showArrow, juce::dontSendNotification);
+    showArrowToggle_.onClick = [this] {
+        auto sp = userPrefs_->sceneParams();
+        sp.showArrow = showArrowToggle_.getToggleState();
+        userPrefs_->setSceneParams(sp);
+        glView_.setSceneParams(sp);
+    };
+    customizeContent_.addAndMakeVisible(showArrowToggle_);
+
+    // ----- Customize tab: source shape combo -----
+    sourceShapeLabel_.setText("Source Shape", juce::dontSendNotification);
+    sourceShapeLabel_.setJustificationType(juce::Justification::centredLeft);
+    sourceShapeLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(sourceShapeLabel_);
+    sourceShapeCombo_.addItem("Sphere",              1);
+    sourceShapeCombo_.addItem("Pyramid",             2);
+    sourceShapeCombo_.addItem("Cube",                3);
+    sourceShapeCombo_.addItem("Octahedron",          4);
+    sourceShapeCombo_.addItem("Ring",                5);
+    sourceShapeCombo_.addItem("Cluster: Spheres",    6);
+    sourceShapeCombo_.addItem("Cluster: Pyramids",   7);
+    sourceShapeCombo_.addItem("Cluster: Cubes",      8);
+    sourceShapeCombo_.addItem("Cluster: Octahedrons",9);
+    sourceShapeCombo_.addItem("Cluster: Rings",     10);
+    sourceShapeCombo_.setSelectedId(userPrefs_->sceneParams().sourceShape + 1, juce::dontSendNotification);
+    sourceShapeCombo_.onChange = [this] {
+        if (sourceShapeCombo_.getSelectedId() > 0) {
+            auto sp = userPrefs_->sceneParams();
+            sp.sourceShape = sourceShapeCombo_.getSelectedId() - 1;
+            userPrefs_->setSceneParams(sp);
+            glView_.setSceneParams(sp);
+            proc_.setSourceShape(sp.sourceShape);
+            const bool isCluster = sp.sourceShape >= xyzpan::kShapeClusterSpheres;
+            clusterCountSlider_.setVisible(isCluster);
+            clusterCountLabel_.setVisible(isCluster);
+            resized();
+        }
+    };
+    customizeContent_.addAndMakeVisible(sourceShapeCombo_);
+    // Set initial processor source shape for cross-instance rendering
+    proc_.setSourceShape(userPrefs_->sceneParams().sourceShape);
+
+    // ----- Customize tab: cluster count slider (visible only for cluster shapes) -----
+    clusterCountLabel_.setText("Cluster Size", juce::dontSendNotification);
+    clusterCountLabel_.setJustificationType(juce::Justification::centredLeft);
+    clusterCountLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(clusterCountLabel_);
+    clusterCountSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    clusterCountSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 28, 16);
+    clusterCountSlider_.setRange(1.0, 7.0, 1.0);
+    clusterCountSlider_.setValue(userPrefs_->sceneParams().clusterCount, juce::dontSendNotification);
+    clusterCountSlider_.onValueChange = [this] {
+        auto sp = userPrefs_->sceneParams();
+        sp.clusterCount = static_cast<int>(clusterCountSlider_.getValue());
+        userPrefs_->setSceneParams(sp);
+        glView_.setSceneParams(sp);
+    };
+    customizeContent_.addAndMakeVisible(clusterCountSlider_);
+    // Initial visibility based on current shape
+    {
+        const bool isCluster = userPrefs_->sceneParams().sourceShape >= xyzpan::kShapeClusterSpheres;
+        clusterCountSlider_.setVisible(isCluster);
+        clusterCountLabel_.setVisible(isCluster);
+    }
 
     showAudibleSphereToggle_.setClickingTogglesState(true);
     showAudibleSphereAtt_ = std::make_unique<BA>(p.apvts, ParamID::SHOW_AUDIBLE_SPHERE, showAudibleSphereToggle_);
@@ -1079,7 +1165,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Window sizing
     setResizable(true, true);
-    setResizeLimits(kMinW, kMinH, 1800, 1600);
+    setResizeLimits(kMinW, kMinH, kMaxW, kMaxH);
     setSize(kDefaultW, kDefaultH);
 }
 
@@ -1320,16 +1406,9 @@ void XYZPanEditor::paint(juce::Graphics& g)
                 juce::Colour(ct.darkIron), static_cast<float>(ox + ow), static_cast<float>(hdrY), false));
             g.fillRect(hdrRect);
 
-            const bool orbitActive = stereoWidthKnob_.getValue() > 0.0;
-            g.setColour(orbitActive ? juce::Colour(ct.brightGold) : juce::Colour(ct.bronze).withAlpha(0.5f));
+            g.setColour(juce::Colour(ct.brightGold));
             g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
             g.drawText("STEREO ORBIT", hdrRect.reduced(10, 0), juce::Justification::centredLeft);
-
-            // Width badge
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
-            g.setColour(juce::Colour(ct.bronze).withAlpha(0.7f));
-            juce::String badge = "W:" + juce::String(stereoWidthKnob_.getValue(), 2);
-            g.drawText(badge, ox + ow - 56, hdrY, 50, kSectionHdrH, juce::Justification::centredRight);
 
             g.setColour(juce::Colour(ct.bronze).withAlpha(0.6f));
             g.drawHorizontalLine(hdrY + kSectionHdrH - 1, static_cast<float>(ox), static_cast<float>(ox + ow));
@@ -1494,10 +1573,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
         const int ox = lo.orbitX;
         const int ow = lo.orbitW;
         const int stripW = ow / 3;
-        // Layout must match resized(): single top row (knobs + width slider) + divGap, then LFOs, then speedRow
+        // Layout must match resized(): single top row (hero knob + Phase/Offset) + divGap, then LFOs, then speedRow
         const int sliderH = 20, divGap = 6;
-        const int knobSz = 40, knobLabelH = 12;
-        const int topRowH = knobSz + knobLabelH;
+        const int heroSz = 54;
+        const int topRowH = heroSz;
         const int speedRowH = sliderH + 4;
         const int topCtrlH = topRowH + divGap;
         const int lfoTop = lo.contentTop + topCtrlH;
@@ -1578,15 +1657,19 @@ void XYZPanEditor::resized()
     auto leftCol = b.removeFromLeft(kLeftColW);
     {
         auto presetBar = leftCol.removeFromTop(kPresetBarH);
-        auto saveBtnArea = presetBar.removeFromRight(54);
-        auto loadBtnArea = presetBar.removeFromRight(54);
-        auto nextBtnArea = presetBar.removeFromRight(24);
-        auto prevBtnArea = presetBar.removeFromRight(24);
+        auto saveBtnArea  = presetBar.removeFromRight(54);
+        auto loadBtnArea  = presetBar.removeFromRight(54);
+        auto redoBtnArea  = presetBar.removeFromRight(38);
+        auto undoBtnArea  = presetBar.removeFromRight(38);
+        auto nextBtnArea  = presetBar.removeFromRight(24);
+        auto prevBtnArea  = presetBar.removeFromRight(24);
         auto tooltipBtnArea = presetBar.removeFromLeft(28);
         tooltipToggle_.setBounds(tooltipBtnArea.reduced(2));
         presetPrevBtn_.setBounds(prevBtnArea.reduced(1, 2));
         presetNextBtn_.setBounds(nextBtnArea.reduced(1, 2));
         presetCombo_.setBounds(presetBar.reduced(kPadding, 2));
+        undoBtn_.setBounds(undoBtnArea.reduced(2));
+        redoBtn_.setBounds(redoBtnArea.reduced(2));
         presetSaveBtn_.setBounds(saveBtnArea.reduced(2));
         presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
     }
@@ -1754,6 +1837,19 @@ void XYZPanEditor::resized()
 
         showLabelsToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
         cy += comboH + gap;
+
+        showArrowToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
+        cy += comboH + gap;
+
+        sourceShapeLabel_.setBounds(pad, cy, labelW, comboH);
+        sourceShapeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
+
+        if (clusterCountSlider_.isVisible()) {
+            clusterCountLabel_.setBounds(pad, cy, labelW, sliderH);
+            clusterCountSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
+            cy += sliderH + gap;
+        }
 
         showAudibleSphereToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
         cy += comboH + gap;
@@ -1943,10 +2039,11 @@ void XYZPanEditor::resized()
             const int sliderH = 20;
             const int divGap = 6;  // space for horizontal divider
 
-            // Single top row: Width slider (left) | Phase knob | Offset knob | Face Observer (right)
-            const int knobSz = 40;
-            const int knobLabelH = 12;
-            const int topRowH = knobSz + knobLabelH;  // knob + label below
+            // Top row: [label Width knob] [label Phase knob] [label Offset knob] [Face Observer]
+            // Evenly distributed across full panel width.
+            const int heroSz = 54;    // Width knob — slightly larger than siblings
+            const int knobSz = 50;    // Phase / Offset
+            const int topRowH = heroSz;
             const int topCtrlH = topRowH + divGap;
 
             const int speedRowH = sliderH + 4;  // speed row just below LFOs
@@ -1956,40 +2053,47 @@ void XYZPanEditor::resized()
             const int stripW = lfoTotalW / 3;
             const int lastStripW = lfoTotalW - stripW * 2;
 
-            // Right-side controls: Phase knob + Offset knob + Face Observer
-            const int knobCellW = knobSz + 6;
-            const int boxSz = 18;
-            const int cbGap = 4;
-            const int cbLabelW = 90;  // enough for "Face Observer"
-            const int rightCtrlW = knobCellW * 2 + 4 + boxSz + cbGap + cbLabelW + pad;
-
-            // Width slider fills the remaining left portion
-            const int widthSliderW = ow - pad * 2 - labelW - rightCtrlW;
-
             {
                 const int rowY = contentTop;
+                const int boxSz = 16;
+                const int cbGap = 3;
+                const int cbLabelW = 64;
 
-                // Width slider — left side
-                stereoWidthLabel_.setBounds(ox + pad, rowY + (topRowH - sliderH) / 2, labelW, sliderH);
-                stereoWidthKnob_.setBounds(ox + pad + labelW, rowY + (topRowH - sliderH) / 2,
-                                            widthSliderW, sliderH);
+                // Measure fixed content widths
+                const int widthLabelW = 36;   // "Width"
+                const int knobLabelW  = 36;   // "Phase" / "Offset"
+                const int widthCellW  = widthLabelW + heroSz;
+                const int phaseCellW  = knobLabelW + knobSz;
+                const int offsetCellW = knobLabelW + knobSz;
+                const int faceCellW   = boxSz + cbGap + cbLabelW;
 
-                // Phase knob — right of width slider
-                const int phaseX = ox + pad + labelW + widthSliderW + 4;
-                orbitPhaseKnob_.setBounds(phaseX, rowY, knobSz, knobSz);
-                orbitPhaseLabel_.setBounds(phaseX - 3, rowY + knobSz, knobCellW, knobLabelH);
+                const int totalFixedW = widthCellW + phaseCellW + offsetCellW + faceCellW;
+                const int usableW = ow - pad * 2;
+                const int totalGap = usableW - totalFixedW;
+                const int gapCount = 3;  // gaps between 4 items
+                const int gap = juce::jmax(8, totalGap / gapCount);
 
-                // Offset knob — right of phase
-                const int offsetX = phaseX + knobCellW + 4;
-                orbitOffsetKnob_.setBounds(offsetX, rowY, knobSz, knobSz);
-                orbitOffsetLabel_.setBounds(offsetX - 3, rowY + knobSz, knobCellW, knobLabelH);
+                int cx = ox + pad;
 
-                // Face Observer checkbox + label — right of offset, vertically centered
-                const int cbX = offsetX + knobCellW + 6;
+                // Width — label left, hero knob right
+                stereoWidthLabel_.setBounds(cx, rowY + (topRowH - 14) / 2, widthLabelW, 14);
+                stereoWidthKnob_.setBounds(cx + widthLabelW, rowY + (topRowH - heroSz) / 2, heroSz, heroSz);
+                cx += widthCellW + gap;
+
+                // Phase — label left, knob right
+                orbitPhaseLabel_.setBounds(cx, rowY + (topRowH - 14) / 2, knobLabelW, 14);
+                orbitPhaseKnob_.setBounds(cx + knobLabelW, rowY + (topRowH - knobSz) / 2, knobSz, knobSz);
+                cx += phaseCellW + gap;
+
+                // Offset — label left, knob right
+                orbitOffsetLabel_.setBounds(cx, rowY + (topRowH - 14) / 2, knobLabelW, 14);
+                orbitOffsetKnob_.setBounds(cx + knobLabelW, rowY + (topRowH - knobSz) / 2, knobSz, knobSz);
+                cx += offsetCellW + gap;
+
+                // Face Observer — checkbox + label, vertically centered
                 const int cbCenterY = rowY + (topRowH - boxSz) / 2;
-                faceListenerToggle_.setBounds(cbX, cbCenterY, boxSz, boxSz);
-                faceListenerLabel_.setBounds(cbX + boxSz + cbGap, cbCenterY - 2,
-                                              cbLabelW, boxSz + 4);
+                faceListenerToggle_.setBounds(cx, cbCenterY, boxSz, boxSz);
+                faceListenerLabel_.setBounds(cx + boxSz + cbGap, cbCenterY - 2, cbLabelW, boxSz + 4);
             }
 
             // LFO strips below top controls (after divider gap)
@@ -2235,6 +2339,9 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     // Instance list overlay follows link state
     glView_.setShowInstanceList(linked);
 
+    // Notify GL view of non-pilot status so it can gate head-follows on the GL thread
+    glView_.setLinkedNonPilot(linked && !isPilot);
+
     // Walker + orientation knobs: disabled when linked-non-pilot
     for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_,
                        &listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_})
@@ -2341,6 +2448,21 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
         }
         return zone != RandZone::None;
     }
+
+    if (key.getModifiers().isCtrlDown()) {
+        if (key.getKeyCode() == 'Z') {
+            if (key.getModifiers().isShiftDown())
+                proc_.getUndoManager().redo();
+            else
+                proc_.getUndoManager().undo();
+            return true;
+        }
+        if (key.getKeyCode() == 'Y') {
+            proc_.getUndoManager().redo();
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -2362,6 +2484,10 @@ void XYZPanEditor::endWasdGestureIfActive()
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
 {
+    // Update undo/redo button enabled state
+    undoBtn_.setEnabled(proc_.getUndoManager().canUndo());
+    redoBtn_.setEnabled(proc_.getUndoManager().canRedo());
+
     // Show audible sphere while sphere knob is hovered or being dragged
     glView_.setSphereKnobActive(sphereRadiusKnob_.isMouseOver(true)
                                 || sphereRadiusKnob_.isMouseButtonDown());
@@ -2388,6 +2514,7 @@ void XYZPanEditor::timerCallback()
         // Keep GL view instance name + pilot status in sync
         glView_.setOwnInstanceName(proc_.getInstanceNameValue());
         glView_.setOwnIsPilot(proc_.getListenerHub().isPilot(&proc_));
+        glView_.setLinkedNonPilot(proc_.isLinkedNonPilot());
     }
 
     if (!wasdToggle_.getToggleState()) {

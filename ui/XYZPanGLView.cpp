@@ -141,6 +141,9 @@ void XYZPanGLView::newOpenGLContextCreated()
     // Build flat 2D arrow for direction indicator
     uploadArrow2DVAO();
 
+    // Build source shape meshes (pyramid, cube, octahedron, torus)
+    uploadSourceShapeVAOs();
+
     // Create trail VAO/VBOs
     createTrailVAO(vaoTrailSource_, vboTrailSource_, TrailBuffer::kCapacity);
     createTrailVAO(vaoTrailL_,      vboTrailL_,      TrailBuffer::kCapacity);
@@ -227,7 +230,8 @@ void XYZPanGLView::parameterChanged(const juce::String& id, float newValue)
 {
     if (!headFollowsActive_
         || (accumulator_ && accumulator_->drivingFromInput->load(std::memory_order_relaxed))
-        || (receivingBroadcast_ && receivingBroadcast_->load(std::memory_order_relaxed)))
+        || (receivingBroadcast_ && receivingBroadcast_->load(std::memory_order_relaxed))
+        || linkedNonPilot_.load(std::memory_order_relaxed) != 0)
         return;
 
     // Path B: external write (DAW automation / knob) -> sync accumulator + camera
@@ -441,8 +445,13 @@ void XYZPanGLView::renderOpenGL()
 
     // Head-follows-camera: when toggle is ON, map camera orbit angles
     // to listener yaw/pitch params regardless of zoom level.
+    // IMPORTANT: only the pilot (or unlinked instance) may drive head-follows.
+    // Non-pilot instances receive orientation via broadcast — activating
+    // head-follows on them would lock their camera and fight the broadcast.
     {
-        const bool toggleOn = apvts_.getRawParameterValue("head_follows_camera")->load() >= 0.5f;
+        const bool isNonPilot = linkedNonPilot_.load(std::memory_order_relaxed) != 0;
+        const bool toggleOn = !isNonPilot
+                           && apvts_.getRawParameterValue("head_follows_camera")->load() >= 0.5f;
 
         if (toggleOn && !headFollowsActive_) {
             // Entering head-follows mode: save current param values and seed accumulator
@@ -484,14 +493,14 @@ void XYZPanGLView::renderOpenGL()
 
     // Draw listener node at origin — themed color, avatar-parameterized geometry
     if (headAlpha > 0.0f) {
-        // Write depth only when fully opaque solid to avoid visual artifacts
+        // Transparent body types: write depth via a color-masked pre-pass so the
+        // observer head correctly occludes objects behind it, then draw the visible
+        // transparent geometry on top without depth writes.
         const bool transparentBody = headAlpha < 1.0f
                                    || avatar.bodyType == kBodyGrid
                                    || avatar.bodyType == kBodyGhost
                                    || avatar.bodyType == kBodyGlass
                                    || avatar.bodyType == kBodyNone;
-        if (transparentBody)
-            glDepthMask(GL_FALSE);
 
         const float hs = avatar.headSize;
 
@@ -516,6 +525,19 @@ void XYZPanGLView::renderOpenGL()
             headModel = glm::scale(headModel, glm::vec3(kBaseHeadRadius * hs,
                                                          kBaseHeadRadius * hs * avatar.headElongation,
                                                          kBaseHeadRadius * hs));
+
+            // Depth pre-pass for transparent bodies: write depth only (no color)
+            // so the head silhouette occludes objects behind it.
+            if (transparentBody && avatar.bodyType != kBodyNone) {
+                glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+                glDepthMask(GL_TRUE);
+                drawSphereWithModel(headModel, headCol, 1.0f);
+                glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            }
+
+            if (transparentBody)
+                glDepthMask(GL_FALSE);
+
             drawAvatarSphere(headModel, headCol, headAlpha, avatar.bodyType);
         }
 
@@ -572,7 +594,7 @@ void XYZPanGLView::renderOpenGL()
         }
 
         // Direction arrow — flat 2D arrow pointing forward from the face
-        {
+        if (scene.showArrow) {
             constexpr float kGap   = 0.065f;  // gap from head center
             constexpr float kLen   = 0.08f;   // total arrow length
             constexpr float kWidth = 0.02f;   // half-width scale
@@ -612,7 +634,22 @@ void XYZPanGLView::renderOpenGL()
         glBindVertexArray(vaoSphere_);
 
         // Sound wave pulses — filled transparent spheres expanding outward
-        drawSoundWaves(ownWaveEmitter_, sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+        // When stereo is active, emit from L/R nodes individually; otherwise from center.
+        if (stereoActive) {
+            // Reset L/R emitters on mono→stereo transition
+            if (!prevStereoActive_) {
+                ownWaveEmitterL_ = WaveEmitter{};
+                ownWaveEmitterR_ = WaveEmitter{};
+            }
+            drawSoundWaves(ownWaveEmitterL_, lNodePos, sr, smoothedRms_, theme.glStereoL, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            drawSoundWaves(ownWaveEmitterR_, rNodePos, sr, smoothedRms_, theme.glStereoR, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+        } else {
+            // Reset center emitter on stereo→mono transition
+            if (prevStereoActive_)
+                ownWaveEmitter_ = WaveEmitter{};
+            drawSoundWaves(ownWaveEmitter_, sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+        }
+        prevStereoActive_ = stereoActive;
 
         glDepthMask(GL_TRUE);
     }
@@ -631,7 +668,7 @@ void XYZPanGLView::renderOpenGL()
         const float mainRadius = stereoActive ? 0.0375f : 0.048f;
         if (mainOpacity > 0.0f) {
             if (stereoActive) glDepthMask(GL_FALSE);
-            drawSphere(sourcePos, mainRadius, sourceColor, mainOpacity);
+            drawSourceShape(sourcePos, mainRadius, sourceColor, mainOpacity, scene.sourceShape, now, scene.clusterCount);
             if (stereoActive) glDepthMask(GL_TRUE);
         }
     }
@@ -655,12 +692,12 @@ void XYZPanGLView::renderOpenGL()
 
         if (lCamZ < rCamZ) {
             // L is farther — draw L first, then R on top
-            drawSphere(lNodePos, 0.045f, leftColor, lOpacity);
-            drawSphere(rNodePos, 0.045f, rightColor, rOpacity);
+            drawSourceShape(lNodePos, 0.045f, leftColor, lOpacity, scene.sourceShape, now, scene.clusterCount);
+            drawSourceShape(rNodePos, 0.045f, rightColor, rOpacity, scene.sourceShape, now, scene.clusterCount);
         } else {
             // R is farther — draw R first, then L on top
-            drawSphere(rNodePos, 0.045f, rightColor, rOpacity);
-            drawSphere(lNodePos, 0.045f, leftColor, lOpacity);
+            drawSourceShape(rNodePos, 0.045f, rightColor, rOpacity, scene.sourceShape, now, scene.clusterCount);
+            drawSourceShape(lNodePos, 0.045f, leftColor, lOpacity, scene.sourceShape, now, scene.clusterCount);
         }
     }
 
@@ -677,6 +714,8 @@ void XYZPanGLView::renderOpenGL()
                                         fs.sphereRadius };
             // Reset wave emitter + RMS so new source gets fresh wave spawning
             foreignWaveEmitters_[ri] = WaveEmitter{};
+            foreignWaveEmittersL_[ri] = WaveEmitter{};
+            foreignWaveEmittersR_[ri] = WaveEmitter{};
             foreignSmoothedRms_[ri] = 0.0f;
         }
     }
@@ -734,7 +773,14 @@ void XYZPanGLView::renderOpenGL()
             // Smooth foreign source RMS and draw sound waves
             const float fRmsCoeff = (fs.inputRms > foreignSmoothedRms_[ri]) ? kRmsAttack : kRmsRelease;
             foreignSmoothedRms_[ri] += fRmsCoeff * (fs.inputRms - foreignSmoothedRms_[ri]);
-            drawSoundWaves(foreignWaveEmitters_[ri], fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            if (fs.stereoWidth > 0.0f) {
+                const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
+                const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);
+                drawSoundWaves(foreignWaveEmittersL_[ri], fL, fsr, foreignSmoothedRms_[ri], color * 0.8f, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+                drawSoundWaves(foreignWaveEmittersR_[ri], fR, fsr, foreignSmoothedRms_[ri], color * 0.8f, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            } else {
+                drawSoundWaves(foreignWaveEmitters_[ri], fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            }
         }
         glDepthMask(GL_TRUE);
 
@@ -745,15 +791,15 @@ void XYZPanGLView::renderOpenGL()
             const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
             const auto& sp = foreignSmoothedPos_[ri];
             const glm::vec3 fPos(sp.x, sp.z, -sp.y);
-            drawSphere(fPos, 0.035f, color, 0.6f);
+            drawSourceShape(fPos, 0.035f, color, 0.6f, fs.sourceShape, now, scene.clusterCount);
             // Highlight ring around focused foreign source
             if (fs.colorIndex == focusIdx)
                 drawSphere(fPos, 0.050f, color, 0.25f);
             if (fs.stereoWidth > 0.0f) {
                 const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
                 const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);
-                drawSphere(fL, 0.028f, color * 0.8f, 0.45f);
-                drawSphere(fR, 0.028f, color * 0.8f, 0.45f);
+                drawSourceShape(fL, 0.028f, color * 0.8f, 0.45f, fs.sourceShape, now, scene.clusterCount);
+                drawSourceShape(fR, 0.028f, color * 0.8f, 0.45f, fs.sourceShape, now, scene.clusterCount);
             }
         }
     }
@@ -870,6 +916,28 @@ void XYZPanGLView::openGLContextClosing()
     if (iboConeWire_) { glDeleteBuffers(1, &iboConeWire_);      iboConeWire_ = 0; }
     if (vaoArrow2D_) { glDeleteVertexArrays(1, &vaoArrow2D_); vaoArrow2D_ = 0; }
     if (vboArrow2D_) { glDeleteBuffers(1, &vboArrow2D_);      vboArrow2D_ = 0; }
+
+    // Source shape meshes
+    if (vaoPyramid_)     { glDeleteVertexArrays(1, &vaoPyramid_);     vaoPyramid_ = 0; }
+    if (vboPyramid_)     { glDeleteBuffers(1, &vboPyramid_);          vboPyramid_ = 0; }
+    if (iboPyramid_)     { glDeleteBuffers(1, &iboPyramid_);          iboPyramid_ = 0; }
+    if (vaoPyramidWire_) { glDeleteVertexArrays(1, &vaoPyramidWire_); vaoPyramidWire_ = 0; }
+    if (iboPyramidWire_) { glDeleteBuffers(1, &iboPyramidWire_);      iboPyramidWire_ = 0; }
+    if (vaoCube_)        { glDeleteVertexArrays(1, &vaoCube_);        vaoCube_ = 0; }
+    if (vboCube_)        { glDeleteBuffers(1, &vboCube_);             vboCube_ = 0; }
+    if (iboCube_)        { glDeleteBuffers(1, &iboCube_);             iboCube_ = 0; }
+    if (vaoCubeWire_)    { glDeleteVertexArrays(1, &vaoCubeWire_);    vaoCubeWire_ = 0; }
+    if (iboCubeWire_)    { glDeleteBuffers(1, &iboCubeWire_);         iboCubeWire_ = 0; }
+    if (vaoOcta_)        { glDeleteVertexArrays(1, &vaoOcta_);        vaoOcta_ = 0; }
+    if (vboOcta_)        { glDeleteBuffers(1, &vboOcta_);             vboOcta_ = 0; }
+    if (iboOcta_)        { glDeleteBuffers(1, &iboOcta_);             iboOcta_ = 0; }
+    if (vaoOctaWire_)    { glDeleteVertexArrays(1, &vaoOctaWire_);    vaoOctaWire_ = 0; }
+    if (iboOctaWire_)    { glDeleteBuffers(1, &iboOctaWire_);         iboOctaWire_ = 0; }
+    if (vaoTorus_)       { glDeleteVertexArrays(1, &vaoTorus_);       vaoTorus_ = 0; }
+    if (vboTorus_)       { glDeleteBuffers(1, &vboTorus_);            vboTorus_ = 0; }
+    if (iboTorus_)       { glDeleteBuffers(1, &iboTorus_);            iboTorus_ = 0; }
+    if (vaoTorusWire_)   { glDeleteVertexArrays(1, &vaoTorusWire_);   vaoTorusWire_ = 0; }
+    if (iboTorusWire_)   { glDeleteBuffers(1, &iboTorusWire_);        iboTorusWire_ = 0; }
 
     if (vaoTrailSource_) { glDeleteVertexArrays(1, &vaoTrailSource_); vaoTrailSource_ = 0; }
     if (vboTrailSource_) { glDeleteBuffers(1, &vboTrailSource_);      vboTrailSource_ = 0; }
@@ -1610,14 +1678,24 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
     if (sphereRadius < 0.001f || intensity < 0.001f
         || baseOpacity < 0.0001f || numWaves < 1) return;
 
-    // Update position average
+    // Update position average (also tracks velocity)
     const double dt = (emitter.lastSpawnTime > 0.0)
                       ? (nowSeconds - emitter.lastSpawnTime) : 0.0;
     emitter.updateAverage(center, dt);
 
     // Wave lifetime: time for a wave to expand from 0 to sphereRadius
     const float waveLifetime = (speed > 1e-5f) ? (1.0f / speed) : 100.0f;
-    const float spawnInterval = waveLifetime / static_cast<float>(numWaves);
+    const float baseInterval = waveLifetime / static_cast<float>(numWaves);
+
+    // Adaptive spawn rate: increase spawns when source moves fast so birth
+    // positions stay close together.  speedRatio measures how far the source
+    // travels per base spawn interval relative to the sphere radius — when
+    // it exceeds ~0.15 the gaps become visible.
+    const float travelPerSpawn = emitter.smoothedSpeed * baseInterval;
+    const float gapRatio = (sphereRadius > 1e-5f) ? (travelPerSpawn / sphereRadius) : 0.0f;
+    // spawnMul: 1x at rest, ramps up to 4x as gap grows, capped at 4x
+    const float spawnMul = std::clamp(1.0f + gapRatio * 6.0f, 1.0f, 4.0f);
+    const float spawnInterval = baseInterval / spawnMul;
 
     // Spawn new waves at regular intervals (only if there's audible signal)
     if (inputRms >= 0.001f) {
@@ -1635,6 +1713,10 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
     // Volume-based opacity multiplier: 0dB (rms=1.0) → 2x, -6dB → 1x, -12dB → 0.5x
     const float rmsMul = std::clamp(inputRms * 2.0f, 0.0f, 2.0f);
 
+    // Scale down per-wave opacity when spawning faster to keep total visual
+    // energy roughly constant (more waves × less opacity ≈ same brightness)
+    const float velocityOpacityMul = 1.0f / spawnMul;
+
     // Draw all live waves
     for (int i = 0; i < emitter.count; ++i) {
         const int idx = (emitter.head - i + WaveEmitter::kMaxWaves) % WaveEmitter::kMaxWaves;
@@ -1650,7 +1732,7 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
 
         float fadeIn  = std::clamp(phase * 5.0f, 0.0f, 1.0f);
         float fadeOut = 1.0f - phase;
-        float waveOpacity = fadeIn * fadeOut * baseOpacity * intensity * rmsMul;
+        float waveOpacity = fadeIn * fadeOut * baseOpacity * intensity * rmsMul * velocityOpacityMul;
 
         if (waveOpacity < 0.001f) continue;
 
@@ -1782,6 +1864,244 @@ void XYZPanGLView::drawConeWireframeWithModel(const glm::mat4& model,
     glBindVertexArray(vaoConeWire_);
     glDrawElements(GL_LINES, coneWireIndexCount_, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
+}
+
+// ---------------------------------------------------------------------------
+// uploadSourceShapeVAOs — pyramid, cube, octahedron, torus
+// ---------------------------------------------------------------------------
+void XYZPanGLView::uploadSourceShapeVAOs()
+{
+    // Helper: upload an indexed mesh (interleaved pos+normal) and its wireframe
+    auto uploadIndexedMesh = [this](const SphereGeometry& geo, const std::vector<unsigned>& wireIdx,
+                                     GLuint& vao, GLuint& vbo, GLuint& ibo, int& indexCount,
+                                     GLuint& wireVao, GLuint& wireIbo, int& wireCount) {
+        // Solid VAO
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glGenBuffers(1, &ibo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(geo.vertices.size() * sizeof(float)),
+                     geo.vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(geo.indices.size() * sizeof(unsigned)),
+                     geo.indices.data(), GL_STATIC_DRAW);
+        indexCount = static_cast<int>(geo.indices.size());
+        const GLsizei stride = 6 * sizeof(float);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride,
+                              reinterpret_cast<const void*>(3 * sizeof(float)));
+        glBindVertexArray(0);
+
+        // Wireframe VAO (shares VBO)
+        glGenVertexArrays(1, &wireVao);
+        glGenBuffers(1, &wireIbo);
+        glBindVertexArray(wireVao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, wireIbo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(wireIdx.size() * sizeof(unsigned)),
+                     wireIdx.data(), GL_STATIC_DRAW);
+        wireCount = static_cast<int>(wireIdx.size());
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    };
+
+    // Pyramid
+    {
+        auto geo = buildPyramid();
+        auto wire = buildPyramidWireframe();
+        uploadIndexedMesh(geo, wire,
+                          vaoPyramid_, vboPyramid_, iboPyramid_, pyramidIndexCount_,
+                          vaoPyramidWire_, iboPyramidWire_, pyramidWireIndexCount_);
+    }
+
+    // Cube
+    {
+        auto geo = buildCube();
+        auto wire = buildCubeWireframe();
+        uploadIndexedMesh(geo, wire,
+                          vaoCube_, vboCube_, iboCube_, cubeIndexCount_,
+                          vaoCubeWire_, iboCubeWire_, cubeWireIndexCount_);
+    }
+
+    // Octahedron
+    {
+        auto geo = buildOctahedron();
+        auto wire = buildOctahedronWireframe();
+        uploadIndexedMesh(geo, wire,
+                          vaoOcta_, vboOcta_, iboOcta_, octaIndexCount_,
+                          vaoOctaWire_, iboOctaWire_, octaWireIndexCount_);
+    }
+
+    // Torus
+    {
+        auto geo = buildTorus(0.7f, 0.25f, 24, 12);
+        auto wire = buildTorusWireframe(24, 12);
+        uploadIndexedMesh(geo, wire,
+                          vaoTorus_, vboTorus_, iboTorus_, torusIndexCount_,
+                          vaoTorusWire_, iboTorusWire_, torusWireIndexCount_);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// drawSourceShape — dispatches to the correct mesh based on shape enum
+// ---------------------------------------------------------------------------
+void XYZPanGLView::drawSourceShape(const glm::vec3& position, float radius,
+                                    const glm::vec3& color, float opacity,
+                                    int shape, double timeSeconds, int clusterCount)
+{
+    if (!sphereShader_) return;
+
+    const float angle = static_cast<float>(std::fmod(timeSeconds * 45.0, 360.0));
+    const float radAngle = glm::radians(angle);
+
+    auto makeModel = [&](float scale) {
+        return glm::scale(
+            glm::rotate(
+                glm::translate(glm::mat4(1.0f), position),
+                radAngle, glm::vec3(0.0f, 1.0f, 0.0f)),
+            glm::vec3(scale));
+    };
+
+    auto drawMeshAt = [&](GLuint vao, int idxCount, const glm::mat4& model) {
+        if (vao == 0 || idxCount == 0) return;
+        glBindVertexArray(vao);
+        sphereShader_->setUniformMat4("model", glm::value_ptr(model), 1, GL_FALSE);
+        sphereShader_->setUniform("nodeColor", color.r, color.g, color.b);
+        sphereShader_->setUniform("opacity", opacity);
+        sphereShader_->setUniform("edgeFade", 0.0f);
+        glDrawElements(GL_TRIANGLES, idxCount, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(vaoSphere_);
+    };
+
+    auto drawMesh = [&](GLuint vao, int idxCount, float scale) {
+        drawMeshAt(vao, idxCount, makeModel(scale));
+    };
+
+    auto drawWire = [&](GLuint wireVao, int wireCount, float scale) {
+        if (!lineShader_ || wireVao == 0 || wireCount == 0) return;
+        glm::mat4 model = makeModel(scale);
+        lineShader_->use();
+        lineShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+        lineShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+        lineShader_->setUniformMat4("model",      glm::value_ptr(model),       1, GL_FALSE);
+        lineShader_->setUniform("lineColor", color.r, color.g, color.b);
+        lineShader_->setUniform("opacity", opacity * 0.6f);
+        glBindVertexArray(wireVao);
+        glDrawElements(GL_LINES, wireCount, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+        // Re-establish sphere shader for subsequent draws
+        sphereShader_->use();
+        sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+        sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+        const glm::vec3 ld = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+        sphereShader_->setUniform("lightDir", ld.x, ld.y, ld.z);
+        glBindVertexArray(vaoSphere_);
+    };
+
+    // Chaotic cluster drawing — shared by all cluster variants.
+    // Each particle has unique orbit inclination, speed, phase, and spin axis
+    // to produce noisy, 3D-spread motion rather than a flat donut.
+    auto drawCluster = [&](GLuint vao, int idxCount, bool isSphere) {
+        constexpr int kMaxCluster = 7;
+        const int num = std::clamp(clusterCount, 1, kMaxCluster);
+        const float miniR = radius * 0.5f;
+        const float orbitR = radius * 1.6f;
+
+        // Per-particle deterministic "random" seeds for variety
+        static constexpr float kPhaseOffsets[kMaxCluster]  = { 0.0f, 2.19f, 4.01f, 1.37f, 5.28f, 3.49f, 0.83f };
+        static constexpr float kSpeedMuls[kMaxCluster]     = { 1.0f, 1.35f, 0.7f, 1.6f, 0.9f, 1.2f, 0.55f };
+        static constexpr float kInclinations[kMaxCluster]  = { 0.0f, 0.8f, -0.6f, 1.3f, -1.1f, 0.4f, -0.9f };
+        static constexpr float kBobFreqs[kMaxCluster]      = { 1.7f, 2.3f, 1.1f, 3.0f, 1.5f, 2.7f, 0.8f };
+        static constexpr float kBobAmps[kMaxCluster]        = { 0.4f, 0.6f, 0.3f, 0.5f, 0.7f, 0.35f, 0.55f };
+        static constexpr float kSpinSpeeds[kMaxCluster]     = { 1.0f, -1.5f, 0.8f, -0.6f, 1.3f, -1.1f, 0.7f };
+        static constexpr float kSizeVary[kMaxCluster]       = { 1.0f, 0.75f, 1.15f, 0.85f, 1.1f, 0.7f, 0.95f };
+
+        for (int i = 0; i < num; ++i) {
+            const float t = static_cast<float>(timeSeconds * double(kSpeedMuls[i])) + kPhaseOffsets[i];
+            const float orbitAngle = t * 1.2f;
+            const float incl = kInclinations[i];
+
+            // 3D orbit: rotate base XZ circle by inclination around X axis
+            const float cx = orbitR * std::cos(orbitAngle);
+            const float cz = orbitR * std::sin(orbitAngle);
+            // Apply inclination: tilt the orbit plane
+            const float oy = cz * std::sin(incl) + std::sin(t * kBobFreqs[i]) * orbitR * kBobAmps[i] * 0.3f;
+            const float oz = cz * std::cos(incl);
+
+            const glm::vec3 offset(cx, oy, oz);
+            const float localAngle = static_cast<float>(timeSeconds) * kSpinSpeeds[i] * 3.0f;
+            // Per-particle spin axis — tilted for variety
+            const glm::vec3 spinAxis = glm::normalize(glm::vec3(
+                std::sin(kPhaseOffsets[i]),
+                1.0f,
+                std::cos(kPhaseOffsets[i] * 1.7f)));
+            const float particleSize = miniR * kSizeVary[i];
+
+            if (isSphere) {
+                drawSphere(position + offset, particleSize, color, opacity);
+            } else {
+                glm::mat4 model = glm::scale(
+                    glm::rotate(
+                        glm::translate(glm::mat4(1.0f), position + offset),
+                        localAngle, spinAxis),
+                    glm::vec3(particleSize));
+                drawMeshAt(vao, idxCount, model);
+            }
+        }
+    };
+
+    switch (static_cast<SourceShape>(shape)) {
+        default:
+        case kShapeSphere:
+            drawSphere(position, radius, color, opacity);
+            break;
+
+        case kShapePyramid:
+            drawMesh(vaoPyramid_, pyramidIndexCount_, radius * 1.4f);
+            break;
+
+        case kShapeCube:
+            drawMesh(vaoCube_, cubeIndexCount_, radius * 1.3f);
+            break;
+
+        case kShapeOctahedron:
+            drawMesh(vaoOcta_, octaIndexCount_, radius * 1.0f);
+            break;
+
+        case kShapeRing:
+            drawMesh(vaoTorus_, torusIndexCount_, radius * 1.2f);
+            drawWire(vaoTorusWire_, torusWireIndexCount_, radius * 1.21f);
+            break;
+
+        case kShapeClusterSpheres:
+            drawCluster(vaoSphere_, sphereIndexCount_, true);
+            break;
+
+        case kShapeClusterPyramids:
+            drawCluster(vaoPyramid_, pyramidIndexCount_, false);
+            break;
+
+        case kShapeClusterCubes:
+            drawCluster(vaoCube_, cubeIndexCount_, false);
+            break;
+
+        case kShapeClusterOctas:
+            drawCluster(vaoOcta_, octaIndexCount_, false);
+            break;
+
+        case kShapeClusterRings:
+            drawCluster(vaoTorus_, torusIndexCount_, false);
+            break;
+    }
 }
 
 // ---------------------------------------------------------------------------
