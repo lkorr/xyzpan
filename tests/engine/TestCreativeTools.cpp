@@ -350,6 +350,74 @@ TEST_CASE("VERB-04: FDN stability at decay=1.0 over 100000 samples", "[VERB-04]"
 }
 
 // ---------------------------------------------------------------------------
+// VERB-05: Modulation parameter affects reverb output
+// ---------------------------------------------------------------------------
+TEST_CASE("VERB-05: Modulation depth affects reverb output", "[VERB-05]") {
+    constexpr int N = 44100;
+    auto noise = makeNoise(N, 33333u);
+
+    EngineParams noMod;
+    noMod.x = 0.0f;
+    noMod.y = 1.0f;
+    noMod.z = 0.0f;
+    noMod.dopplerEnabled = false;
+    noMod.verbWet = 0.5f;
+    noMod.verbDecay = 0.7f;
+    noMod.verbModDepth = 0.0f;
+    noMod.verbDiffusion = 0.7f;
+
+    EngineParams fullMod = noMod;
+    fullMod.verbModDepth = 1.0f;
+
+    auto outNoMod  = settleAndProcess(noMod,  noise, 4096);
+    auto outFullMod = settleAndProcess(fullMod, noise, 4096);
+
+    // Outputs should differ measurably
+    bool anyDiff = false;
+    for (int i = 0; i < N; ++i) {
+        if (std::abs(outNoMod.L[static_cast<size_t>(i)] - outFullMod.L[static_cast<size_t>(i)]) > 1e-4f) {
+            anyDiff = true;
+            break;
+        }
+    }
+    REQUIRE(anyDiff);
+}
+
+// ---------------------------------------------------------------------------
+// VERB-06: Diffusion parameter affects reverb output
+// ---------------------------------------------------------------------------
+TEST_CASE("VERB-06: Diffusion parameter affects reverb output", "[VERB-06]") {
+    constexpr int N = 44100;
+    auto noise = makeNoise(N, 44444u);
+
+    EngineParams noDiff;
+    noDiff.x = 0.0f;
+    noDiff.y = 1.0f;
+    noDiff.z = 0.0f;
+    noDiff.dopplerEnabled = false;
+    noDiff.verbWet = 0.5f;
+    noDiff.verbDecay = 0.7f;
+    noDiff.verbModDepth = 0.5f;
+    noDiff.verbDiffusion = 0.0f;
+
+    EngineParams fullDiff = noDiff;
+    fullDiff.verbDiffusion = 1.0f;
+
+    auto outNoDiff  = settleAndProcess(noDiff,  noise, 4096);
+    auto outFullDiff = settleAndProcess(fullDiff, noise, 4096);
+
+    // Outputs should differ measurably
+    bool anyDiff = false;
+    for (int i = 0; i < N; ++i) {
+        if (std::abs(outNoDiff.L[static_cast<size_t>(i)] - outFullDiff.L[static_cast<size_t>(i)]) > 1e-4f) {
+            anyDiff = true;
+            break;
+        }
+    }
+    REQUIRE(anyDiff);
+}
+
+// ---------------------------------------------------------------------------
 // LFO-01: Sine, Triangle, Saw, Square waveform output at 1Hz/44100Hz
 // ---------------------------------------------------------------------------
 TEST_CASE("LFO-01: LFO waveform output values at known phases", "[LFO-01]") {
@@ -619,6 +687,7 @@ TEST_CASE("LFO-04: Engine X-axis LFO causes varying stereo panning", "[LFO-04]")
     paramsLFO.y = 1.0f;
     paramsLFO.z = 0.0f;
     paramsLFO.dopplerEnabled = false;
+    paramsLFO.bypassDistGain = true;  // test LFO panning, not distance
     paramsLFO.verbWet = 0.0f;
     paramsLFO.lfoXRate = 1.0f;
     paramsLFO.lfoXDepth = 0.5f;

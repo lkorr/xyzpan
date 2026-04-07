@@ -320,8 +320,10 @@ XYZPanProcessor::XYZPanProcessor()
     // Dev panel: Distance gain law
     distGainFloorDbParam = apvts.getRawParameterValue(ParamID::DIST_GAIN_FLOOR_DB);
     distGainMaxParam     = apvts.getRawParameterValue(ParamID::DIST_GAIN_MAX);
+    distCurveSteepParam  = apvts.getRawParameterValue(ParamID::DIST_CURVE_STEEP);
     jassert(distGainFloorDbParam != nullptr);
     jassert(distGainMaxParam     != nullptr);
+    jassert(distCurveSteepParam  != nullptr);
 
     // Dev panel: Head shadow fully-open cap
     headShadowFullOpenHzParam = apvts.getRawParameterValue(ParamID::HEAD_SHADOW_FULL_OPEN_HZ);
@@ -694,6 +696,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Dev panel: Distance gain law
     params.distGainFloorDb = distGainFloorDbParam->load();
     params.distGainMax     = distGainMaxParam->load();
+    params.distCurveSteep  = distCurveSteepParam->load();
 
     // Dev panel: Head shadow fully-open cap
     params.headShadowFullOpenHz = headShadowFullOpenHzParam->load();

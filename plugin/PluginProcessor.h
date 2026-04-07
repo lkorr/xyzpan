@@ -301,6 +301,7 @@ private:
     // Dev panel: Distance gain law
     std::atomic<float>* distGainFloorDbParam = nullptr;
     std::atomic<float>* distGainMaxParam     = nullptr;
+    std::atomic<float>* distCurveSteepParam  = nullptr;
 
     // Dev panel: Head shadow fully-open cap
     std::atomic<float>* headShadowFullOpenHzParam = nullptr;

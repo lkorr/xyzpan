@@ -123,11 +123,14 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;   // angle = 0
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;  // angle = 0
 
-    // Block-rate IIR coefficient for listener rotation convergence after movement.
-    // 20ms time constant → converges within ~100ms (5 time constants).
+    // Block-rate IIR coefficients for listener rotation smoothing.
     {
-        constexpr float kConvergeMs = 20.0f;
         const float blockPeriod = static_cast<float>(inMaxBlockSize) / sr;
+        // During movement: 5ms time constant (tracks rapidly but still click-free).
+        constexpr float kTrackMs = 5.0f;
+        listenerMovSmA_ = std::exp(-blockPeriod / (kTrackMs * 0.001f));
+        // After movement stops: 20ms time constant → converges within ~100ms.
+        constexpr float kConvergeMs = 20.0f;
         listenerBlkSmA_ = std::exp(-blockPeriod / (kConvergeMs * 0.001f));
     }
 
@@ -344,7 +347,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     static const float kHardpanGainLin = std::pow(10.0f, kHardpanMaxDb / 20.0f);
     hardpanGainBase_           = kHardpanGainLin;
     const float auxMaxBoostLin = std::pow(10.0f, currentParams.auxSendGainMaxDb / 20.0f);
-    blkDistRefScale_           = std::pow(10.0f, currentParams.distGainFloorDb / 40.0f);
+    blkDistGainMaxDb_          = 20.0f * std::log10(currentParams.distGainMax);
 
     // Per-block chest filter coefficient update (cheap: only recalc when params change)
     {
@@ -392,14 +395,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             prevListenerRoll_  = currentParams.listenerRoll;
             listenerSettled_ = false;
 
-            // While knob is moving: use per-sample IIR (tracks angular target)
-            const float b = 1.0f - angularSmA_;
-            yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw)   * b + yawSmCos_   * angularSmA_;
-            yawSmSin_   = dsp::SineLUT::lookupAngle(currentParams.listenerYaw)       * b + yawSmSin_   * angularSmA_;
-            pitchSmCos_ = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch) * b + pitchSmCos_ * angularSmA_;
-            pitchSmSin_ = dsp::SineLUT::lookupAngle(currentParams.listenerPitch)     * b + pitchSmSin_ * angularSmA_;
-            rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll)  * b + rollSmCos_  * angularSmA_;
-            rollSmSin_  = dsp::SineLUT::lookupAngle(currentParams.listenerRoll)      * b + rollSmSin_  * angularSmA_;
+            // While knob is moving: block-rate IIR (5ms time constant, tracks rapidly)
+            const float aM = listenerMovSmA_;
+            const float bM = 1.0f - aM;
+            yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw)   * bM + yawSmCos_   * aM;
+            yawSmSin_   = dsp::SineLUT::lookupAngle(currentParams.listenerYaw)       * bM + yawSmSin_   * aM;
+            pitchSmCos_ = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch) * bM + pitchSmCos_ * aM;
+            pitchSmSin_ = dsp::SineLUT::lookupAngle(currentParams.listenerPitch)     * bM + pitchSmSin_ * aM;
+            rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll)  * bM + rollSmCos_  * aM;
+            rollSmSin_  = dsp::SineLUT::lookupAngle(currentParams.listenerRoll)      * bM + rollSmSin_  * aM;
 
             // Normalize IIR vectors to extract cos/sin directly
             auto normCS = [](float c, float s, float& outCos, float& outSin) {
@@ -967,14 +971,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float maxRange    = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
         const float modDistFrac = std::clamp((modDist - kMinDistance) / maxRange, 0.0f, 1.0f);
 
-        const float distRefScale = blkDistRefScale_;
-        const float distRef = currentParams.sphereRadius * distRefScale;
+        const float distGainMaxDb = blkDistGainMaxDb_;
 
         const float rawDistFrac = std::clamp(rawModDist / kSqrt3, 0.0f, 1.0f);
 
-        // Distance targets
-        const float distRatio = distRef / modDist;
-        const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, currentParams.distGainMax);
+        // Distance targets — compressed cubic Hermite curve
+        const float distGainTarget = compressedDistGain(
+            modDistFrac, distGainMaxDb, currentParams.distGainFloorDb,
+            currentParams.distCurveSteep, currentParams.distGainMax);
 
         // Air absorption coefficients — mono path only (stereo sets per-node in processDistance)
         const float airCutoffMod = currentParams.airAbsMaxHz
@@ -1175,10 +1179,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
             // Per-node distance processing (gain + air absorption only, no doppler)
             auto distL_result = dist_.processDistance(dL_L, dR_L, lRelX, lRelY, lRelZ, sr,
-                blkDistRefScale_, currentParams);
+                blkDistGainMaxDb_, currentParams);
 
             auto distR_result = distR_.processDistance(dL_R, dR_R, rRelX, rRelY, rRelZ, sr,
-                blkDistRefScale_, currentParams);
+                blkDistGainMaxDb_, currentParams);
 
             // Per-node floor bounce (on per-node distance output, before combine)
             float fL_L = distL_result.left, fR_L = distL_result.right;
@@ -1205,12 +1209,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
                     // Per-node distGainTarget for ER gain scaling (reuse cached distances)
                     const float lNodeDist = std::max(lNodeRawDist, kMinDistance);
-                    const float lDistRatio = distRef / lNodeDist;
-                    const float lDistGainTarget = std::clamp(lDistRatio * lDistRatio, 0.0f, currentParams.distGainMax);
+                    const float lNodeDistFrac = std::clamp((lNodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);
+                    const float lDistGainTarget = compressedDistGain(
+                        lNodeDistFrac, distGainMaxDb, currentParams.distGainFloorDb,
+                        currentParams.distCurveSteep, currentParams.distGainMax);
 
                     const float rNodeDist = std::max(rNodeRawDist, kMinDistance);
-                    const float rDistRatio = distRef / rNodeDist;
-                    const float rDistGainTarget = std::clamp(rDistRatio * rDistRatio, 0.0f, currentParams.distGainMax);
+                    const float rNodeDistFrac = std::clamp((rNodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);
+                    const float rDistGainTarget = compressedDistGain(
+                        rNodeDistFrac, distGainMaxDb, currentParams.distGainFloorDb,
+                        currentParams.distCurveSteep, currentParams.distGainMax);
 
                     auto erLResult = er_.processSample(sampleL, lRelX, lRelY, lRelZ,
                         lDistGainTarget, sr, dampCutoff, roomHalf,
@@ -1291,7 +1299,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Distance processing — mono path only (gain + air absorption; doppler already applied)
             {
                 auto distResult = dist_.processDistance(dL, dR, modX, modY, modZ, sr,
-                    blkDistRefScale_, currentParams);
+                    blkDistGainMaxDb_, currentParams);
                 dL = distResult.left;
                 dR = distResult.right;
                 effectiveDistGain = dist_.distGainSmooth.current();

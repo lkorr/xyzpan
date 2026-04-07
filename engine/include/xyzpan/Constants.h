@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <cmath>
 
 namespace xyzpan {
 
@@ -173,15 +175,50 @@ constexpr float kVertMonoCylinderRadiusMax = 1.0f;
 constexpr float kDopplerAAMaxHz = 18000.0f;
 
 // Maximum propagation delay for distance effect (DIST-03).
-// At the unit-cube corner (sqrt(3) away), the source has a 300ms delay offset.
-constexpr float kDistDelayMaxMs = 300.0f;
+// At the unit-cube corner (sqrt(3) away), the source has a 500ms delay offset.
+constexpr float kDistDelayMaxMs = 500.0f;
 
-// Distance gain: true inverse-square law (DIST-01).
-// distRef = sphereRadius * 10^(kDistGainFloorDb/40)  → gain = -72dB at sphere boundary.
-// distGainTarget = clamp((distRef / dist)², 0, kDistGainMax)
-// kDistGainMax = 2.0 allows up to +6dB boost for very close sources.
+// Distance gain (DIST-01).
+// Uses a cubic Hermite spline in the dB domain, parameterised by a steepness
+// control (0 = matches old inverse-square character, 1 = flat near listener
+// with a cliff at the sphere boundary).
 constexpr float kDistGainFloorDb = -72.0f;  // gain in dB at sphere boundary
 constexpr float kDistGainMax = 2.0f;        // max +6dB boost for very close sources
+constexpr float kDistCurveSteepDefault = 0.0f;  // 0 = legacy inverse-square match, 1 = max compression
+
+// Hermite slope coefficients as multiples of the dB range.
+// At steepness=0 these reproduce the old (distRef/dist)² curve shape:
+//   S0 = -3.63 * range  (steep near listener, drops fast)
+//   S1 = -0.21 * range  (gentle near boundary, already quiet)
+// At steepness=1 (max compression):
+//   S0 = 0              (flat near listener)
+//   S1 = -3.0 * range   (cliff at boundary, monotonicity limit)
+constexpr float kDistCurveS0Factor_Legacy = -3.63f;
+constexpr float kDistCurveS1Factor_Legacy = -0.21f;
+constexpr float kDistCurveS0Factor_Max    =  0.0f;
+constexpr float kDistCurveS1Factor_Max    = -3.0f;
+
+// Compressed distance gain helper.
+// nodeDistFrac: 0 = listener, 1 = sphere boundary.
+// steepness:    0 = legacy inverse-square match, 1 = flat center / cliff at edge.
+// distGainMaxDb: 20*log10(distGainMax), pre-computed per block.
+// floorDb:      gain in dB at sphere boundary (negative).
+// distGainMax:  linear max gain clamp.
+inline float compressedDistGain(float nodeDistFrac, float distGainMaxDb,
+                                float floorDb, float steepness, float distGainMax) {
+    const float range = distGainMaxDb - floorDb;          // total dB span (positive)
+    const float S0 = range * (kDistCurveS0Factor_Legacy
+        + (kDistCurveS0Factor_Max - kDistCurveS0Factor_Legacy) * steepness);
+    const float S1 = range * (kDistCurveS1Factor_Legacy
+        + (kDistCurveS1Factor_Max - kDistCurveS1Factor_Legacy) * steepness);
+    const float A3 = 2.0f * range + S0 + S1;
+    const float A2 = -3.0f * range - 2.0f * S0 - S1;
+    const float A1 = S0;
+    const float A0 = distGainMaxDb;
+    const float f  = nodeDistFrac;
+    const float gainDb = ((A3 * f + A2) * f + A1) * f + A0;
+    return std::clamp(std::pow(10.0f, gainDb * 0.05f), 0.0f, distGainMax);
+}
 
 // Delay smoother time constant — controls doppler feel during movement.
 // Longer = smoother pitch glide, shorter = tighter tracking.
@@ -205,7 +242,7 @@ constexpr float kNearFieldLFHz    = 200.0f;  // low-shelf frequency
 constexpr float kNearFieldLFMaxDb = 6.0f;    // max boost at proximity=1, full azimuth
 
 // ============================================================================
-// Phase 5: Reverb (VERB-01 through VERB-04)
+// Phase 5: Reverb — Dattorro Plate (VERB-01 through VERB-04)
 // ============================================================================
 constexpr float kVerbDefaultSize      = 0.5f;
 constexpr float kVerbDefaultDecay     = 0.5f;
@@ -213,8 +250,38 @@ constexpr float kVerbDefaultDamping   = 0.5f;
 constexpr float kVerbDefaultWet       = 0.0f;   // reverb off by default
 constexpr float kVerbPreDelayMaxMs    = 50.0f;
 constexpr float kVerbMaxDecayT60_s    = 5.0f;   // maximum T60 at decay=1.0
-// FDN delay lengths in ms at 44100 Hz — mutually prime, scaled in prepare()
-constexpr float kFDNDelayMs[4]        = { 30.98f, 42.40f, 51.95f, 63.45f };
+constexpr float kVerbDefaultModDepth  = 0.5f;
+constexpr float kVerbDefaultDiffusion = 0.7f;
+
+// Dattorro plate reverb reference sample rate and delay lengths (in samples).
+// All delay lengths are specified at 29761 Hz and scaled to actual sample rate.
+constexpr double kDattorroRefRate = 29761.0;
+
+// Input diffusion allpass delays (series chain, 4 stages)
+constexpr int kDatInputAP[4] = { 142, 107, 379, 277 };
+// Input diffusion coefficients (stages 1-2 use coeff1, stages 3-4 use coeff2)
+constexpr float kDatInputDiffCoeff1 = 0.75f;
+constexpr float kDatInputDiffCoeff2 = 0.625f;
+
+// Tank modulated allpass delays
+constexpr int kDatTankAP[2] = { 672, 908 };
+// Tank allpass (decay diffusion) coefficient
+constexpr float kDatDecayDiffCoeff = 0.7f;
+
+// Tank delay line lengths
+constexpr int kDatTankDelay[2] = { 4453, 4217 };
+
+// Output tap positions (in samples at reference rate)
+// L: +tap(tankDelay0, 266) +tap(tankDelay0, 2974) -tap(tankAP1, 1913)
+// R: +tap(tankDelay1, 266) +tap(tankDelay1, 2974) -tap(tankAP0, 1913)
+constexpr int kDatTapA = 266;    // early tap from tank delays
+constexpr int kDatTapB = 2974;   // late tap from tank delays
+constexpr int kDatTapC = 1913;   // cross-channel tap from tank allpasses
+
+// Modulation: 2 LFOs for tank allpasses
+constexpr float kDatModRate1    = 1.0f;    // Hz
+constexpr float kDatModRate2    = 0.87f;   // Hz (slightly detuned)
+constexpr float kDatModExcursion = 16.0f;  // max excursion in samples at ref rate
 
 // Aux reverb send: default max distance-gain boost (dB)
 constexpr float kAuxSendGainMaxDb     = 6.0f;

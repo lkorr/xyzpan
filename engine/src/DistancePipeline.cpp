@@ -67,15 +67,15 @@ float DistancePipeline::processDoppler(float input, float rawNodeDistFrac, float
 
 DistancePipeline::DistResult DistancePipeline::processDistance(
     float dL, float dR, float nodeX, float nodeY, float nodeZ,
-    float sr, float distRefScale, const EngineParams& params) {
+    float sr, float distGainMaxDb, const EngineParams& params) {
     const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
     const float nodeDist = std::max(rawDist, kMinDistance);
     const float maxRange = std::max(params.sphereRadius - kMinDistance, 0.001f);
     const float nodeDistFrac = std::clamp((nodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);
 
-    const float distRef = params.sphereRadius * distRefScale;
-    const float distRatio = distRef / nodeDist;
-    const float distGainTarget = std::clamp(distRatio * distRatio, 0.0f, params.distGainMax);
+    const float distGainTarget = compressedDistGain(
+        nodeDistFrac, distGainMaxDb, params.distGainFloorDb,
+        params.distCurveSteep, params.distGainMax);
     const float distGain = distGainSmooth.process(distGainTarget);
 
     dL *= params.bypassDistGain ? 1.0f : distGain;

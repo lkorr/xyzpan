@@ -27,10 +27,10 @@ struct DistancePipeline {
                          bool effectiveDoppler, const EngineParams& params);
 
     // Distance processing for a single source node (gain + air absorption).
-    // distRefScale = 10^(kDistGainFloorDb/40), pre-computed per block.
+    // distGainMaxDb = 20*log10(distGainMax), pre-computed per block.
     struct DistResult { float left; float right; float distFrac; };
     DistResult processDistance(float dL, float dR, float nodeX, float nodeY, float nodeZ,
-                               float sr, float distRefScale, const EngineParams& params);
+                               float sr, float distGainMaxDb, const EngineParams& params);
 };
 
 } // namespace xyzpan

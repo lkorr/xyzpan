@@ -181,8 +181,9 @@ private:
     // the 0↔1 boundary correctly: the smoother always takes the shortest path.
     float phaseSmCos_ = 1.0f, phaseSmSin_ = 0.0f;   // unit-circle state for phase
     float offsetSmCos_ = 1.0f, offsetSmSin_ = 0.0f;  // unit-circle state for offset
-    float angularSmA_ = 0.0f;     // per-sample IIR coefficient (used during movement)
+    float angularSmA_ = 0.0f;     // per-sample IIR coefficient (used for phase/offset)
     float listenerBlkSmA_ = 0.0f; // per-block IIR coefficient (used after movement stops)
+    float listenerMovSmA_ = 0.0f; // per-block IIR coefficient (used during movement)
 
     // Circular (angular) smoothers for listener yaw/pitch — prevents clicks at 360°↔0° wrap.
     float yawSmCos_ = 1.0f, yawSmSin_ = 0.0f;
@@ -215,7 +216,7 @@ private:
     // Used by BinauralPipeline::processSample() to compute per-node ILD target
     // without re-calling std::pow on every sample.
     float ildGainBase_ = 1.0f;
-    float blkDistRefScale_ = 0.047546796f;  // 10^(kDistGainFloorDb/40), recomputed per block
+    float blkDistGainMaxDb_ = 6.0206f;  // 20*log10(kDistGainMax), recomputed per block
 
     // Binaural toggle — click-free blend between binaural (1) and hardpan (0)
     dsp::OnePoleSmooth binauralBlendSmooth_;

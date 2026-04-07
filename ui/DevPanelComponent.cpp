@@ -18,6 +18,7 @@ namespace {
     constexpr const char* kWAVE_OPACITY      = "wave_opacity";
     constexpr const char* kWAVE_SPEED        = "wave_speed";
     constexpr const char* kWAVE_COUNT        = "wave_count";
+    constexpr const char* kWAVE_BLEND_MODE   = "wave_blend_mode";
     constexpr const char* kSHOW_AUDIBLE_SPHERE = "show_audible_sphere";
     constexpr const char* kSOURCE_SPHERE_OPACITY = "source_sphere_opacity";
 
@@ -65,6 +66,7 @@ namespace {
     constexpr const char* kAIR_ABS_2_MIN_HZ  = "air_abs_2_min_hz";
     constexpr const char* kDIST_GAIN_FLOOR_DB = "dist_gain_floor_db";
     constexpr const char* kDIST_GAIN_MAX      = "dist_gain_max";
+    constexpr const char* kDIST_CURVE_STEEP   = "dist_curve_steep";
 
     // Head shadow
     constexpr const char* kHEAD_SHADOW_FULL_OPEN_HZ = "head_shadow_full_open_hz";
@@ -257,6 +259,7 @@ const std::unordered_map<juce::String, juce::String>& DevPanelComponent::getDesc
         { "wave_opacity",              "Base opacity of each expanding sound wave sphere at its origin. 0 = invisible, 0.1 = default (10% opacity). Multiple waves overlap and visually stack." },
         { "wave_speed",                "Speed of expanding sound waves. Fraction of sphere radius per second. 0.3 = default, higher = faster expansion." },
         { "wave_count",                "Number of simultaneous wave spheres. 6 = default. More waves = denser visual effect." },
+        { "wave_blend_mode",           "Wave blend mode. 0-7: single (Normal/Additive/Difference/Min/Max/Multiply/Screen/Invert). 8-15: compound patterns that cycle blend per-wave (Pulse/Strobe/Breath/Prism/Haze/Shatter/Nebula/Void)." },
         { "show_audible_sphere",       "Show or hide the audible radius sphere around the source node." },
         { "source_sphere_opacity",     "Opacity of the main source node sphere. 0 = invisible, 1 = full opacity. Multiplied into the distance-based fade." },
         { "section:Visualization",     "Visual-only controls for the 3D GL view. These do not affect audio processing." },
@@ -417,6 +420,7 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kDIST_SMOOTH_MS,     apvts);
     addDevSlider(kDIST_GAIN_FLOOR_DB, apvts);
     addDevSlider(kDIST_GAIN_MAX,      apvts);
+    addDevSlider(kDIST_CURVE_STEEP,   apvts);
     addDevSlider(kAIR_ABS_MAX_HZ,     apvts);
     addDevSlider(kAIR_ABS_MIN_HZ,     apvts);
     addDevSlider(kAIR_ABS_2_MAX_HZ,   apvts);
@@ -456,6 +460,7 @@ DevPanelComponent::DevPanelComponent(juce::AudioProcessorValueTreeState& apvts,
     addDevSlider(kWAVE_OPACITY,      apvts);
     addDevSlider(kWAVE_SPEED,        apvts);
     addDevSlider(kWAVE_COUNT,        apvts);
+    addDevSlider(kWAVE_BLEND_MODE,   apvts);
     addDevToggle(kSHOW_AUDIBLE_SPHERE, apvts);
     addDevSlider(kSOURCE_SPHERE_OPACITY, apvts);
 

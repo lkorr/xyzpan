@@ -102,6 +102,7 @@ struct EngineParams {
     float airAbs2MinHz   = kAirAbs2MinHz;     // 12000.0f — stage 2 far (extra HF loss)
     float distGainFloorDb = kDistGainFloorDb;  // -72 dB  — gain at sphere boundary
     float distGainMax     = kDistGainMax;      // 2.0     — max +6dB boost at close range
+    float distCurveSteep  = kDistCurveSteepDefault; // 0=uniform slope, 1=flat center/cliff edge
 
     // =========================================================================
     // Phase 5: Reverb (VERB-01 through VERB-04)
@@ -111,6 +112,8 @@ struct EngineParams {
     float verbDamping     = kVerbDefaultDamping;
     float verbWet         = kVerbDefaultWet;
     float verbPreDelayMax = kVerbPreDelayMaxMs;
+    float verbModDepth    = kVerbDefaultModDepth;
+    float verbDiffusion   = kVerbDefaultDiffusion;
 
     // =========================================================================
     // Phase 5: LFO (LFO-01 through LFO-05)

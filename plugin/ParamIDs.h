@@ -56,6 +56,8 @@ namespace ParamID {
     constexpr const char* VERB_DAMPING     = "verb_damping";
     constexpr const char* VERB_WET         = "verb_wet";
     constexpr const char* VERB_PRE_DELAY   = "verb_pre_delay";
+    constexpr const char* VERB_MOD_DEPTH   = "verb_mod_depth";
+    constexpr const char* VERB_DIFFUSION   = "verb_diffusion";
 
     // Phase 5: LFO — per axis (LFO-01 through LFO-05)
     constexpr const char* LFO_X_RATE      = "lfo_x_rate";
@@ -164,6 +166,7 @@ namespace ParamID {
     // Dev panel: Distance gain law
     constexpr const char* DIST_GAIN_FLOOR_DB = "dist_gain_floor_db";
     constexpr const char* DIST_GAIN_MAX      = "dist_gain_max";
+    constexpr const char* DIST_CURVE_STEEP   = "dist_curve_steep";
 
     // Dev panel: Head shadow fully-open cap
     constexpr const char* HEAD_SHADOW_FULL_OPEN_HZ = "head_shadow_full_open_hz";
@@ -231,7 +234,8 @@ namespace ParamID {
     constexpr const char* WAVE_INTENSITY = "wave_intensity";
     constexpr const char* WAVE_OPACITY   = "wave_opacity";
     constexpr const char* WAVE_SPEED     = "wave_speed";
-    constexpr const char* WAVE_COUNT     = "wave_count";
+    constexpr const char* WAVE_COUNT      = "wave_count";
+    constexpr const char* WAVE_BLEND_MODE = "wave_blend_mode";
     constexpr const char* SHOW_AUDIBLE_SPHERE = "show_audible_sphere";
     constexpr const char* SOURCE_SPHERE_OPACITY = "source_sphere_opacity";
 

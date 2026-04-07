@@ -210,7 +210,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(
         PID{ ParamID::DIST_DELAY_MAX_MS, 1 },
         "Dist Delay Max (ms)",
-        NR(0.0f, 300.0f, 1.0f),
+        NR(0.0f, 500.0f, 1.0f, 0.576f),
         xyzpan::kDistDelayMaxMs  // 300.0f
     ));
 
@@ -248,6 +248,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultWet));
     layout.add(std::make_unique<APF>(PID{ParamID::VERB_PRE_DELAY, 1}, "Verb Pre-Delay Max (ms)",
         NR(0.0f, 100.0f, 0.5f), xyzpan::kVerbPreDelayMaxMs));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_MOD_DEPTH, 1}, "Verb Mod Depth",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultModDepth));
+    layout.add(std::make_unique<APF>(PID{ParamID::VERB_DIFFUSION, 1}, "Verb Diffusion",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kVerbDefaultDiffusion));
 
     // -------------------------------------------------------------------------
     // Phase 5: LFO — per axis (LFO-01 through LFO-05)
@@ -502,6 +506,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(-120.0f, -6.0f, 0.1f), xyzpan::kDistGainFloorDb));
     layout.add(std::make_unique<APF>(PID{ParamID::DIST_GAIN_MAX, 1}, "Dist Gain Max",
         NR(1.0f, 10.0f, 0.01f), xyzpan::kDistGainMax));
+    layout.add(std::make_unique<APF>(PID{ParamID::DIST_CURVE_STEEP, 1}, "Dist Curve Steepness",
+        NR(0.0f, 1.0f, 0.01f), xyzpan::kDistCurveSteepDefault));
 
     // -------------------------------------------------------------------------
     // Dev Panel: Head shadow fully-open cap
@@ -597,11 +603,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_INTENSITY, 1}, "Wave Intensity",
         NR(0.0f, 5.0f, 0.01f), 3.5f));
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_OPACITY, 1}, "Wave Base Opacity",
-        NR(0.0f, 0.25f, 0.001f), 0.02f));
+        NR(0.0f, 0.25f, 0.001f, 0.274f), 0.02f));
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_SPEED, 1}, "Wave Speed",
         NR(0.05f, 2.0f, 0.01f), 0.3f));
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_COUNT, 1}, "Wave Count",
         NR(3.0f, 30.0f, 1.0f), 3.0f));
+    layout.add(std::make_unique<APF>(PID{ParamID::WAVE_BLEND_MODE, 1}, "Wave Blend Mode",
+        NR(0.0f, 15.0f, 1.0f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
         PID{ParamID::SHOW_AUDIBLE_SPHERE, 1}, "Always Show Audible Sphere", true));
     layout.add(std::make_unique<APF>(PID{ParamID::SOURCE_SPHERE_OPACITY, 1}, "Source Sphere Opacity",

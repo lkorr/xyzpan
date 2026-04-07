@@ -523,6 +523,7 @@ TEST_CASE("Engine mono to stereo: X=0.5 produces L != R", "[Integration][PAN-03]
     EngineParams p;
     p.x = 0.5f; p.y = 1.0f; p.z = 0.0f;
     p.dopplerEnabled = false;  // Phase 4: disable distance delay to allow signal through
+    p.bypassDistGain = true;   // test binaural panning, not distance attenuation
     settle(eng, p, 44100); // let smoothers reach steady state
 
     const int N = 4096;

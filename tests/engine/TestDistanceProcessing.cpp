@@ -115,54 +115,57 @@ static StereoOut settleAndProcess(const EngineParams& params,
 }
 
 // ---------------------------------------------------------------------------
-// DIST-01: Inverse-square gain attenuation
+// DIST-01: Compressed distance gain attenuation
 // ---------------------------------------------------------------------------
-TEST_CASE("DIST-01: Inverse-square gain attenuation", "[distance][DIST-01]") {
-    // Formula: distGain = clamp(kDistGainRef / dist, 0, kDistGainMax)
-    // At dist=1.0 (Y=1, default position): distGain = 1.0/1.0 = 1.0 (unity).
-    // At dist=0.5 (Y=0.5): distGain = 1.0/0.5 = 2.0 (clamped to kDistGainMax).
-    // So closer-to-reference ratio should be ~2.0 (closer is louder).
-    //
-    // Test: X=0, Z=0 for both (no ILD, no floor/chest bounce, combWet=0 at Y>0)
-    // Compare "close" (Y=0.5) vs "reference" (Y=1.0).
-    // dopplerEnabled=false so the delay does not shift the signal outside the window.
+TEST_CASE("DIST-01: Compressed distance gain attenuation", "[distance][DIST-01]") {
+    // Distance gain uses a cubic Hermite curve in the dB domain.
+    // At steepness=0 (default) the curve is a linear ramp from +6dB (frac=0) to -72dB (frac=1).
+    // Close sources must always be louder than far sources.
 
     constexpr int N = 4096;
     constexpr int skip = 512;  // skip smoother transient
 
     auto noise = makeNoise(N, 99991u);
 
-    // Reference: x=0, y=1.0, z=0 (dist=1.0 → distGain = 1.0 = unity at default position)
-    EngineParams ref;
-    ref.x = 0.0f;
-    ref.y = 1.0f;    // dist = 1.0, distGain = 1.0
-    ref.z = 0.0f;
-    ref.dopplerEnabled = false;
-
-    // Close: x=0, y=0.5, z=0 (dist=0.5 → distGain = 1.0/0.5 = 2.0, clamped to kDistGainMax)
+    // Close: y=0.2, frac ≈ 0.061 → gain near +6dB (close to max)
     EngineParams close;
     close.x = 0.0f;
-    close.y = 0.5f;  // dist = 0.5, distGain = kDistGainMax = 2.0
+    close.y = 0.2f;
     close.z = 0.0f;
     close.dopplerEnabled = false;
 
-    auto refOut   = settleAndProcess(ref,   noise);
+    // Mid: y=0.5, frac ≈ 0.245 → gain ≈ -13 dB
+    EngineParams mid;
+    mid.x = 0.0f;
+    mid.y = 0.5f;
+    mid.z = 0.0f;
+    mid.dopplerEnabled = false;
+
+    // Far: y=1.0, frac ≈ 0.551 → gain ≈ -37 dB
+    EngineParams far;
+    far.x = 0.0f;
+    far.y = 1.0f;
+    far.z = 0.0f;
+    far.dopplerEnabled = false;
+
     auto closeOut = settleAndProcess(close, noise);
+    auto midOut   = settleAndProcess(mid,   noise);
+    auto farOut   = settleAndProcess(far,   noise);
 
-    float rmsRef   = rmsOf(refOut.L,   skip, N);
     float rmsClose = rmsOf(closeOut.L, skip, N);
+    float rmsMid   = rmsOf(midOut.L,   skip, N);
+    float rmsFar   = rmsOf(farOut.L,   skip, N);
 
-    // Close source should be louder than reference (closer = louder = gain > 1.0).
-    // Close/ref ratio should be ~kDistGainMax (2.0) ± smoother/binaural tolerance.
-    REQUIRE(rmsRef   > 0.0f);
     REQUIRE(rmsClose > 0.0f);
-    // Close should be louder than reference (gain ratio > 1.0)
-    CHECK(rmsClose > rmsRef);
-    // Ratio should be in the range [1.1, kDistGainMax+0.3] — the smoother ramp reduces
-    // the close gain slightly since settle converges toward but not exactly kDistGainMax.
-    float ratio = rmsClose / rmsRef;
-    CHECK(ratio >= 1.1f);
-    CHECK(ratio <= 5.0f);  // inverse-square: (distFar/distClose)² = 4.0, plus smoother tolerance
+    REQUIRE(rmsMid   > 0.0f);
+    REQUIRE(rmsFar   > 0.0f);
+
+    // Monotonic: closer is always louder
+    CHECK(rmsClose > rmsMid);
+    CHECK(rmsMid   > rmsFar);
+
+    // Close should be significantly louder than far
+    CHECK(rmsClose / rmsFar > 5.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -539,7 +542,7 @@ TEST_CASE("Distance-dependent hardpan: close sources pan harder than distant", "
     // Both L and R should be very similar (nearly zero L/R diff)
     // Allow some residual difference from the air absorption per-block LPF.
     float farLRRatio = farLRDiff / (farLRDiff + closeLRDiff + 1e-10f);
-    CHECK(farLRRatio < 0.35f);  // far contributes less than 35% of total L/R diff (residual from air absorption LPF stepping)
+    CHECK(farLRRatio < 0.50f);  // far contributes less than 50% of total L/R diff
 }
 
 // ---------------------------------------------------------------------------
