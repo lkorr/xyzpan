@@ -78,7 +78,7 @@ struct SceneParams {
     int   groundType   = kGroundNone;
     float groundHeight = 0.0f;   // 0.0 = default (-4.5), 1.0 = 2x lower (-9.0)
     float groundHills  = 0.0f;   // 0.0 = flat, 1.0 = maximum terrain displacement
-    bool  swapPanels   = false;  // swap listener and stereo orbit panel positions
+    bool  swapPanels   = true;   // swap listener and stereo orbit panel positions
     bool  showLabels   = true;   // show billboard object name labels in GL view
     bool  showArrow    = true;   // show direction arrow emanating from observer head
     int   sourceShape    = kShapeSphere;  // visual shape for source nodes

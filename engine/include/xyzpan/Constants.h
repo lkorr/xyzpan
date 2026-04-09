@@ -74,7 +74,7 @@ constexpr float kDefaultSmoothMs_Gain   = 5.0f;   // ILD gain smoother
 constexpr float kSqrt3 = 1.7320508f;
 
 // Sphere of Influence default radius — matches kSqrt3 so default behavior is unchanged.
-constexpr float kSphereRadiusDefault = kSqrt3;
+constexpr float kSphereRadiusDefault = 2.0f;
 
 // ============================================================================
 // Phase 3: Depth (comb filter bank)

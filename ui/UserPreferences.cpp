@@ -63,7 +63,7 @@ void UserPreferences::load()
         auto hillsVal = obj->getProperty("groundHills");
         scene_.groundHills = hillsVal.isVoid() ? 0.0f : static_cast<float>(juce::jlimit(0.0, 1.0, static_cast<double>(hillsVal)));
         auto swapVal = obj->getProperty("swapPanels");
-        scene_.swapPanels = swapVal.isVoid() ? false : static_cast<bool>(swapVal);
+        scene_.swapPanels = swapVal.isVoid() ? true : static_cast<bool>(swapVal);
         auto labelsVal = obj->getProperty("showLabels");
         scene_.showLabels = labelsVal.isVoid() ? true : static_cast<bool>(labelsVal);
         auto arrowVal = obj->getProperty("showArrow");

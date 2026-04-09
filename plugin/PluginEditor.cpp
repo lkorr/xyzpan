@@ -392,8 +392,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Dev panel: child of glView_ (not the editor) so it composites on top of the
     // OpenGL surface. Bounds are set in resized() in glView_-local coordinates.
-    devPanel_.setVisible(false);
-    glView_.addAndMakeVisible(devPanel_);
+    glView_.addChildComponent(devPanel_);
 
     // ----- Output meter (right edge) -----
     addAndMakeVisible(outputMeter_);

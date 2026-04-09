@@ -20,7 +20,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         PID{ ParamID::Y, 1 },
         "Y Position",
         NR(-1.0f, 1.0f, 0.001f),
-        1.0f  // Default: front (Y=1 in Y-forward convention)
+        0.3f  // Default: slightly in front (Y=0.3 in Y-forward convention)
     ));
 
     layout.add(std::make_unique<APF>(
@@ -583,7 +583,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     // Early Reflections (Image Source Method)
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ParamID::ER_ENABLED, 1}, "ER Enabled", false));
+        juce::ParameterID{ParamID::ER_ENABLED, 1}, "ER Enabled", true));
     layout.add(std::make_unique<APF>(PID{ParamID::ER_ROOM_SIZE, 1}, "ER Room Size (m)",
         NR(xyzpan::kERRoomSizeMin, xyzpan::kERRoomSizeMax, 0.1f), xyzpan::kERRoomSizeDefault));
     layout.add(std::make_unique<APF>(PID{ParamID::ER_DAMPING, 1}, "ER Damping",

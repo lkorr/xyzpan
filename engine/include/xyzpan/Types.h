@@ -218,7 +218,7 @@ struct EngineParams {
     // =========================================================================
     // Early Reflections (Image Source Method)
     // =========================================================================
-    bool  erEnabled     = false;
+    bool  erEnabled     = true;
     float erRoomSize    = kERRoomSizeDefault;   // half-dimension in meters
     float erDamping     = kERDampingDefault;     // 0–1: wall absorption
     float erLevel       = kERLevelDefault;       // 0–1: overall ER wet level
