@@ -190,6 +190,12 @@ private:
     float pitchSmCos_ = 1.0f, pitchSmSin_ = 0.0f;
     float rollSmCos_ = 1.0f, rollSmSin_ = 0.0f;
 
+    // Previous block's smoothed cos/sin for per-sample trig interpolation.
+    // Eliminates block-boundary discontinuities during fast head rotation.
+    float prevCosY_ = 1.f, prevSinY_ = 0.f;
+    float prevCosP_ = 1.f, prevSinP_ = 0.f;
+    float prevCosR_ = 1.f, prevSinR_ = 0.f;
+
     // Cached listener orientation for change-detection gating (skip smoother when static)
     float prevListenerYaw_   = 0.0f;
     float prevListenerPitch_ = 0.0f;

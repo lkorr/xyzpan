@@ -118,6 +118,7 @@ uniform vec3  nodeColor;
 uniform float opacity;
 uniform vec3  lightDir;   // normalized; comes from camera direction
 uniform float edgeFade;   // 0.0 = no edge fade (solid), 1.0 = full rim-to-transparent fade
+uniform int   blendMode;  // 0-7 base blend mode (set per-wave for compound modes)
 
 out vec4 outColor;
 
@@ -133,7 +134,14 @@ void main()
     float rim = abs(dot(norm, normalize(-vFragPos)));
     float fade = mix(1.0, rim, edgeFade);
 
-    outColor = vec4(nodeColor * light, opacity * fade);
+    vec3 rgb = nodeColor * light;
+    float a  = opacity * fade;
+
+    // Premultiply for modes using GL_ONE as source factor (Diff, Min, Max, Screen)
+    if ((blendMode >= 2 && blendMode <= 4) || blendMode == 6)
+        outColor = vec4(rgb * a, a);
+    else
+        outColor = vec4(rgb, a);
 }
 )";
 

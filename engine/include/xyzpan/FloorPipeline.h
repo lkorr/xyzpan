@@ -17,7 +17,8 @@ struct FloorPipeline {
     void reset();
 
     // Process floor bounce for a single source node (modifies dL/dR in-place).
-    void processSample(float& dL, float& dR, float nodeZ, float sr,
+    // elevFactor: 0.0 (nadir/below) to 1.0 (zenith/above) from T/B virtual ear distance-difference.
+    void processSample(float& dL, float& dR, float elevFactor, float sr,
                        float floorGainLin, const EngineParams& params);
 };
 

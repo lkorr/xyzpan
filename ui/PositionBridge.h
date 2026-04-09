@@ -69,6 +69,7 @@ struct ForeignSourceSnapshot {
     float sphereRadius = 1.732f;  // audible boundary radius
     float inputRms     = 0.0f;   // input RMS level for sound wave visualization
     int   colorIndex  = 0;
+    int   sourceShape = 0;     // SourceShape enum value for visual rendering
     bool  isPilot     = false;  // true if this source's instance is the current pilot
     char  name[32]    = {};  // null-terminated instance name for GL labels
 };

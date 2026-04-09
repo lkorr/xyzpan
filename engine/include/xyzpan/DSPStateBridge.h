@@ -11,7 +11,7 @@ struct DSPStateSnapshot {
     float ildGainLinear  = 0.0f;
     float rearCutoffHz   = 0.0f;
     float combWet        = 0.0f;
-    float monoBlend      = 0.0f;
+    float monoBlend      = 0.0f;  // deprecated: always 0, cylinder blend removed
     float sampleRate     = 0.0f;
     float distDelaySamp  = 0.0f;
     float distGainLinear = 0.0f;

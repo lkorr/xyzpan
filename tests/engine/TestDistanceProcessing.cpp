@@ -225,24 +225,15 @@ TEST_CASE("DIST-02: Air absorption LPF darkens distant sources", "[distance][DIS
 // DIST-03: Distance delay timing
 // ---------------------------------------------------------------------------
 TEST_CASE("DIST-03: Propagation delay shifts output in time", "[distance][DIST-03]") {
-    // Verify that a source at far distance has a measurable timing offset.
+    // Verify that a source at moderate distance has a measurable timing offset.
     //
     // Strategy: Process a settled engine (dopplerEnabled=true) with an impulse.
     // After settling, the distDelaySmooth has converged to the target delay.
     // The impulse pushed into the delay line will exit at ~(settled delay) samples later.
     //
-    // Use x=0, y=kMinDistance first: minimal delay (distFrac≈0, delaySamp=2.0).
-    // Use x=0.5, y=0.5, z=0.5 for far: dist=0.866, distFrac≈0.47, delay≈141ms≈6223 samp.
-    //
-    // Rather than capturing 6000+ samples, just verify the near-distance output
-    // has its impulse peak near sample ~2, while far-distance output has its peak
-    // much later (beyond the near-distance peak position).
-    //
-    // For practical capture: compare near (peak near sample 2) vs far.
-    // For far: we need a large enough buffer. Use 8192 samples.
-    // At far dist: delay ≈ 6223 samples. With dopplerEnabled=true and settle=44100,
-    // the smoother has converged. The impulse at sample 0 exits at sample ~6223.
-    // Check that the output peak in the far case is at position > 100.
+    // Near: x=0, y=0 (dist clamped to kMinDistance, rawDistFrac≈0, delay≈2 samples).
+    // Far:  x=0.15, y=0.15, z=0 → dist=0.212, rawDistFrac=0.122,
+    //       delay = 0.122 * 500ms * 44.1 ≈ 2700 samples. Fits in 8192 buffer.
 
     constexpr int N = 8192;
     constexpr int impulsePos = 0;
@@ -253,7 +244,7 @@ TEST_CASE("DIST-03: Propagation delay shifts output in time", "[distance][DIST-0
 
     EngineParams nearP;
     nearP.x = 0.0f;
-    nearP.y = 0.0f;  // dist clamped to kMinDistance internally, rawDistFrac=0 → delay ≈ 2.0 samples
+    nearP.y = 0.0f;
     nearP.z = 0.0f;
     nearP.dopplerEnabled = true;
 
@@ -273,10 +264,9 @@ TEST_CASE("DIST-03: Propagation delay shifts output in time", "[distance][DIST-0
     inputFar[impulsePos] = 1.0f;
 
     EngineParams farP;
-    farP.x = 0.5f;
-    farP.y = 0.5f;
-    farP.z = 0.5f;  // dist ≈ 0.866, distFrac ≈ 0.47, delay ≈ 141ms ≈ 6223 samples
-    farP.z = 0.5f;
+    farP.x = 0.15f;
+    farP.y = 0.15f;
+    farP.z = 0.0f;
     farP.dopplerEnabled = true;
 
     auto farOut = settleAndProcess(farP, inputFar, 44100);
@@ -293,7 +283,7 @@ TEST_CASE("DIST-03: Propagation delay shifts output in time", "[distance][DIST-0
     // Near-distance peak should be early (delay ≈ 2 samples + cascaded filter group delay)
     CHECK(peakNear < 50);
 
-    // Far-distance peak should be at a much larger position (delay ≈ 6223 samples)
+    // Far-distance peak should be at a much larger position (delay ≈ 2700 samples)
     CHECK(peakFar > 100);
 
     // Far peak should come significantly later than near peak
@@ -304,27 +294,27 @@ TEST_CASE("DIST-03: Propagation delay shifts output in time", "[distance][DIST-0
 // DIST-04: Doppler pitch shift during movement
 // ---------------------------------------------------------------------------
 TEST_CASE("DIST-04: Doppler pitch shift during distance change", "[distance][DIST-04]") {
-    // Process a 1kHz sine while ramping distance from near to far.
+    // Process a 1kHz sine while ramping distance from near to moderate.
     // Compare output to a static-distance reference — they should differ
     // because the changing delay causes a pitch shift (doppler effect).
     //
-    // Simple proxy: process 4096 samples with y ramping from kMinDistance to 1.0.
-    // Process same 4096 samples at static y=0.5. RMS difference should be > 0.
+    // Use close distances so the doppler delay fits within the capture buffer.
+    // Static: y=0.15 → rawDistFrac≈0.087, delay≈1916 samples (within 4096 buffer).
+    // Ramp: y from kMinDistance to 0.3 — all delays within buffer.
 
     constexpr int N = 4096;
     auto sine1k = makeSine(1000.0f, N);
 
-    // Static reference: y=0.5 (constant distance)
+    // Static reference: y=0.15 (constant distance, delay fits in buffer)
     EngineParams staticP;
     staticP.x = 0.0f;
-    staticP.y = 0.5f;
+    staticP.y = 0.15f;
     staticP.z = 0.0f;
     staticP.dopplerEnabled = true;
 
-    auto staticOut = settleAndProcess(staticP, sine1k, 4096);
+    auto staticOut = settleAndProcess(staticP, sine1k, 44100);
 
-    // Dynamic: ramp y from kMinDistance to 1.0 across 4096 samples
-    // We simulate by changing params per block during processing.
+    // Dynamic: ramp y from kMinDistance to 0.3 across N samples
     XYZPanEngine engine;
     engine.prepare(static_cast<double>(kTestSampleRate), kTestBlockSize);
 
@@ -336,12 +326,12 @@ TEST_CASE("DIST-04: Doppler pitch shift during distance change", "[distance][DIS
     startP.dopplerEnabled = true;
     engine.setParams(startP);
     {
-        std::vector<float> silence(4096, 0.0f);
-        std::vector<float> silL(4096), silR(4096);
+        std::vector<float> silence(44100, 0.0f);
+        std::vector<float> silL(44100), silR(44100);
         const float* ins[1] = { silence.data() };
         int off = 0;
-        while (off < 4096) {
-            int b = std::min(kTestBlockSize, 4096 - off);
+        while (off < 44100) {
+            int b = std::min(kTestBlockSize, 44100 - off);
             engine.process(ins, 1, silL.data() + off, silR.data() + off, nullptr, nullptr, b);
             ins[0] += b;
             off += b;
@@ -352,10 +342,10 @@ TEST_CASE("DIST-04: Doppler pitch shift during distance change", "[distance][DIS
     int offset = 0;
     while (offset < N) {
         int batch = std::min(kTestBlockSize, N - offset);
-        // Ramp y from kMinDistance to 1.0
+        // Ramp y from kMinDistance to 0.3
         float t = static_cast<float>(offset) / static_cast<float>(N);
         EngineParams p = startP;
-        p.y = kMinDistance + (1.0f - kMinDistance) * t;
+        p.y = kMinDistance + (0.3f - kMinDistance) * t;
         engine.setParams(p);
         const float* ins[1] = { sine1k.data() + offset };
         engine.process(ins, 1, rampL.data() + offset, rampR.data() + offset, nullptr, nullptr, batch);

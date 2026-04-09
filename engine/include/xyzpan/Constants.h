@@ -17,6 +17,12 @@ constexpr float kMaxInputXYZ = 1.0f;
 // Binaural panning constants (Phase 2)
 // ============================================================================
 
+// Virtual ear offsets for distance-difference spatial cue computation.
+// Each axis uses a pair of virtual ear nodes offset along that axis;
+// the cue factor is derived from (distFar − distNear) / (2 * offset).
+constexpr float kAzimuthEarOffset = 0.087f;  // L/R virtual ears at (±h, 0, 0)
+constexpr float kRearEarOffset    = 0.087f;  // F/B virtual ears at (0, ±h, 0)
+
 // ITD (Interaural Time Difference) — Geometric ear-distance model
 // Maximum ITD at 90-degree azimuth (empirical: ~0.66–0.72ms, head size dependent).
 constexpr float kDefaultMaxITD_ms      = 0.72f;   // default max ITD in milliseconds
@@ -44,7 +50,7 @@ constexpr float kDefaultILDMaxDb       = 8.0f;      // max ILD boost in dB (near
 // ILD crossfade width: smooth linear crossfade over this ITD range (in samples)
 // to avoid gain discontinuity when ITD crosses zero (median plane crossing).
 // 1.0 sample ≈ 0.023ms at 44.1kHz — matches exactly at |itdSamples| >= 1.
-constexpr float kILDCrossfadeWidth     = 1.0f;
+constexpr float kILDCrossfadeWidth     = 4.0f;
 
 // Hardpan mode: opposite-ear attenuation when binaural (ITD) is disabled.
 // At full azimuth, the opposite ear is cut by this amount (in dB).
@@ -54,7 +60,7 @@ constexpr float kHardpanMaxDb          = -4.0f;
 // Provides a subtle front/back cue before Phase 3 comb filters are added.
 // Full-open at 22kHz means no filtering when source is in front; SVF clamps near Nyquist internally.
 constexpr float kRearShadowFullOpenHz  = 22000.0f;  // no rear shadow (SVF clamps internally near Nyquist)
-constexpr float kRearShadowMinHz       = 4000.0f;   // subtle HF rolloff at Y=-1
+constexpr float kRearShadowMinHz       = 20000.0f;  // effectively disabled (at range cap)
 
 // Parameter smoothing time constants (RC time constant, ~63% rise time)
 // ITD delay uses the slowest smoothing to avoid Doppler pitch glitches.
@@ -93,8 +99,8 @@ constexpr float kCombDefaultFeedback[10] = {
     0.14f, 0.16f, 0.13f, 0.15f, 0.14f
 };
 
-// Maximum dry/wet blend for the comb bank output (30% wet at Y=-1).
-constexpr float kCombMaxWet = 0.30f;
+// Maximum dry/wet blend for the comb bank output (15% wet at Y=-1).
+constexpr float kCombMaxWet = 0.15f;
 
 // Maximum comb filter delay time in milliseconds (caps the delay range).
 constexpr float kCombMaxDelay_ms = 1.50f;
@@ -122,9 +128,9 @@ constexpr float kPinnaN2OffsetHz  = 3000.0f;   // N2 frequency = N1 + this offse
 constexpr float kPinnaN2GainDb    = -8.0f;      // notch depth
 constexpr float kPinnaN2Q         = 2.0f;       // bandwidth
 
-// Pinna P1 peak: +4 dB at 5 kHz, fixed (not elevation-dependent)
+// Pinna P1 peak: +2.8 dB at 5 kHz, fixed (not elevation-dependent)
 constexpr float kPinnaP1FreqHz    = 5000.0f;
-constexpr float kPinnaP1GainDb    = 4.0f;
+constexpr float kPinnaP1GainDb    = 2.8f;
 constexpr float kPinnaP1Q         = 1.5f;
 
 // Front-boosting presence shelf: high shelf at 3 kHz, Y-mapped gain
@@ -158,8 +164,8 @@ constexpr float kFloorGainDb      = -5.0f;
 // Floor bounce HF absorption: LPF cutoff on reflected signal (floors absorb HF)
 constexpr float kFloorAbsHz       = 5000.0f;
 
-// Vertical mono cylinder: collapses lateral panning near the Z-axis.
-// Radius is in normalized [0,1] units matching the XYZ coordinate space.
+// DEPRECATED — cylinder blend replaced by distance-difference azimuth model.
+// Kept for preset backward compatibility (parameter exists but DSP ignores it).
 constexpr float kVertMonoCylinderRadius    = 0.2f;
 constexpr float kVertMonoCylinderRadiusMin = 0.0f;
 constexpr float kVertMonoCylinderRadiusMax = 1.0f;

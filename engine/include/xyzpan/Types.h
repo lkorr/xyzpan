@@ -144,11 +144,13 @@ struct EngineParams {
     // Geometry
     // =========================================================================
     float sphereRadius           = kSphereRadiusDefault;
-    float vertMonoCylinderRadius = kVertMonoCylinderRadius;
+    float vertMonoCylinderRadius = kVertMonoCylinderRadius;  // DEPRECATED — unused, kept for preset compat
 
     // =========================================================================
-    // Elevation tuning (dev-panel exposed)
+    // Virtual ear offsets (distance-difference spatial cue model)
     // =========================================================================
+    float azimuthEarOffset    = kAzimuthEarOffset;
+    float rearEarOffset       = kRearEarOffset;
     float elevEarOffset       = kElevEarOffset;
     float presenceShelfFreqHz = kPresenceShelfFreqHz;
     float presenceShelfMaxDb  = kPresenceShelfMaxDb;

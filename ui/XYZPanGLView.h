@@ -291,7 +291,11 @@ private:
     void drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
                         float sphereRadius, float inputRms, const glm::vec3& color,
                         double nowSeconds, float intensity, float baseOpacity,
-                        float speed, int numWaves);
+                        float speed, int numWaves, int blendMode);
+
+    // Set/restore GL blend state for wave blend modes
+    void applyWaveBlendMode(int mode);
+    void restoreStandardBlend(int mode);
 
     // Draw sphere VAO with arbitrary model matrix (for ellipsoids / custom transforms)
     void drawSphereWithModel(const glm::mat4& model, const glm::vec3& color, float opacity);
@@ -452,6 +456,7 @@ private:
     std::atomic<float>* waveOpacityParam_   = nullptr;
     std::atomic<float>* waveSpeedParam_     = nullptr;
     std::atomic<float>* waveCountParam_     = nullptr;
+    std::atomic<float>* waveBlendModeParam_ = nullptr;
     std::atomic<float>* showAudibleSphereParam_ = nullptr;
     std::atomic<int>    sphereKnobActive_{0};  // 1 when sphere knob is hovered/dragged
     std::atomic<float>* sourceSphereOpacityParam_ = nullptr;

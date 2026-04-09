@@ -703,6 +703,63 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     customizeContent_.addAndMakeVisible(waveCountSlider_);
     customizeContent_.addAndMakeVisible(waveCountLabel_);
 
+    // ----- Customize tab: wave opacity slider -----
+    waveOpacitySlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    waveOpacitySlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 36, 16);
+    waveOpacityAtt_ = std::make_unique<SA>(p.apvts, ParamID::WAVE_OPACITY, waveOpacitySlider_);
+    waveOpacityLabel_.setText("Wave Opacity", juce::dontSendNotification);
+    waveOpacityLabel_.setJustificationType(juce::Justification::centredLeft);
+    waveOpacityLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(waveOpacitySlider_);
+    customizeContent_.addAndMakeVisible(waveOpacityLabel_);
+
+    // ----- Customize tab: wave speed slider -----
+    waveSpeedSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    waveSpeedSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 36, 16);
+    waveSpeedAtt_ = std::make_unique<SA>(p.apvts, ParamID::WAVE_SPEED, waveSpeedSlider_);
+    waveSpeedLabel_.setText("Wave Speed", juce::dontSendNotification);
+    waveSpeedLabel_.setJustificationType(juce::Justification::centredLeft);
+    waveSpeedLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(waveSpeedSlider_);
+    customizeContent_.addAndMakeVisible(waveSpeedLabel_);
+
+    // ----- Customize tab: wave blend mode combo -----
+    waveBlendLabel_.setText("Wave Blend", juce::dontSendNotification);
+    waveBlendLabel_.setJustificationType(juce::Justification::centredLeft);
+    waveBlendLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(waveBlendLabel_);
+    // Single modes
+    waveBlendCombo_.addItem("Normal",      1);
+    waveBlendCombo_.addItem("Additive",    2);
+    waveBlendCombo_.addItem("Difference",  3);
+    waveBlendCombo_.addItem("Min (Darken)",     4);
+    waveBlendCombo_.addItem("Max (Brighten)",   5);
+    waveBlendCombo_.addItem("Multiply",    6);
+    waveBlendCombo_.addItem("Screen",      7);
+    waveBlendCombo_.addItem("Invert",      8);
+    // Compound modes
+    waveBlendCombo_.addSeparator();
+    waveBlendCombo_.addItem("Pulse",       9);
+    waveBlendCombo_.addItem("Strobe",     10);
+    waveBlendCombo_.addItem("Breath",     11);
+    waveBlendCombo_.addItem("Prism",      12);
+    waveBlendCombo_.addItem("Haze",       13);
+    waveBlendCombo_.addItem("Shatter",    14);
+    waveBlendCombo_.addItem("Nebula",     15);
+    waveBlendCombo_.addItem("Void",       16);
+    {
+        const int initMode = static_cast<int>(p.apvts.getRawParameterValue(ParamID::WAVE_BLEND_MODE)->load());
+        waveBlendCombo_.setSelectedId(initMode + 1, juce::dontSendNotification);
+    }
+    waveBlendCombo_.onChange = [this] {
+        if (waveBlendCombo_.getSelectedId() > 0) {
+            const float mode = static_cast<float>(waveBlendCombo_.getSelectedId() - 1);
+            if (auto* p = proc_.apvts.getParameter(ParamID::WAVE_BLEND_MODE))
+                p->setValueNotifyingHost(p->convertTo0to1(mode));
+        }
+    };
+    customizeContent_.addAndMakeVisible(waveBlendCombo_);
+
     // ----- Customize tab: color swatches -----
     {
         auto initLabel = [this](juce::Label& label, const juce::String& name) {
@@ -1857,6 +1914,18 @@ void XYZPanEditor::resized()
         waveCountLabel_.setBounds(pad, cy, labelW, sliderH);
         waveCountSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
         cy += sliderH + gap;
+
+        waveOpacityLabel_.setBounds(pad, cy, labelW, sliderH);
+        waveOpacitySlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
+        cy += sliderH + gap;
+
+        waveSpeedLabel_.setBounds(pad, cy, labelW, sliderH);
+        waveSpeedSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
+        cy += sliderH + gap;
+
+        waveBlendLabel_.setBounds(pad, cy, labelW, comboH);
+        waveBlendCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        cy += comboH + gap;
 
         // --- Collapsible AVATAR header ---
         avatarHeaderY_ = cy;

@@ -53,6 +53,7 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
     waveOpacityParam_      = apvts_.getRawParameterValue("wave_opacity");
     waveSpeedParam_        = apvts_.getRawParameterValue("wave_speed");
     waveCountParam_        = apvts_.getRawParameterValue("wave_count");
+    waveBlendModeParam_    = apvts_.getRawParameterValue("wave_blend_mode");
     showAudibleSphereParam_ = apvts_.getRawParameterValue("show_audible_sphere");
     sourceSphereOpacityParam_ = apvts_.getRawParameterValue("source_sphere_opacity");
 }
@@ -347,13 +348,14 @@ void XYZPanGLView::renderOpenGL()
     const float waveBaseOpacity = waveOpacityParam_ ? waveOpacityParam_->load(std::memory_order_relaxed) : 0.02f;
     const float waveSpeed = waveSpeedParam_ ? waveSpeedParam_->load(std::memory_order_relaxed) : 0.3f;
     const int   waveCount = waveCountParam_ ? static_cast<int>(waveCountParam_->load(std::memory_order_relaxed)) : 3;
+    const int   waveBlendMode = waveBlendModeParam_ ? static_cast<int>(waveBlendModeParam_->load(std::memory_order_relaxed)) : 0;
 
-    // Distance-based opacity: full up to 50% of radius, gentle fade to 80%
-    // at the sphere boundary, then rapid exponential falloff outside.
+    // Distance-based opacity: full up to 40% of radius, gentle fade to 80%
+    // at 80% of radius, then rapid exponential falloff outside.
     auto distanceOpacity = [](float df) -> float {
-        if (df <= 0.5f) return 1.0f;
-        if (df <= 1.0f) return 1.0f - 0.4f * (df - 0.5f);   // 1.0 → 0.8
-        return std::max(0.8f * std::exp(-4.0f * (df - 1.0f)), 0.1f);
+        if (df <= 0.4f) return 1.0f;
+        if (df <= 0.8f) return 1.0f - 0.5f * (df - 0.4f);   // 1.0 → 0.8
+        return std::max(0.8f * std::exp(-4.0f * (df - 0.8f)), 0.1f);
     };
     const float distFrac = snap.distance / std::max(sr, 0.001f);
     const float sourceOpacity = distanceOpacity(distFrac);
@@ -635,21 +637,33 @@ void XYZPanGLView::renderOpenGL()
 
         // Sound wave pulses — filled transparent spheres expanding outward
         // When stereo is active, emit from L/R nodes individually; otherwise from center.
+        // For single modes (0-7): set GL state once here.
+        // For compound modes (8+): drawSoundWaves handles per-wave state internally.
+        if (waveBlendMode < 8) {
+            applyWaveBlendMode(waveBlendMode);
+            sphereShader_->setUniform("blendMode", waveBlendMode);
+        }
         if (stereoActive) {
             // Reset L/R emitters on mono→stereo transition
             if (!prevStereoActive_) {
                 ownWaveEmitterL_ = WaveEmitter{};
                 ownWaveEmitterR_ = WaveEmitter{};
             }
-            drawSoundWaves(ownWaveEmitterL_, lNodePos, sr, smoothedRms_, theme.glStereoL, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
-            drawSoundWaves(ownWaveEmitterR_, rNodePos, sr, smoothedRms_, theme.glStereoR, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            drawSoundWaves(ownWaveEmitterL_, lNodePos, sr, smoothedRms_, theme.glStereoL, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount, waveBlendMode);
+            drawSoundWaves(ownWaveEmitterR_, rNodePos, sr, smoothedRms_, theme.glStereoR, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount, waveBlendMode);
         } else {
             // Reset center emitter on stereo→mono transition
             if (prevStereoActive_)
                 ownWaveEmitter_ = WaveEmitter{};
-            drawSoundWaves(ownWaveEmitter_, sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+            drawSoundWaves(ownWaveEmitter_, sourcePos, sr, smoothedRms_, theme.glAudibleSphere, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount, waveBlendMode);
         }
         prevStereoActive_ = stereoActive;
+        // Restore standard blend state
+        if (waveBlendMode != 0) {
+            glBlendEquation(GL_FUNC_ADD);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
+        sphereShader_->setUniform("blendMode", 0);
 
         glDepthMask(GL_TRUE);
     }
@@ -771,16 +785,25 @@ void XYZPanGLView::renderOpenGL()
             glBindVertexArray(vaoSphere_);
 
             // Smooth foreign source RMS and draw sound waves
+            if (waveBlendMode < 8) {
+                applyWaveBlendMode(waveBlendMode);
+                sphereShader_->setUniform("blendMode", waveBlendMode);
+            }
             const float fRmsCoeff = (fs.inputRms > foreignSmoothedRms_[ri]) ? kRmsAttack : kRmsRelease;
             foreignSmoothedRms_[ri] += fRmsCoeff * (fs.inputRms - foreignSmoothedRms_[ri]);
             if (fs.stereoWidth > 0.0f) {
                 const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
                 const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);
-                drawSoundWaves(foreignWaveEmittersL_[ri], fL, fsr, foreignSmoothedRms_[ri], color * 0.8f, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
-                drawSoundWaves(foreignWaveEmittersR_[ri], fR, fsr, foreignSmoothedRms_[ri], color * 0.8f, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+                drawSoundWaves(foreignWaveEmittersL_[ri], fL, fsr, foreignSmoothedRms_[ri], color * 0.8f, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount, waveBlendMode);
+                drawSoundWaves(foreignWaveEmittersR_[ri], fR, fsr, foreignSmoothedRms_[ri], color * 0.8f, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount, waveBlendMode);
             } else {
-                drawSoundWaves(foreignWaveEmitters_[ri], fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount);
+                drawSoundWaves(foreignWaveEmitters_[ri], fPos, fsr, foreignSmoothedRms_[ri], color, now, waveIntensity, waveBaseOpacity, waveSpeed, waveCount, waveBlendMode);
             }
+            if (waveBlendMode != 0) {
+                glBlendEquation(GL_FUNC_ADD);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            }
+            sphereShader_->setUniform("blendMode", 0);
         }
         glDepthMask(GL_TRUE);
 
@@ -1664,6 +1687,51 @@ void XYZPanGLView::drawSphereRings(float radius, const glm::vec3& color, float o
 }
 
 // ---------------------------------------------------------------------------
+// applyWaveBlendMode / restoreStandardBlend — set and restore GL blend state
+// for wave-specific compositing modes.  Accepts base mode indices 0-7 only;
+// compound modes (8+) are resolved to base modes per-wave in drawSoundWaves.
+// ---------------------------------------------------------------------------
+void XYZPanGLView::applyWaveBlendMode(int mode) {
+    switch (mode) {
+        case 1: // Additive
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            break;
+        case 2: // Difference
+            glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+            glBlendFunc(GL_ONE, GL_ONE);
+            break;
+        case 3: // Min (Darken)
+            glBlendEquation(GL_MIN);
+            glBlendFunc(GL_ONE, GL_ONE);
+            break;
+        case 4: // Max (Brighten)
+            glBlendEquation(GL_MAX);
+            glBlendFunc(GL_ONE, GL_ONE);
+            break;
+        case 5: // Multiply (approximate)
+            glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+        case 6: // Screen — inverse multiply: 1 - (1-src)*(1-dst)
+            // Approximated with additive pre-multiplied by alpha for soft glow
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+            break;
+        case 7: // Invert — subtract source from white (dst - src)
+            glBlendEquation(GL_FUNC_REVERSE_SUBTRACT);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            break;
+        default: break; // Normal (0) — already set at frame start
+    }
+}
+
+void XYZPanGLView::restoreStandardBlend(int mode) {
+    if (mode != 0) {
+        if (mode == 2 || mode == 3 || mode == 4 || mode == 7)
+            glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // drawSoundWaves — expanding filled sphere pulses radiating outward from source.
 // Each wave spawns at the source's averaged position and expands from that fixed
 // point. Waves do NOT follow the moving source — they emanate from where they
@@ -1673,7 +1741,7 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
                                    float sphereRadius, float inputRms,
                                    const glm::vec3& color, double nowSeconds,
                                    float intensity, float baseOpacity,
-                                   float speed, int numWaves)
+                                   float speed, int numWaves, int blendMode)
 {
     if (sphereRadius < 0.001f || intensity < 0.001f
         || baseOpacity < 0.0001f || numWaves < 1) return;
@@ -1717,6 +1785,36 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
     // energy roughly constant (more waves × less opacity ≈ same brightness)
     const float velocityOpacityMul = 1.0f / spawnMul;
 
+    // Per-mode opacity adjustment: prevent additive blowout, boost min/max visibility
+    // Indexed by base mode (0-7).
+    static constexpr float kBlendOpacityMul[] = {
+        1.0f,   // 0: Normal
+        0.3f,   // 1: Additive
+        0.5f,   // 2: Difference
+        3.0f,   // 3: Min
+        2.0f,   // 4: Max
+        2.0f,   // 5: Multiply
+        0.5f,   // 6: Screen
+        0.5f    // 7: Invert
+    };
+
+    // Compound mode cycle patterns — each entry is a base mode (0-7).
+    // Indexed by (compoundMode - 8), cycling through per-wave.
+    static constexpr int kCyclePatterns[][5] = {
+        { 1, 0, -1, -1, -1 },  //  8: Pulse     — Additive, Normal
+        { 1, 2, -1, -1, -1 },  //  9: Strobe    — Additive, Difference
+        { 0, 4, 0, 3, -1 },    // 10: Breath    — Normal, Max, Normal, Min
+        { 1, 2, 6, -1, -1 },   // 11: Prism     — Additive, Difference, Screen
+        { 5, 1, 4, -1, -1 },   // 12: Haze      — Multiply, Additive, Max
+        { 2, 3, 1, 4, 7 },     // 13: Shatter   — Difference, Min, Additive, Max, Invert
+        { 6, 1, 4, 0, -1 },    // 14: Nebula    — Screen, Additive, Max, Normal
+        { 7, 2, 3, 5, 1 }      // 15: Void      — Invert, Difference, Min, Multiply, Additive
+    };
+    static constexpr int kCycleLengths[] = { 2, 2, 4, 3, 3, 5, 4, 5 };
+
+    const bool isCompound = blendMode >= 8 && blendMode <= 15;
+    int prevBaseMode = -1;  // track to avoid redundant GL state changes
+
     // Draw all live waves
     for (int i = 0; i < emitter.count; ++i) {
         const int idx = (emitter.head - i + WaveEmitter::kMaxWaves) % WaveEmitter::kMaxWaves;
@@ -1730,9 +1828,27 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
         const float waveRadius = phase * sphereRadius;
         if (waveRadius < 0.005f) continue;
 
+        // Resolve per-wave base mode for compound patterns
+        int baseMode = blendMode;
+        if (isCompound) {
+            const int ci = blendMode - 8;
+            baseMode = kCyclePatterns[ci][i % kCycleLengths[ci]];
+        }
+
+        // Switch GL blend state when base mode changes
+        if (baseMode != prevBaseMode) {
+            // Restore previous non-default state before switching
+            if (prevBaseMode > 0) restoreStandardBlend(prevBaseMode);
+            applyWaveBlendMode(baseMode);
+            // Update shader premultiply flag
+            sphereShader_->setUniform("blendMode", baseMode);
+            prevBaseMode = baseMode;
+        }
+
         float fadeIn  = std::clamp(phase * 5.0f, 0.0f, 1.0f);
         float fadeOut = 1.0f - phase;
-        float waveOpacity = fadeIn * fadeOut * baseOpacity * intensity * rmsMul * velocityOpacityMul;
+        const float blendMul = kBlendOpacityMul[std::clamp(baseMode, 0, 7)];
+        float waveOpacity = fadeIn * fadeOut * baseOpacity * intensity * rmsMul * velocityOpacityMul * blendMul;
 
         if (waveOpacity < 0.001f) continue;
 
@@ -1745,6 +1861,9 @@ void XYZPanGLView::drawSoundWaves(WaveEmitter& emitter, const glm::vec3& center,
         sphereShader_->setUniform("edgeFade",  1.0f);
         glDrawElements(GL_TRIANGLES, sphereIndexCount_, GL_UNSIGNED_INT, nullptr);
     }
+
+    // Restore if last wave used a non-default mode
+    if (prevBaseMode > 0) restoreStandardBlend(prevBaseMode);
 }
 
 // ---------------------------------------------------------------------------

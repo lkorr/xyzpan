@@ -1,5 +1,6 @@
 #pragma once
 #include "xyzpan/dsp/FractionalDelayLine.h"
+#include "xyzpan/dsp/SineLUT.h"
 #include "xyzpan/Constants.h"
 #include <array>
 #include <cmath>
@@ -7,57 +8,89 @@
 
 namespace xyzpan::dsp {
 
-// FDN (Feedback Delay Network) algorithmic reverb.
-// 4-delay Householder feedback matrix with one-pole damping per loop.
-// Pre-delay line (FractionalDelayLine) before the FDN input, distance-scaled.
-// All delay lines sized for 192kHz worst case in prepare() — no reallocation on
-// sample rate changes (same approach as Phase 4 distance delay lines).
+// Dattorro plate reverb (Jon Dattorro, "Effect Design Part 1", 1997).
+// 4 input allpass diffusers → figure-8 tank with 2 modulated allpasses,
+// 2 tank delays, per-loop damping, and 6-tap decorrelated stereo output.
+// Pre-delay line (FractionalDelayLine) before input, distance-scaled.
+// All delay lines sized for 192kHz worst case in prepare().
 class FDNReverb {
 public:
     void prepare(double sampleRate, int maxBlockSize);
     void reset();
 
     // Set room size [0,1]: scales all delay lengths proportionally.
-    // NOTE: delay length changes are applied at prepare() time only —
-    // do NOT call setSize() per-sample (would cause pitch artifacts).
-    // Size is fixed after prepare(); only feedback gain (decay) varies per block.
+    // Only call per-block or at prepare() — never per-sample.
     void setSize(float sizeNorm);
 
-    // Set decay [0,1]: maps to T60 (0 = instant decay, 1 = ~5s T60).
-    // Computes feedbackGain_ = pow(10, -3 * maxDelayMs / (1000 * decayT60)).
-    // Hard-clamped to [0.0, 0.999] to prevent feedback instability.
+    // Set decay [0,1]: maps to T60 (0 = instant, 1 = ~5s).
     void setDecay(float decayNorm);
 
-    // Set damping [0,1]: one-pole lowpass pole position in each feedback loop.
-    // 0 = no damping (bright), 1 = heavy damping (dark/muffled).
+    // Set damping [0,1]: one-pole LP pole in each tank loop.
     void setDamping(float d);
 
-    // Process one stereo sample. preDelaySamp is the fractional delay in
-    // samples for the pre-delay line (0 = no pre-delay, computed from distance).
-    // wetL/wetR are the reverb-only output; caller mixes with dry signal.
+    // Set input diffusion [0,1]: scales allpass coefficients.
+    // 0 = no diffusion (discrete echoes), 1 = maximum smearing.
+    void setDiffusion(float d);
+
+    // Set modulation depth [0,1]: LFO excursion on tank allpasses.
+    // 0 = no modulation (metallic), 1 = heavy chorus.
+    void setModDepth(float d);
+
+    // Process one stereo sample. preDelaySamp = fractional pre-delay in samples.
+    // wetL/wetR are reverb-only output; caller mixes with dry signal.
     void processSample(float inL, float inR,
                        float preDelaySamp,
                        float& wetL, float& wetR);
 
-    // Set wet gain [0,1] for output mixing. Applied to wetL/wetR output.
+    // Set wet gain [0,1] for output mixing.
     void setWetDry(float wet);
 
 private:
-    static constexpr int kN = 4;
-
+    // Pre-delay
     FractionalDelayLine preDelayLine_;
-    std::array<FractionalDelayLine, kN> delays_;
 
-    // Delay lengths in samples (set in prepare() from kFDNDelayMs * sampleRate/44100 * size)
-    std::array<float, kN> delayLengths_ = {};
+    // Input diffusion: 4 series allpass filters
+    std::array<FractionalDelayLine, 4> inputAP_;
+    std::array<float, 4> inputAPDelays_ = {};  // in samples, scaled
 
-    // One-pole LP state per delay loop
-    std::array<float, kN> dampState_ = {};
+    // Tank: 2 modulated allpasses + 2 delay lines
+    std::array<FractionalDelayLine, 2> tankAP_;
+    std::array<FractionalDelayLine, 2> tankDelay_;
+    std::array<float, 2> tankAPDelays_ = {};   // base delays in samples, scaled
+    std::array<float, 2> tankDelayLens_ = {};  // in samples, scaled
 
-    float feedbackGain_ = 0.0f;   // per-loop feedback scalar (from decay)
-    float damping_      = 0.0f;   // pole position for one-pole LP
-    float wetGain_      = 0.0f;   // output wet mix
-    double sampleRate_  = 44100.0;
+    // Output tap positions (scaled)
+    float tapA_ = 0.0f;  // early tap from tank delays
+    float tapB_ = 0.0f;  // late tap from tank delays
+    float tapC_ = 0.0f;  // cross-channel tap from tank allpasses
+
+    // One-pole LP damping state per tank half
+    std::array<float, 2> dampState_ = {};
+
+    // Tank cross-feedback state (output of each half feeds the other)
+    std::array<float, 2> tankFB_ = {};
+
+    // Modulation LFO
+    std::array<float, 2> lfoPhase_ = {};
+    std::array<float, 2> lfoInc_ = {};   // phase increment per sample
+    float modExcursion_ = 0.0f;          // scaled excursion in samples
+
+    // Coefficients
+    float inputDiff1_ = kDatInputDiffCoeff1;   // AP1, AP2
+    float inputDiff2_ = kDatInputDiffCoeff2;   // AP3, AP4
+    float decayGain_  = 0.0f;   // cross-feedback gain (from T60)
+    float damping_    = 0.0f;   // one-pole LP coefficient
+    float wetGain_    = 0.0f;
+
+    // DC blocker state (one-pole HPF ~5 Hz per channel)
+    float dcStateL_ = 0.0f;
+    float dcStateR_ = 0.0f;
+    float dcCoeff_  = 0.0f;
+
+    double sampleRate_ = 44100.0;
+
+    // Helper: compute scaled delay length from reference-rate value
+    float scaleDelay(int refSamples, float size) const;
 };
 
 } // namespace xyzpan::dsp

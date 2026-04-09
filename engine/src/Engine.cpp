@@ -9,6 +9,28 @@
 
 namespace xyzpan {
 
+// Distance-difference azimuth: virtual ears at (±h, 0, 0) in listener-relative space.
+// Returns signed factor: +1 = right, -1 = left, 0 = median plane.
+static inline float computeAzimuthFactor(float x, float y, float z, float h) {
+    if (h < 1e-7f) return 0.0f;
+    const float yz2 = y * y + z * z;
+    const float distLeft  = std::sqrt((x + h) * (x + h) + yz2);
+    const float distRight = std::sqrt((x - h) * (x - h) + yz2);
+    const float delta = distLeft - distRight;  // positive when source is right of center
+    return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
+}
+
+// Distance-difference rear factor: virtual ears at (0, ±h, 0) in listener-relative space.
+// Returns signed factor: +1 = rear, -1 = front, 0 = interaural plane.
+static inline float computeRearFactor(float x, float y, float z, float h) {
+    if (h < 1e-7f) return 0.0f;
+    const float xz2 = x * x + z * z;
+    const float distFront = std::sqrt(xz2 + (y - h) * (y - h));
+    const float distBack  = std::sqrt(xz2 + (y + h) * (y + h));
+    const float delta = distFront - distBack;  // positive when source is behind
+    return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
+}
+
 // Elevation factor from distance-difference between top/bottom virtual ear nodes.
 // Returns 0.0 (nadir) to 1.0 (zenith), matching the old atan2-based range.
 static inline float computeElevFactor(float x, float y, float z, float earOffset) {
@@ -138,6 +160,11 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     yawSmCos_ = 1.0f; yawSmSin_ = 0.0f;
     pitchSmCos_ = 1.0f; pitchSmSin_ = 0.0f;
     rollSmCos_ = 1.0f; rollSmSin_ = 0.0f;
+
+    // Previous block trig for per-sample interpolation (identity = no rotation)
+    prevCosY_ = 1.f; prevSinY_ = 0.f;
+    prevCosP_ = 1.f; prevSinP_ = 0.f;
+    prevCosR_ = 1.f; prevSinR_ = 0.f;
 
     // -------------------------------------------------------------------------
     // Early Reflections (Image Source Method)
@@ -476,6 +503,28 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const bool listenerRotated = (std::abs(sinY) > kRotEps || std::abs(cosY - 1.0f) > kRotEps
                                || std::abs(sinP) > kRotEps || std::abs(sinR) > kRotEps);
 
+    // Per-sample trig interpolation: linearly ramp cos/sin from previous block's
+    // values to this block's values, eliminating block-boundary discontinuities
+    // during fast head rotation (especially roll near close sources).
+    const bool interpRotation = listenerRotated
+        && (prevCosY_ != cosY || prevSinY_ != sinY
+         || prevCosP_ != cosP || prevSinP_ != sinP
+         || prevCosR_ != cosR || prevSinR_ != sinR);
+    const float invN = 1.0f / static_cast<float>(numSamples);
+    const float dCosY = (cosY - prevCosY_) * invN;
+    const float dSinY = (sinY - prevSinY_) * invN;
+    const float dCosP = (cosP - prevCosP_) * invN;
+    const float dSinP = (sinP - prevSinP_) * invN;
+    const float dCosR = (cosR - prevCosR_) * invN;
+    const float dSinR = (sinR - prevSinR_) * invN;
+    float rCosY = prevCosY_, rSinY = prevSinY_;
+    float rCosP = prevCosP_, rSinP = prevSinP_;
+    float rCosR = prevCosR_, rSinR = prevSinR_;
+    // Store current values for next block
+    prevCosY_ = cosY; prevSinY_ = sinY;
+    prevCosP_ = cosP; prevSinP_ = sinP;
+    prevCosR_ = cosR; prevSinR_ = sinR;
+
     // Save listener-relative (pre-head-rotation) coords for face-observer spread
     const float blkRelX = blkX;
     const float blkRelY = blkY;
@@ -495,8 +544,9 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         blkZ = rrz;
     }
 
-    const float blkHorizMag  = std::sqrt(blkX * blkX + blkY * blkY);
-    const float blkRearFactor = (blkHorizMag > 1e-7f) ? (-blkY / blkHorizMag) : blkY;
+    // Distance-difference virtual ear model for block-start position
+    const float blkRearFactor = computeRearFactor(blkX, blkY, blkZ, currentParams.rearEarOffset);
+    const float blkEffAzimuth = computeAzimuthFactor(blkX, blkY, blkZ, currentParams.azimuthEarOffset);
 
     // Block-start EQ targets (elevation-driven pinna, Y-driven presence/earCanal)
     const float blkPresenceGainDb  = currentParams.presenceShelfMaxDb * (-blkRearFactor);
@@ -508,12 +558,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float blkPinnaN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * blkElevFactor, currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
     const float blkPinnaN2Freq     = blkPinnaN1Freq + currentParams.pinnaN2OffsetHz;
 
-    // Block-start binaural targets (mono path)
-    const float blkAzimuthFactor   = (blkHorizMag > 1e-7f) ? blkX / blkHorizMag : 0.0f;
-    const float blkCylR            = currentParams.vertMonoCylinderRadius;
-    const float blkT               = std::clamp(blkHorizMag / (blkCylR + 1e-7f), 0.0f, 1.0f);
-    const float blkMonoBlend       = 1.0f - blkT * blkT * (3.0f - 2.0f * blkT);
-    const float blkEffAzimuth      = blkAzimuthFactor * (1.0f - blkMonoBlend);
+    // Block-start binaural near-field targets
     const float blkNFBaseDb        = currentParams.nearFieldLFMaxDb * (1.0f - std::clamp(
         (std::sqrt(blkX*blkX + blkY*blkY + blkZ*blkZ) - kMinDistance)
         / std::max(currentParams.sphereRadius - kMinDistance, 0.001f), 0.0f, 1.0f));
@@ -671,8 +716,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float blkRNodeZ = blkZ + blkROffZ;
 
         // L node EQ targets
-        const float lHorizMag   = std::sqrt(blkLNodeX*blkLNodeX + blkLNodeY*blkLNodeY);
-        const float lRearFactor = (lHorizMag > 1e-7f) ? (-blkLNodeY / lHorizMag) : blkLNodeY;
+        const float lRearFactor = computeRearFactor(blkLNodeX, blkLNodeY, blkLNodeZ, currentParams.rearEarOffset);
         const float lPresGainDb = currentParams.presenceShelfMaxDb * (-lRearFactor);
         const float lEarGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-lRearFactor));
         const float lElevFactor = computeElevFactor(blkLNodeX, blkLNodeY, blkLNodeZ, currentParams.elevEarOffset);
@@ -681,10 +725,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float lShelfGain  = 3.0f * std::min(1.0f, lElevFactor * 2.0f);
         const float lN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * lElevFactor, currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
         const float lN2Freq     = lN1Freq + currentParams.pinnaN2OffsetHz;
-        const float lAzFactor   = (lHorizMag > 1e-7f) ? blkLNodeX / lHorizMag : 0.0f;
-        const float lCylT       = std::clamp(lHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
-        const float lMonoBlend  = 1.0f - lCylT * lCylT * (3.0f - 2.0f * lCylT);
-        const float lEffAz      = lAzFactor * (1.0f - lMonoBlend);
+        const float lEffAz      = computeAzimuthFactor(blkLNodeX, blkLNodeY, blkLNodeZ, currentParams.azimuthEarOffset);
         const float lFullDist   = std::sqrt(blkLNodeX*blkLNodeX+blkLNodeY*blkLNodeY+blkLNodeZ*blkLNodeZ);
         const float lLNodeDistFrac = std::clamp((lFullDist - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
         const float lProx       = 1.0f - lLNodeDistFrac;
@@ -695,8 +736,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float lAirCut2    = currentParams.airAbs2MaxHz + (currentParams.airAbs2MinHz - currentParams.airAbs2MaxHz) * lLNodeDistFrac;
 
         // R node EQ targets
-        const float rHorizMag   = std::sqrt(blkRNodeX*blkRNodeX + blkRNodeY*blkRNodeY);
-        const float rRearFactor = (rHorizMag > 1e-7f) ? (-blkRNodeY / rHorizMag) : blkRNodeY;
+        const float rRearFactor = computeRearFactor(blkRNodeX, blkRNodeY, blkRNodeZ, currentParams.rearEarOffset);
         const float rPresGainDb = currentParams.presenceShelfMaxDb * (-rRearFactor);
         const float rEarGainDb  = std::min(0.0f, currentParams.earCanalMaxDb * (-rRearFactor));
         const float rElevFactor = computeElevFactor(blkRNodeX, blkRNodeY, blkRNodeZ, currentParams.elevEarOffset);
@@ -705,10 +745,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float rShelfGain  = 3.0f * std::min(1.0f, rElevFactor * 2.0f);
         const float rN1Freq     = std::clamp(currentParams.pinnaN1MinHz + (currentParams.pinnaN1MaxHz - currentParams.pinnaN1MinHz) * rElevFactor, currentParams.pinnaN1MinHz, currentParams.pinnaN1MaxHz);
         const float rN2Freq     = rN1Freq + currentParams.pinnaN2OffsetHz;
-        const float rAzFactor   = (rHorizMag > 1e-7f) ? blkRNodeX / rHorizMag : 0.0f;
-        const float rCylT       = std::clamp(rHorizMag / (currentParams.vertMonoCylinderRadius + 1e-7f), 0.0f, 1.0f);
-        const float rMonoBlend  = 1.0f - rCylT * rCylT * (3.0f - 2.0f * rCylT);
-        const float rEffAz      = rAzFactor * (1.0f - rMonoBlend);
+        const float rEffAz      = computeAzimuthFactor(blkRNodeX, blkRNodeY, blkRNodeZ, currentParams.azimuthEarOffset);
         const float rFullDist   = std::sqrt(blkRNodeX*blkRNodeX+blkRNodeY*blkRNodeY+blkRNodeZ*blkRNodeZ);
         const float rRNodeDistFrac = std::clamp((rFullDist - kMinDistance) / blkMaxRange, 0.0f, 1.0f);
         const float rProx       = 1.0f - rRNodeDistFrac;
@@ -820,7 +857,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float blkRawModDist = std::sqrt(relPosX * relPosX
                                         + relPosY * relPosY
                                         + relPosZ * relPosZ);
-    // blkHorizMag is already computed above (sqrt(blkX^2+blkY^2)) -- reused in zero-LFO path
+    // blkRawModDist is reused in the zero-LFO path below
 
     // Pre-converge block-constant smoothers (targets don't change within a block)
     for (int j = 0; j < numSamples; ++j) {
@@ -942,30 +979,34 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         modY -= currentParams.listenerY;
         modZ -= currentParams.listenerZ;
 
-        // Rotate into listener-relative frame for DSP (binaural cues, EQ targets)
+        // Rotate into listener-relative frame for DSP (binaural cues, EQ targets).
+        // When interpolating, use per-sample ramped trig values to avoid block-boundary jumps.
         if (listenerRotated) {
-            const float rx = modX * cosY + modY * sinY;
-            const float ry = -modX * sinY + modY * cosY;
+            const float cY = interpRotation ? rCosY : cosY;
+            const float sY = interpRotation ? rSinY : sinY;
+            const float cP = interpRotation ? rCosP : cosP;
+            const float sP = interpRotation ? rSinP : sinP;
+            const float cR = interpRotation ? rCosR : cosR;
+            const float sR = interpRotation ? rSinR : sinR;
+            const float rx = modX * cY + modY * sY;
+            const float ry = -modX * sY + modY * cY;
             modX = rx;
-            modY = ry * cosP + modZ * sinP;
-            modZ = -ry * sinP + modZ * cosP;
+            modY = ry * cP + modZ * sP;
+            modZ = -ry * sP + modZ * cP;
             // Roll around forward axis (Y in engine coords)
-            const float rrx =  modX * cosR - modZ * sinR;
-            const float rrz =  modX * sinR + modZ * cosR;
+            const float rrx =  modX * cR - modZ * sR;
+            const float rrz =  modX * sR + modZ * cR;
             modX = rrx;
             modZ = rrz;
         }
 
         // Position-dependent targets from listener-relative center position
         // rawModDist uses listener-relative (rotation-invariant) distance
-        // horizontalMag uses rotated values (needed for azimuth/rear factor)
-        float rawModDist, horizontalMag;
+        float rawModDist;
         if (lfoActive) {
             rawModDist    = dsp::fastSqrt(modX * modX + modY * modY + modZ * modZ);
-            horizontalMag = dsp::fastSqrt(modX * modX + modY * modY);
         } else {
             rawModDist    = blkRawModDist;
-            horizontalMag = blkHorizMag;
         }
         const float modDist     = std::max(rawModDist, kMinDistance);
         const float maxRange    = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
@@ -1118,26 +1159,32 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             float dspLX = lRelX, dspLY = lRelY, dspLZ = lRelZ;
             float dspRX = rRelX, dspRY = rRelY, dspRZ = rRelZ;
             if (listenerRotated) {
+                const float cY = interpRotation ? rCosY : cosY;
+                const float sY = interpRotation ? rSinY : sinY;
+                const float cP = interpRotation ? rCosP : cosP;
+                const float sP = interpRotation ? rSinP : sinP;
+                const float cR = interpRotation ? rCosR : cosR;
+                const float sR = interpRotation ? rSinR : sinR;
                 float rx, ry;
-                rx = lRelX * cosY + lRelY * sinY;
-                ry = -lRelX * sinY + lRelY * cosY;
+                rx = lRelX * cY + lRelY * sY;
+                ry = -lRelX * sY + lRelY * cY;
                 dspLX = rx;
-                dspLY = ry * cosP + lRelZ * sinP;
-                dspLZ = -ry * sinP + lRelZ * cosP;
+                dspLY = ry * cP + lRelZ * sP;
+                dspLZ = -ry * sP + lRelZ * cP;
                 // Roll around forward axis (Y in engine coords)
-                float rrx =  dspLX * cosR - dspLZ * sinR;
-                float rrz =  dspLX * sinR + dspLZ * cosR;
+                float rrx =  dspLX * cR - dspLZ * sR;
+                float rrz =  dspLX * sR + dspLZ * cR;
                 dspLX = rrx;
                 dspLZ = rrz;
 
-                rx = rRelX * cosY + rRelY * sinY;
-                ry = -rRelX * sinY + rRelY * cosY;
+                rx = rRelX * cY + rRelY * sY;
+                ry = -rRelX * sY + rRelY * cY;
                 dspRX = rx;
-                dspRY = ry * cosP + rRelZ * sinP;
-                dspRZ = -ry * sinP + rRelZ * cosP;
+                dspRY = ry * cP + rRelZ * sP;
+                dspRZ = -ry * sP + rRelZ * cP;
                 // Roll around forward axis (Y in engine coords)
-                rrx =  dspRX * cosR - dspRZ * sinR;
-                rrz =  dspRX * sinR + dspRZ * cosR;
+                rrx =  dspRX * cR - dspRZ * sR;
+                rrz =  dspRX * sR + dspRZ * cR;
                 dspRX = rrx;
                 dspRZ = rrz;
             }
@@ -1157,21 +1204,21 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             sampleL = dist_.processDoppler(sampleL, lRawDistFrac, sr, effectiveDoppler, currentParams);
             sampleR = distR_.processDoppler(sampleR, rRawDistFrac, sr, effectiveDoppler, currentParams);
 
-            // Per-node chest bounce — uses listener-relative Z for elevation perception
-            float chestL = chest_.processSample(sampleL, dspLZ, sr, chestGainLin, currentParams);
-            float chestROut = chestR_.processSample(sampleR, dspRZ, sr, chestGainLin, currentParams);
+            // Per-node chest bounce — driven by T/B virtual ear elevation factor
+            const float lElevF = computeElevFactor(dspLX, dspLY, dspLZ, currentParams.elevEarOffset);
+            const float rElevF = computeElevFactor(dspRX, dspRY, dspRZ, currentParams.elevEarOffset);
+            float chestL = chest_.processSample(sampleL, lElevF, sr, chestGainLin, currentParams);
+            float chestROut = chestR_.processSample(sampleR, rElevF, sr, chestGainLin, currentParams);
 
             // Process L channel through L pipeline — listener-relative positions
-            const float lHorizMag = dsp::fastSqrt(dspLX * dspLX + dspLY * dspLY);
             auto [dL_L, dR_L] = src_.processSample(
                 sampleL, dspLX, dspLY, dspLZ, sr, binBlend,
-                ildGainBase_, hardpanGainBase_, currentParams, lHorizMag);
+                ildGainBase_, hardpanGainBase_, currentParams);
 
             // Process R channel through R pipeline — listener-relative positions
-            const float rHorizMag = dsp::fastSqrt(dspRX * dspRX + dspRY * dspRY);
             auto [dL_R, dR_R] = srcR_.processSample(
                 sampleR, dspRX, dspRY, dspRZ, sr, binBlend,
-                ildGainBase_, hardpanGainBase_, currentParams, rHorizMag);
+                ildGainBase_, hardpanGainBase_, currentParams);
 
             // Add chest to per-node binaural (both ears, before distance)
             dL_L += chestL; dR_L += chestL;
@@ -1187,8 +1234,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             // Per-node floor bounce (on per-node distance output, before combine)
             float fL_L = distL_result.left, fR_L = distL_result.right;
             float fL_R = distR_result.left,  fR_R = distR_result.right;
-            floor_.processSample(fL_L, fR_L, dspLZ, sr, floorGainLin, currentParams);
-            floorR_.processSample(fL_R, fR_R, dspRZ, sr, floorGainLin, currentParams);
+            floor_.processSample(fL_L, fR_L, lElevF, sr, floorGainLin, currentParams);
+            floorR_.processSample(fL_R, fR_R, rElevF, sr, floorGainLin, currentParams);
 
             // Combine with -3dB per node to maintain energy parity with mono path
             dL = (fL_L + fL_R) * kStereoNodeGain;
@@ -1220,13 +1267,19 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                         rNodeDistFrac, distGainMaxDb, currentParams.distGainFloorDb,
                         currentParams.distCurveSteep, currentParams.distGainMax);
 
+                    const float eCY = interpRotation ? rCosY : cosY;
+                    const float eSY = interpRotation ? rSinY : sinY;
+                    const float eCP = interpRotation ? rCosP : cosP;
+                    const float eSP = interpRotation ? rSinP : sinP;
+                    const float eCR = interpRotation ? rCosR : cosR;
+                    const float eSR = interpRotation ? rSinR : sinR;
                     auto erLResult = er_.processSample(sampleL, lRelX, lRelY, lRelZ,
                         lDistGainTarget, sr, dampCutoff, roomHalf,
-                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
+                        ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
                     auto erRResult = erR_.processSample(sampleR, rRelX, rRelY, rRelZ,
                         rDistGainTarget, sr, dampCutoff, roomHalf,
-                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
+                        ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
 
                     dL += (erLResult.directL + erRResult.directL) * erLevelSm;
@@ -1260,22 +1313,19 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             {
                 auto [binL, binR] = src_.processSample(
                     mono, modX, modY, modZ, sr, binBlend,
-                    ildGainBase_, hardpanGainBase_, currentParams, horizontalMag);
+                    ildGainBase_, hardpanGainBase_, currentParams);
                 dL = binL;
                 dR = binR;
             }
 
             // DSP state capture for mono path — read back from pipeline smoothers
             {
-                const float cylR = currentParams.vertMonoCylinderRadius;
-                const float t = std::clamp(horizontalMag / (cylR + 1e-7f), 0.0f, 1.0f);
-                const float monoBlend = 1.0f - t * t * (3.0f - 2.0f * t);
                 lastDSPState_.itdSamples     = src_.itdSmooth.current();
                 lastDSPState_.shadowCutoffHz = src_.shadowCutoffSmooth.current();
                 lastDSPState_.ildGainLinear  = src_.ildGainSmooth.current();
                 lastDSPState_.rearCutoffHz   = src_.rearCutoffSmooth.current();
                 lastDSPState_.combWet        = src_.combWetSmooth.current();
-                lastDSPState_.monoBlend      = monoBlend;
+                lastDSPState_.monoBlend      = 0.0f;  // deprecated — cylinder blend removed
             }
         }
 
@@ -1285,16 +1335,17 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // ----------------------------------------------------------------
         if (!stereoActive) {
 
-            // Chest bounce — smoothers/delay always run; bypass skips adding to output
+            // Chest bounce — driven by T/B virtual ear elevation factor
             {
-                float chestOut = chest_.processSample(dopplerInputMono, modZ, sr,
+                const float monoElevF = computeElevFactor(modX, modY, modZ, currentParams.elevEarOffset);
+                float chestOut = chest_.processSample(dopplerInputMono, monoElevF, sr,
                                                        chestGainLin, currentParams);
                 dL += chestOut;
                 dR += chestOut;
-            }
 
-            // Floor bounce — smoothers/delay always run; bypass skips adding to output
-            floor_.processSample(dL, dR, modZ, sr, floorGainLin, currentParams);
+                // Floor bounce — same elevation factor
+                floor_.processSample(dL, dR, monoElevF, sr, floorGainLin, currentParams);
+            }
 
             // Distance processing — mono path only (gain + air absorption; doppler already applied)
             {
@@ -1317,10 +1368,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float dampCutoff = kERDampingLPMaxHz
                         + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
 
+                    const float eCY = interpRotation ? rCosY : cosY;
+                    const float eSY = interpRotation ? rSinY : sinY;
+                    const float eCP = interpRotation ? rCosP : cosP;
+                    const float eSP = interpRotation ? rSinP : sinP;
+                    const float eCR = interpRotation ? rCosR : cosR;
+                    const float eSR = interpRotation ? rSinR : sinR;
                     auto erResult = er_.processSample(dopplerInputMono,
                         worldModX, worldModY, worldModZ,
                         distGainTarget, sr, dampCutoff, roomHalf,
-                        ildGainBase_, listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
+                        ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
 
                     dL += erResult.directL * erLevelSm;
@@ -1380,6 +1437,13 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         lastDSPState_.modX           = modX;
 
         // Capture last-sample LFO output values for UI display
+        // Advance per-sample trig interpolation
+        if (interpRotation) {
+            rCosY += dCosY; rSinY += dSinY;
+            rCosP += dCosP; rSinP += dSinP;
+            rCosR += dCosR; rSinR += dSinR;
+        }
+
         lastLfoOutX_ = lfoValX;
         lastLfoOutY_ = lfoValY;
         lastLfoOutZ_ = lfoValZ;
@@ -1446,6 +1510,11 @@ void XYZPanEngine::reset() {
     // Angular smoothers for circular phase/offset
     phaseSmCos_ = 1.0f; phaseSmSin_ = 0.0f;
     offsetSmCos_ = 1.0f; offsetSmSin_ = 0.0f;
+
+    // Previous block trig for per-sample interpolation
+    prevCosY_ = 1.f; prevSinY_ = 0.f;
+    prevCosP_ = 1.f; prevSinP_ = 0.f;
+    prevCosR_ = 1.f; prevSinR_ = 0.f;
 
     // Early Reflections
     er_.reset();

@@ -20,8 +20,9 @@ struct ChestPipeline {
     void reset();
 
     // Process chest bounce for a single source node.
+    // elevFactor: 0.0 (nadir/below) to 1.0 (zenith/above) from T/B virtual ear distance-difference.
     // Returns the chest bounce signal to be added to both ears.
-    float processSample(float input, float nodeZ, float sr,
+    float processSample(float input, float elevFactor, float sr,
                         float chestGainLin, const EngineParams& params);
 };
 

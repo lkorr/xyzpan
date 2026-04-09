@@ -31,12 +31,12 @@ void ChestPipeline::reset() {
     delaySmooth.reset(2.0f);
 }
 
-float ChestPipeline::processSample(float input, float nodeZ, float sr,
+float ChestPipeline::processSample(float input, float elevFactor, float sr,
                                     float chestGainLin, const EngineParams& params) {
-    const float chestElevNorm  = std::clamp((-nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-    const float chestDelaySamp = std::clamp((nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f)
-                                 * params.chestDelayMaxMs * 0.001f * sr;
-    const float chestLinTarget = chestGainLin * chestElevNorm;
+    // elevFactor: 0.0 = below (max chest bounce), 1.0 = above (no bounce)
+    const float belowFactor    = 1.0f - elevFactor;
+    const float chestDelaySamp = elevFactor * params.chestDelayMaxMs * 0.001f * sr;
+    const float chestLinTarget = chestGainLin * belowFactor;
 
     float chestSig = input;
     for (auto& hp_f : hpf)

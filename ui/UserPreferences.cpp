@@ -66,6 +66,12 @@ void UserPreferences::load()
         scene_.swapPanels = swapVal.isVoid() ? false : static_cast<bool>(swapVal);
         auto labelsVal = obj->getProperty("showLabels");
         scene_.showLabels = labelsVal.isVoid() ? true : static_cast<bool>(labelsVal);
+        auto arrowVal = obj->getProperty("showArrow");
+        scene_.showArrow = arrowVal.isVoid() ? true : static_cast<bool>(arrowVal);
+        auto shapeVal = obj->getProperty("sourceShape");
+        scene_.sourceShape = shapeVal.isVoid() ? 0 : juce::jlimit(0, xyzpan::kNumSourceShapes - 1, static_cast<int>(shapeVal));
+        auto clusterVal = obj->getProperty("clusterCount");
+        scene_.clusterCount = clusterVal.isVoid() ? 7 : juce::jlimit(1, 7, static_cast<int>(clusterVal));
     }
 
     if (auto* av = obj->getProperty("avatar").getDynamicObject()) {
@@ -125,6 +131,9 @@ void UserPreferences::save() const
     root->setProperty("groundHills",  static_cast<double>(scene_.groundHills));
     root->setProperty("swapPanels",   scene_.swapPanels);
     root->setProperty("showLabels",   scene_.showLabels);
+    root->setProperty("showArrow",    scene_.showArrow);
+    root->setProperty("sourceShape",  scene_.sourceShape);
+    root->setProperty("clusterCount", scene_.clusterCount);
 
     auto* av = new juce::DynamicObject();
     av->setProperty("headElongation", static_cast<double>(avatar_.headElongation));

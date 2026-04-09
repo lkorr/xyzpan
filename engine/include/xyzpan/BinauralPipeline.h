@@ -28,6 +28,7 @@ struct BinauralPipeline {
     // Per-parameter smoothers
     dsp::OnePoleSmooth itdSmooth;
     dsp::OnePoleSmooth shadowCutoffSmooth;
+    dsp::OnePoleSmooth shadowCutoffSmoothR;
     dsp::OnePoleSmooth ildGainSmooth;
     dsp::OnePoleSmooth rearCutoffSmooth;
 
@@ -53,8 +54,7 @@ struct BinauralPipeline {
     BinauralResult processSample(float inputSample, float nodeX, float nodeY, float nodeZ,
                                   float sr, float binBlend,
                                   float ildGainBase, float hardpanGainBase,
-                                  const EngineParams& params,
-                                  float nodeHorizMag = -1.0f);
+                                  const EngineParams& params);
 };
 
 } // namespace xyzpan

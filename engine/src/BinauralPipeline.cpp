@@ -3,6 +3,28 @@
 #include <algorithm>
 #include <cmath>
 
+// Distance-difference azimuth: virtual ears at (±h, 0, 0).
+// Returns signed factor: +1 = right, -1 = left, 0 = median plane.
+static inline float computeAzimuthFactor(float x, float y, float z, float h) {
+    if (h < 1e-7f) return 0.0f;
+    const float yz2 = y * y + z * z;
+    const float distLeft  = std::sqrt((x + h) * (x + h) + yz2);
+    const float distRight = std::sqrt((x - h) * (x - h) + yz2);
+    const float delta = distLeft - distRight;  // positive when source is right of center
+    return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
+}
+
+// Distance-difference rear factor: virtual ears at (0, ±h, 0).
+// Returns signed factor: +1 = rear, -1 = front, 0 = interaural plane.
+static inline float computeRearFactor(float x, float y, float z, float h) {
+    if (h < 1e-7f) return 0.0f;
+    const float xz2 = x * x + z * z;
+    const float distFront = std::sqrt(xz2 + (y - h) * (y - h));
+    const float distBack  = std::sqrt(xz2 + (y + h) * (y + h));
+    const float delta = distFront - distBack;  // positive when source is behind
+    return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
+}
+
 namespace xyzpan {
 
 void BinauralPipeline::prepare(float sr, int delayCap, float combMaxMs) {
@@ -14,6 +36,7 @@ void BinauralPipeline::prepare(float sr, int delayCap, float combMaxMs) {
     rearSvfR.setCoefficients(kRearShadowFullOpenHz, sr);
     itdSmooth.prepare(kDefaultSmoothMs_ITD, sr);
     shadowCutoffSmooth.prepare(kDefaultSmoothMs_Filter, sr);
+    shadowCutoffSmoothR.prepare(kDefaultSmoothMs_Filter, sr);
     ildGainSmooth.prepare(kDefaultSmoothMs_Gain, sr);
     rearCutoffSmooth.prepare(kDefaultSmoothMs_Filter, sr);
 
@@ -37,6 +60,7 @@ void BinauralPipeline::reset() {
     rearSvfR.reset();
     itdSmooth.reset(0.0f);
     shadowCutoffSmooth.reset(kHeadShadowFullOpenHz);
+    shadowCutoffSmoothR.reset(kHeadShadowFullOpenHz);
     ildGainSmooth.reset(1.0f);
     rearCutoffSmooth.reset(kRearShadowFullOpenHz);
     nearFieldLF_L.reset();
@@ -59,23 +83,10 @@ BinauralPipeline::BinauralResult BinauralPipeline::processSample(
     float inputSample, float nodeX, float nodeY, float nodeZ,
     float sr, float binBlend,
     float ildGainBase, float hardpanGainBase,
-    const EngineParams& params,
-    float nodeHorizMag) {
-    // Per-node position-derived values — use caller's precomputed value when available
-    if (nodeHorizMag < 0.0f)
-        nodeHorizMag = std::sqrt(nodeX * nodeX + nodeY * nodeY);
-    const float nodeAzimuthFactor = (nodeHorizMag > 1e-7f)
-        ? nodeX / nodeHorizMag : 0.0f;
-
-    // Per-node mono cylinder
-    const float cylRadius = params.vertMonoCylinderRadius;
-    const float nodeT = std::clamp(nodeHorizMag / (cylRadius + 1e-7f), 0.0f, 1.0f);
-    const float nodeMonoBlend = 1.0f - nodeT * nodeT * (3.0f - 2.0f * nodeT);
-    const float nodeEffAzimuth = nodeAzimuthFactor * (1.0f - nodeMonoBlend);
-
-    // Per-node rear factor
-    const float nodeRearFactor = (nodeHorizMag > 1e-7f)
-        ? (-nodeY / nodeHorizMag) : nodeY;
+    const EngineParams& params) {
+    // Distance-difference virtual ear model — replaces angle-based azimuth + cylinder blend
+    const float nodeEffAzimuth = computeAzimuthFactor(nodeX, nodeY, nodeZ, params.azimuthEarOffset);
+    const float nodeRearFactor = computeRearFactor(nodeX, nodeY, nodeZ, params.rearEarOffset);
 
     // Per-node binaural cue targets (signed azimuth: +right, -left)
     const float nodeAbsEffAzimuth = std::abs(nodeEffAzimuth);
@@ -123,16 +134,17 @@ BinauralPipeline::BinauralResult BinauralPipeline::processSample(
     }
 
     // Smooth binaural parameters — smoothers always run
-    const float itdSamples   = itdSmooth.process(nodeItdTarget);
-    shadowCutoffSmooth.process(nodeShadowCutTargetL);
-    const float ildGain      = ildGainSmooth.process(nodeIldTarget);
-    rearCutoffSmooth.process(nodeRearCutTarget);
+    const float itdSamples      = itdSmooth.process(nodeItdTarget);
+    const float smoothedShadowL = shadowCutoffSmooth.process(nodeShadowCutTargetL);
+    const float smoothedShadowR = shadowCutoffSmoothR.process(nodeShadowCutTargetR);
+    const float ildGain         = ildGainSmooth.process(nodeIldTarget);
+    const float smoothedRearCut = rearCutoffSmooth.process(nodeRearCutTarget);
 
     // Update SVF coefficients per-sample (TPT topology is modulation-safe)
-    shadowL.setCoefficients(nodeShadowCutTargetL, sr);
-    shadowR.setCoefficients(nodeShadowCutTargetR, sr);
-    rearSvfL.setCoefficients(nodeRearCutTarget, sr);
-    rearSvfR.setCoefficients(nodeRearCutTarget, sr);
+    shadowL.setCoefficients(smoothedShadowL, sr);
+    shadowR.setCoefficients(smoothedShadowR, sr);
+    rearSvfL.setCoefficients(smoothedRearCut, sr);
+    rearSvfR.setCoefficients(smoothedRearCut, sr);
 
     // Push into delay lines — always push to keep delay state consistent
     delayL.push(monoEQ);

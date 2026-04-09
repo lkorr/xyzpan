@@ -53,4 +53,34 @@ std::vector<float> buildRoomWireframe(float halfSize);
 // Returns [x,y,z] flat vertex list (GL_LINES — each pair is one line segment).
 std::vector<float> buildFloorGrid(float halfSize, int divisions);
 
+// Build a unit pyramid (4-sided, base at Y=-0.5, apex at Y=+0.5).
+// Returns interleaved pos+normal, indexed triangles (same format as SphereGeometry).
+SphereGeometry buildPyramid();
+
+// Build GL_LINES wireframe for the pyramid (same vertex layout as buildPyramid).
+std::vector<unsigned> buildPyramidWireframe();
+
+// Build a unit cube (edge length 1.0, centred at origin).
+// Returns interleaved pos+normal, indexed triangles.
+SphereGeometry buildCube();
+
+// Build GL_LINES wireframe for the cube.
+std::vector<unsigned> buildCubeWireframe();
+
+// Build a unit octahedron (vertices at ±1 on each axis).
+// Returns interleaved pos+normal, indexed triangles.
+SphereGeometry buildOctahedron();
+
+// Build GL_LINES wireframe for the octahedron.
+std::vector<unsigned> buildOctahedronWireframe();
+
+// Build a torus (ring) centred at origin in the XZ plane.
+// majorRadius = distance from centre to ring tube centre.
+// minorRadius = tube radius.
+// Returns interleaved pos+normal, indexed triangles.
+SphereGeometry buildTorus(float majorRadius, float minorRadius, int majorSegments, int minorSegments);
+
+// Build GL_LINES wireframe for the torus.
+std::vector<unsigned> buildTorusWireframe(int majorSegments, int minorSegments);
+
 } // namespace xyzpan

@@ -524,17 +524,18 @@ TEST_CASE("Phase3Integration: Floor bounce Z=-1 adds energy vs Z=1", "[engine][d
     // Z=-1: floor bounce is fully active (at -5 dB), adds delayed copy to output.
     // Z=1: floor bounce gain = 0, adds nothing.
     // Z=-1 should have slightly more total energy than Z=1.
+    // Source placed on Z-axis (x=0, y=0) to isolate elevation from azimuth/rear cues.
     const int N = 4096;
     const int skip = 512;  // skip transients (floor delay up to 20ms = 882 samples)
 
     EngineParams paramsZneg1;
     paramsZneg1.z = -1.0f;
-    paramsZneg1.y = 1.0f;
+    paramsZneg1.y = 0.0f;
     paramsZneg1.x = 0.0f;
 
     EngineParams paramsZ1;
     paramsZ1.z = 1.0f;
-    paramsZ1.y = 1.0f;
+    paramsZ1.y = 0.0f;
     paramsZ1.x = 0.0f;
 
     // Use a longer buffer to let the 20ms floor delay fill (882 samples at 44100).

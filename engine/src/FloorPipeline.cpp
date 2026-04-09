@@ -31,12 +31,12 @@ void FloorPipeline::reset() {
     delaySmooth.reset(2.0f);
 }
 
-void FloorPipeline::processSample(float& dL, float& dR, float nodeZ, float sr,
+void FloorPipeline::processSample(float& dL, float& dR, float elevFactor, float sr,
                                    float floorGainLin, const EngineParams& params) {
-    const float floorDelaySamp = std::clamp((nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f)
-                                 * params.floorDelayMaxMs * 0.001f * sr;
-    const float floorElevNorm  = std::clamp((-nodeZ + 1.0f) * 0.5f, 0.0f, 1.0f);
-    const float floorLinTarget = floorGainLin * floorElevNorm;
+    // elevFactor: 0.0 = below (max floor bounce), 1.0 = above (no bounce)
+    const float belowFactor    = 1.0f - elevFactor;
+    const float floorDelaySamp = elevFactor * params.floorDelayMaxMs * 0.001f * sr;
+    const float floorLinTarget = floorGainLin * belowFactor;
 
     delayL.push(dL);
     delayR.push(dR);

@@ -1,0 +1,212 @@
+flowchart LR
+    classDef input fill:#2d5016,stroke:#4a8c2a,color:#fff
+    classDef position fill:#1a3a5c,stroke:#2a6a9e,color:#fff
+    classDef binaural fill:#5c1a1a,stroke:#9e2a2a,color:#fff
+    classDef body fill:#4a3520,stroke:#8a6540,color:#fff
+    classDef distance fill:#3a1a5c,stroke:#6a2a9e,color:#fff
+    classDef reverb fill:#1a4a4a,stroke:#2a8a8a,color:#fff
+    classDef output fill:#333,stroke:#666,color:#fff
+    classDef split fill:#5c5c1a,stroke:#9e9e2a,color:#fff
+    classDef stereo fill:#1a3a3a,stroke:#2a7a7a,color:#fff
+    classDef gate fill:#8b0000,stroke:#ff4444,color:#fff,stroke-width:2px
+
+    INPUT["Stereo Input L/R"]:::input --> MONO_SUM["Mono Sum\n0.5*L+R"]:::input
+
+    subgraph POS["POSITION MOD"]
+        direction TB
+        LFO_MOD["LFOs X,Y,Z\n6 waveforms\ntempo sync"]:::position
+        LISTENER_SUB["Listener Sub\nworld to relative"]:::position
+        HEAD_ROT["Head Rotation\nYaw/Pitch/Roll\nper-sample interp"]:::position
+        LFO_MOD --> LISTENER_SUB --> HEAD_ROT
+    end
+    MONO_SUM --> POS
+
+    GATE_STEREO{{"width>0?"}}:::gate
+    POS --> GATE_STEREO
+
+    subgraph STEREO_SPLIT["STEREO NODE SPLIT"]
+        direction TB
+        ORBIT_LFO["Orbit LFOs\nXY/XZ/YZ"]:::stereo
+        SPREAD_DIR["Spread Dir"]:::stereo
+        NODE_OFFSET["L/R Offset\npi phase diff"]:::stereo
+        NODE_POS["Per-Node\nPos+Rot"]:::stereo
+        ORBIT_LFO --> SPREAD_DIR --> NODE_OFFSET --> NODE_POS
+    end
+
+    GATE_STEREO -->|"YES"| STEREO_SPLIT
+    STEREO_SPLIT --> ENTRY_S["L: inL+lXYZ\nR: inR+rXYZ\nx2"]:::stereo
+    GATE_STEREO -.->|"NO"| ENTRY_M["Mono: sum+XYZ\nx1"]:::stereo
+
+    ENTRY_S --> DOP_PRE
+    ENTRY_M --> DOP_PRE
+
+    subgraph PER_NODE["PER-NODE -- x1 mono / x2 stereo -- independent position params"]
+        direction LR
+
+        subgraph DOPPLER["DOPPLER"]
+            direction TB
+            DOP_PRE["Pre-AA 18kHz"]:::distance
+            DOP_DELAY["FracDelay\nHermite\nrawDistFrac"]:::distance
+            DOP_POST["Post-AA 18kHz"]:::distance
+            DOP_PRE --> DOP_DELAY --> DOP_POST
+        end
+
+        GATE_DOP{{"doppler?"}}:::gate
+        DOP_POST --> GATE_DOP
+        GATE_DOP -->|"YES"| SPLIT_D
+        DOP_PRE -.->|"NO:2samp\nAA runs"| SPLIT_D
+
+        SPLIT_D["dopplerInput"]:::split
+
+        subgraph SPATIAL["BINAURAL + CHEST -- parallel from dopplerInput"]
+            direction LR
+
+            subgraph BIN_PATH["BINAURAL PATH"]
+                direction LR
+
+                subgraph BIN_M["MONO"]
+                    direction TB
+                    VEAR["VirtualEar Cues\nL/R F/B T/B\nh=0.087"]:::binaural
+                    COMBS["10x Combs\n0.21-1.50ms\n15% rear"]:::binaural
+                    VEAR --> COMBS
+                end
+
+                subgraph PIN["PINNA EQ 10x"]
+                    direction TB
+                    EQ1["Pres 3k +/-4 rearF"]:::binaural
+                    EQ2["Ear 2.7k 0/-4 rearF"]:::binaural
+                    EQ3["Shldr 1.5k +2 *exp*"]:::binaural
+                    EQ4["Cncha 4k -8 *exp*"]:::binaural
+                    EQ5["P1 5k +2.8 fixed"]:::binaural
+                    EQ6["N1 6.5-10k -8 elevF"]:::binaural
+                    EQ7["N2 +3k -8 fixed"]:::binaural
+                    EQ8["Upr 12k -4/+3 *exp*"]:::binaural
+                    EQ9["Trag 8.5k -5 *exp*"]:::binaural
+                    EQ10["Shelf 4k elevF"]:::binaural
+                    EQ1 --> EQ2 --> EQ3 --> EQ4 --> EQ5 --> EQ6 --> EQ7 --> EQ8 --> EQ9 --> EQ10
+                end
+
+                GATE_BIN{{"bin?"}}:::gate
+
+                subgraph BIN_LR["BINAURAL L/R"]
+                    direction TB
+                    ITD["ITD .72-5ms"]:::binaural
+                    ILD["ILD 0-8dB"]:::binaural
+                    NF["NF LF 200Hz"]:::binaural
+                    HS["HeadShd 16-1.2k"]:::binaural
+                    RS["RearShd 22-20k"]:::binaural
+                    ITD --> ILD --> NF --> HS --> RS
+                end
+
+                HP["HARDPAN\naz-mod -4dB"]:::binaural
+
+                BIN_M --> PIN --> GATE_BIN
+                GATE_BIN -->|"Y"| BIN_LR
+                GATE_BIN -.->|"N"| HP
+            end
+
+            subgraph CHEST["CHEST -- parallel"]
+                direction TB
+                CH1["4xHPF 700Hz"]:::body
+                CH2["LPF 1kHz"]:::body
+                CH3["Dly 0-2ms"]:::body
+                CH1 --> CH2 --> CH3
+            end
+        end
+
+        SPLIT_D --> SPATIAL
+
+        BIN_MERGE["Binaural+Chest\nmerged L/R"]:::body
+        BIN_LR --> BIN_MERGE
+        HP --> BIN_MERGE
+        CHEST --> BIN_MERGE
+
+        subgraph DIST["DISTANCE"]
+            direction TB
+            DG["Gain Hermite\n-72/+6dB"]:::distance
+            A1["AirAbs 22-8k"]:::distance
+            A2["AirAbs 22-12k\n12dB/oct"]:::distance
+            DG --> A1 --> A2
+        end
+
+        BIN_MERGE --> DIST
+
+        subgraph FLOOR["FLOOR\nstereo:post-dist\nmono:pre-dist"]
+            direction TB
+            FD["Dly 0-20ms"]:::body
+            FL["LPF 5kHz"]:::body
+            FD --> FL
+        end
+
+        DIST --> FLOOR
+    end
+
+    GATE_ER{{"ER?"}}:::gate
+    FLOOR --> COMBINE
+    SPLIT_D -.->|"dopplerInput\npre-binaural"| GATE_ER
+
+    subgraph ER["EARLY REFLECTIONS -- image source -- taps dopplerInput"]
+        direction LR
+        ERD["6 Walls\n+/-XYZ"]:::reverb
+        ERW["WallAbs LPF\n500-16kHz"]:::reverb
+        ERB["Own Bin/Tap\nITD+ILD+shd"]:::reverb
+        ERDL["Delay\n343m/s 1-30m"]:::reverb
+        ERS{"Split"}:::split
+        ERD --> ERW --> ERB --> ERDL --> ERS
+    end
+
+    GATE_ER -->|"YES"| ER
+    ERS --> ER_DIR["Direct\nx erLevel"]:::reverb
+    ERS --> ER_SND["ReverbSend\nx erSend"]:::reverb
+
+    COMBINE["NODE COMBINE\nstereo: L+R -3dB\nmono: pass\n+ ER direct"]:::stereo
+    ER_DIR --> COMBINE
+    GATE_ER -.->|"NO"| COMBINE
+
+    COMBINE --> AUX_D
+
+    subgraph AUX["AUX SEND"]
+        direction LR
+        AUX_D["PreDly\ndist"]:::reverb
+        AUX_G["Boost\n1-6dB"]:::reverb
+        AUX_O["Aux Out"]:::reverb
+        AUX_D --> AUX_G --> AUX_O
+    end
+
+    GATE_REV{{"wet>0?"}}:::gate
+    COMBINE --> GATE_REV
+
+    subgraph REVERB["FDN REVERB -- Dattorro"]
+        direction LR
+        RP["PreDly\ndist"]:::reverb
+        subgraph RI["Diffusion"]
+            direction TB
+            A_1["142s .75"]:::reverb
+            A_2["107s .75"]:::reverb
+            A_3["379s .625"]:::reverb
+            A_4["277s .625"]:::reverb
+            A_1 --> A_2 --> A_3 --> A_4
+        end
+        subgraph RT["Fig-8 Tank"]
+            direction TB
+            T1["ModAP 672s 1Hz"]:::reverb
+            T2["Dly 4453s"]:::reverb
+            T3["DampLPF"]:::reverb
+            T4["ModAP 908s .87Hz"]:::reverb
+            T5["Dly 4217s"]:::reverb
+            T6["DampLPF"]:::reverb
+            T1 --> T2 --> T3 --> T4 --> T5 --> T6 --> T1
+        end
+        RO["6-Tap +266/+2974/-1913\nDC Block 5Hz"]:::reverb
+        RW["Wet/Dry"]:::reverb
+        RP --> RI --> RT --> RO --> RW
+    end
+
+    GATE_REV -->|"YES"| REVERB
+    ER_SND -.->|"erAccum"| REVERB
+
+    OUT["Clamp +/-2.0"]:::output
+    GATE_REV -.->|"NO"| OUT
+    REVERB --> OUT
+    AUX_O --> FOUT["Stereo Out\n+ Aux"]:::output
+    OUT --> FOUT

@@ -118,8 +118,6 @@ private:
     static constexpr int kPresetBarH    = 32;      // preset dropdown + buttons height
     static constexpr int kSnapBtnW      = 40;
     static constexpr int kSnapBtnH      = 24;
-    static constexpr int kDefaultW      = 1000;
-    static constexpr int kDefaultH      = 750;
     static constexpr int kSectionHdrH   = 24;      // section header height
     static constexpr int kDividerW      = 1;       // vertical divider width
     static constexpr int kPadding       = 10;      // general inner padding
@@ -129,6 +127,10 @@ private:
 
     static constexpr int kMinW = 1119;
     static constexpr int kMinH = 794;
+    static constexpr int kMaxW = 1800;
+    static constexpr int kMaxH = 1600;
+    static constexpr int kDefaultW = kMinW;
+    static constexpr int kDefaultH = kMinH;
 
     // Position knobs (X/Y/Z)
     juce::Slider xKnob_, yKnob_, zKnob_;
@@ -276,6 +278,8 @@ private:
     juce::TextButton presetNextBtn_{">"};
     juce::TextButton presetSaveBtn_{"Save"};
     juce::TextButton presetLoadBtn_{"Load"};
+    juce::TextButton undoBtn_{"Undo"};
+    juce::TextButton redoBtn_{"Redo"};
     void rebuildPresetCombo();
 
     // Customize tab controls
@@ -292,11 +296,24 @@ private:
     juce::Label       groundHillsLabel_;
     juce::ToggleButton swapPanelsToggle_{"Swap Listener/Orbit"};
     juce::ToggleButton showLabelsToggle_{"Show Object Labels"};
+    juce::ToggleButton showArrowToggle_{"Show Direction Arrow"};
+    juce::ComboBox sourceShapeCombo_;
+    juce::Label    sourceShapeLabel_;
+    juce::Slider   clusterCountSlider_;
+    juce::Label    clusterCountLabel_;
     juce::ToggleButton showAudibleSphereToggle_{"Always Show Audible Sphere"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> showAudibleSphereAtt_;
     juce::Slider waveCountSlider_;
     juce::Label  waveCountLabel_;
     std::unique_ptr<SA> waveCountAtt_;
+    juce::ComboBox waveBlendCombo_;
+    juce::Label    waveBlendLabel_;
+    juce::Slider   waveOpacitySlider_;
+    juce::Label    waveOpacityLabel_;
+    std::unique_ptr<SA> waveOpacityAtt_;
+    juce::Slider   waveSpeedSlider_;
+    juce::Label    waveSpeedLabel_;
+    std::unique_ptr<SA> waveSpeedAtt_;
     juce::Slider      headElongationSlider_, eyeSizeSlider_, eyeSpacingSlider_,
                       earSizeSlider_, headSizeSlider_;
     juce::Label       headElongationLabel_, eyeSizeLabel_, eyeSpacingLabel_,
