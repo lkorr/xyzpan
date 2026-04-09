@@ -26,6 +26,10 @@ elseif(APPLE)
         $<$<CONFIG:Release>:-O3 -ffast-math>
     )
     # No -mavx2: Apple Silicon uses ARM NEON; Clang auto-vectorizes with -O3.
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(xyzpan_engine PRIVATE
+        $<$<CONFIG:Release>:-O3 -mavx2 -ffast-math>
+    )
 endif()
 
 # NO juce:: link here — intentional architectural invariant.

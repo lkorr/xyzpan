@@ -1,8 +1,14 @@
+if(APPLE)
+    set(XYZPAN_FORMATS VST3 AU Standalone)
+else()
+    set(XYZPAN_FORMATS VST3 Standalone)
+endif()
+
 juce_add_plugin(XYZPan
     COMPANY_NAME "XYZAudio"
     PLUGIN_MANUFACTURER_CODE Xyza
     PLUGIN_CODE Xzpn
-    FORMATS VST3 AU Standalone
+    FORMATS ${XYZPAN_FORMATS}
     PRODUCT_NAME "XYZPan"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
