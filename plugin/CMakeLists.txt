@@ -46,13 +46,7 @@ target_include_directories(XYZPan
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_compile_definitions(XYZPan
-    PUBLIC
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-)
+target_compile_definitions(XYZPan PUBLIC ${XYZPAN_JUCE_DEFS})
 
 # Prevent D2D/OpenGL conflict on Windows NVIDIA (Phase 6)
 if(WIN32)

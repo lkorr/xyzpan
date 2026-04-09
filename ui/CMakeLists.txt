@@ -28,6 +28,8 @@ target_link_libraries(xyzpan_ui
         glm::glm
 )
 
+target_compile_definitions(xyzpan_ui PUBLIC ${XYZPAN_JUCE_DEFS})
+
 # Suppress Apple's OpenGL deprecation warnings (deprecated in 10.14, still functional)
 if(APPLE)
     target_compile_definitions(xyzpan_ui PRIVATE GL_SILENCE_DEPRECATION)

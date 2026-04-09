@@ -13,6 +13,14 @@ CPMAddPackage("gh:juce-framework/JUCE#8.0.12")
 CPMAddPackage("gh:catchorg/Catch2@3.7.1")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 
+# Shared JUCE configuration — applied to every target that compiles JUCE modules
+set(XYZPAN_JUCE_DEFS
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+)
+
 # Enable CTest at the root so the top-level CTestTestfile.cmake is generated
 # and ctest --test-dir build works from the project root.
 enable_testing()
