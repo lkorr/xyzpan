@@ -25,20 +25,27 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Package artifacts
+        run: |
+          cd build/plugin/XYZPan_artefacts/Release
+          zip -r XYZPan-macOS-VST3.zip VST3/XYZPan.vst3
+          zip -r XYZPan-macOS-AU.zip AU/XYZPan.component
+          zip -r XYZPan-macOS-Standalone.zip Standalone/XYZPan.app
+
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: XYZPan-macOS-VST3
-          path: build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-macOS-VST3.zip
 
       - name: Upload AU
         uses: actions/upload-artifact@v4
         with:
           name: XYZPan-macOS-AU
-          path: build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-macOS-AU.zip
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
           name: XYZPan-macOS-Standalone
-          path: build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-macOS-Standalone.zip
