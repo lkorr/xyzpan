@@ -25,6 +25,12 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Ad-hoc codesign
+        run: |
+          codesign --force --deep --sign - build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3
+          codesign --force --deep --sign - build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component
+          codesign --force --deep --sign - build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app
+
       - name: Package artifacts
         run: |
           cd build/plugin/XYZPan_artefacts/Release
