@@ -16,6 +16,7 @@ juce_add_plugin(XYZPan
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE
+    NEEDS_WEB_BROWSER FALSE
 )
 
 # Factory presets embedded as binary data (fallback when not installed)
