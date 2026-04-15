@@ -1,6 +1,7 @@
 #include "xyzpan/DistancePipeline.h"
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
+#include "xyzpan/dsp/FastMath.h"
 #include <algorithm>
 #include <cmath>
 
@@ -45,7 +46,7 @@ void DistancePipeline::reset() {
 float DistancePipeline::processDoppler(float input, float rawNodeDistFrac, float sr,
                                        bool effectiveDoppler, const EngineParams& params) {
     const float delayTargetSamples = std::max(2.0f,
-        rawNodeDistFrac * params.distDelayMaxMs * 0.001f * sr);
+        rawNodeDistFrac * delayMaxSamp_);
 
     float out;
     if (effectiveDoppler) {
@@ -68,7 +69,7 @@ float DistancePipeline::processDoppler(float input, float rawNodeDistFrac, float
 DistancePipeline::DistResult DistancePipeline::processDistance(
     float dL, float dR, float nodeX, float nodeY, float nodeZ,
     float sr, float distGainMaxDb, const EngineParams& params) {
-    const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
+    const float rawDist = dsp::fastSqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
     const float nodeDist = std::max(rawDist, kMinDistance);
     const float maxRange = std::max(params.sphereRadius - kMinDistance, 0.001f);
     const float nodeDistFrac = std::clamp((nodeDist - kMinDistance) / maxRange, 0.0f, 1.0f);

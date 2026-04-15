@@ -15,6 +15,8 @@ namespace {
     constexpr const char* kParamX = "x";
     constexpr const char* kParamY = "y";
     constexpr const char* kParamZ = "z";
+    constexpr const char* kParamListenerLink  = "listener_link";
+    constexpr const char* kParamListenerPilot = "listener_pilot";
 }
 
 using namespace juce::gl;
@@ -48,6 +50,10 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
     cachedYawParam_   = apvts_.getParameter("listener_yaw");
     cachedPitchParam_ = apvts_.getParameter("listener_pitch");
     cachedRollParam_  = apvts_.getParameter("listener_roll");
+
+    // Cache link/pilot param pointers for linking panel click handling
+    cachedLinkParam_  = apvts_.getParameter(kParamListenerLink);
+    cachedPilotParam_ = apvts_.getParameter(kParamListenerPilot);
 
     waveIntensityParam_    = apvts_.getRawParameterValue("wave_intensity");
     waveOpacityParam_      = apvts_.getRawParameterValue("wave_opacity");
@@ -294,11 +300,13 @@ void XYZPanGLView::renderOpenGL()
     // Read current position snapshot from the lock-free bridge
     const auto snap = bridge_.read();
 
-    // Viewport
+    // Viewport — JUCE sets glViewport to physical pixels before renderOpenGL(),
+    // but we re-set it here using getRenderingScale() for Retina/HiDPI correctness.
     const int w = getWidth();
     const int h = getHeight();
     if (w <= 0 || h <= 0) return;
-    glViewport(0, 0, w, h);
+    const double scale = glContext_.getRenderingScale();
+    glViewport(0, 0, static_cast<int>(w * scale), static_cast<int>(h * scale));
 
     // Clear with theme background color
     juce::OpenGLHelpers::clear(juce::Colour(theme.background));
@@ -988,7 +996,7 @@ void XYZPanGLView::openGLContextClosing()
 }
 
 // ---------------------------------------------------------------------------
-// paint — JUCE overlay composited on top of GL (instance list HUD)
+// paint — JUCE overlay composited on top of GL (linking panel HUD)
 // ---------------------------------------------------------------------------
 void XYZPanGLView::paint(juce::Graphics& g)
 {
@@ -1006,16 +1014,132 @@ void XYZPanGLView::paint(juce::Graphics& g)
 
     const auto fp = foreignBridge_.read();
 
-    // Instance list overlay — top-left corner of GL view
-    if (showInstanceList_) {
-        const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
-        instanceListHitBoxes_.clear();
+    linkingPanelHitBoxes_.clear();
+    instanceListHitBoxes_.clear();
 
-        const int listX = 8;
-        int listY = 8;
-        const int rowH = 20;
-        const int focusedRowH = 26;
-        const int listW = 180;
+    const int panelX = 8;
+    const int panelY = 8;
+    const int panelW = 190;
+    const int headerH = 26;
+    const int panelPad = 8;
+    const int rowH = 20;
+    const int focusedRowH = 26;
+    const int separatorH = 8;
+    const int statusRowH = 16;
+
+    // Fetch theme gold color for toggle indicators
+    ColorTheme theme;
+    {
+        const juce::SpinLock::ScopedLockType lock(customizeLock_);
+        theme = glTheme_;
+    }
+    const juce::Colour goldCol = juce::Colour(theme.brightGold);
+    const juce::Colour dimCol  = juce::Colours::white.withAlpha(0.5f);
+
+    const bool linked = linkingPanelLinked_;
+    const bool isPilot = linkingPanelPilot_;
+
+    // --- Calculate total panel height ---
+    int panelH = headerH;
+    if (linked) {
+        panelH += separatorH; // separator
+        // Instance list rows
+        const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
+        int listRows = 1; // Self
+        int listHeight = (focusIdx < 0 ? focusedRowH : rowH) + 2;
+        if (fp.count > 0) {
+            for (int i = 0; i < fp.count; ++i) {
+                bool isFocused = (fp.sources[i].colorIndex == focusIdx);
+                listHeight += (isFocused ? focusedRowH : rowH) + 2;
+            }
+        } else {
+            listHeight += (rowH + 2) * 2; // placeholder rows
+        }
+        panelH += listHeight;
+        // Pilot status text
+        if (!isPilot && pilotStatusText_.isNotEmpty())
+            panelH += statusRowH + 2;
+        panelH += panelPad; // bottom padding
+    }
+
+    // --- Draw panel background ---
+    g.setColour(juce::Colours::black.withAlpha(0.45f));
+    g.fillRoundedRectangle(static_cast<float>(panelX), static_cast<float>(panelY),
+                           static_cast<float>(panelW), static_cast<float>(panelH), 6.0f);
+
+    // --- Header row: Link toggle + Pilot toggle ---
+    {
+        const int toggleRadius = 5;
+        const int textY = panelY;
+        const int textH = headerH;
+
+        // Link toggle
+        const int linkCircleX = panelX + panelPad + toggleRadius;
+        const int linkCircleY = panelY + headerH / 2;
+        if (linked) {
+            g.setColour(goldCol);
+            g.fillEllipse(static_cast<float>(linkCircleX - toggleRadius),
+                          static_cast<float>(linkCircleY - toggleRadius),
+                          static_cast<float>(toggleRadius * 2),
+                          static_cast<float>(toggleRadius * 2));
+        } else {
+            g.setColour(dimCol);
+            g.drawEllipse(static_cast<float>(linkCircleX - toggleRadius),
+                          static_cast<float>(linkCircleY - toggleRadius),
+                          static_cast<float>(toggleRadius * 2),
+                          static_cast<float>(toggleRadius * 2), 1.5f);
+        }
+        const int linkTextX = linkCircleX + toggleRadius + 4;
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.setColour(linked ? goldCol : dimCol);
+        g.drawText(linked ? "Linked" : "Link", linkTextX, textY, 50, textH,
+                   juce::Justification::centredLeft, false);
+
+        // Hit box for Link toggle
+        const int linkHitW = linkTextX + 50 - panelX;
+        linkingPanelHitBoxes_.push_back({{panelX, panelY, linkHitW, headerH},
+                                          LinkingPanelHitBox::Link});
+
+        // Pilot toggle (only drawn when linked, but always has a hit area when linked)
+        if (linked) {
+            const int pilotX = panelX + panelW / 2 + 4;
+            const int pilotCircleX = pilotX + toggleRadius;
+            if (isPilot) {
+                g.setColour(goldCol);
+                g.fillEllipse(static_cast<float>(pilotCircleX - toggleRadius),
+                              static_cast<float>(linkCircleY - toggleRadius),
+                              static_cast<float>(toggleRadius * 2),
+                              static_cast<float>(toggleRadius * 2));
+            } else {
+                g.setColour(dimCol.withAlpha(0.4f));
+                g.drawEllipse(static_cast<float>(pilotCircleX - toggleRadius),
+                              static_cast<float>(linkCircleY - toggleRadius),
+                              static_cast<float>(toggleRadius * 2),
+                              static_cast<float>(toggleRadius * 2), 1.5f);
+            }
+            const int pilotTextX = pilotCircleX + toggleRadius + 4;
+            g.setColour(isPilot ? goldCol : dimCol.withAlpha(0.4f));
+            g.drawText("Pilot", pilotTextX, textY, 50, textH,
+                       juce::Justification::centredLeft, false);
+
+            linkingPanelHitBoxes_.push_back({{pilotX, panelY, panelW - (pilotX - panelX), headerH},
+                                              LinkingPanelHitBox::Pilot});
+        }
+    }
+
+    // --- Expanded content (when linked) ---
+    if (linked) {
+        int curY = panelY + headerH;
+
+        // Separator line
+        g.setColour(juce::Colours::white.withAlpha(0.15f));
+        g.drawHorizontalLine(curY + separatorH / 2, static_cast<float>(panelX + panelPad),
+                             static_cast<float>(panelX + panelW - panelPad));
+        curY += separatorH;
+
+        const int listX = panelX + panelPad;
+        const int listW = panelW - panelPad * 2;
+        const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
 
         // "Self" entry
         {
@@ -1024,30 +1148,23 @@ void XYZPanGLView::paint(juce::Graphics& g)
             const float fontSize = isFocused ? 13.0f : 11.0f;
             g.setFont(juce::Font(juce::FontOptions(fontSize, juce::Font::bold)));
 
-            ColorTheme theme;
-            {
-                const juce::SpinLock::ScopedLockType lock(customizeLock_);
-                theme = glTheme_;
-            }
-            juce::Colour col = juce::Colour(theme.brightGold);
-            if (isFocused)
-                col = col.brighter(0.3f);
+            juce::Colour col = goldCol;
+            if (isFocused) col = col.brighter(0.3f);
             g.setColour(col.withAlpha(isFocused ? 1.0f : 0.7f));
             juce::String selfName = ownInstanceName_.isNotEmpty() ? ownInstanceName_ : "Self";
             if (ownIsPilot_.load(std::memory_order_relaxed))
                 selfName += " (Pilot)";
             g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + selfName,
-                       listX, listY, listW, rh, juce::Justification::centredLeft, false);
+                       listX, curY, listW, rh, juce::Justification::centredLeft, false);
 
-            // Glow effect for focused entry
             if (isFocused) {
                 g.setColour(col.withAlpha(0.15f));
-                g.fillRoundedRectangle(static_cast<float>(listX - 2), static_cast<float>(listY - 1),
+                g.fillRoundedRectangle(static_cast<float>(listX - 2), static_cast<float>(curY - 1),
                                        static_cast<float>(listW + 4), static_cast<float>(rh + 2), 3.0f);
             }
 
-            instanceListHitBoxes_.push_back({{listX - 4, listY - 2, listW + 8, rh + 4}, -1});
-            listY += rh + 2;
+            instanceListHitBoxes_.push_back({{listX - 4, curY - 2, listW + 8, rh + 4}, -1});
+            curY += rh + 2;
         }
 
         // Foreign source entries
@@ -1060,37 +1177,55 @@ void XYZPanGLView::paint(juce::Graphics& g)
 
             juce::String name(fs.name);
             if (name.isEmpty()) name = "Source " + juce::String(i + 1);
-            if (fs.isPilot)
-                name += " (Pilot)";
+            if (fs.isPilot) name += " (Pilot)";
 
             juce::Colour col = kLabelPalette[fs.colorIndex % 8];
-            if (isFocused)
-                col = col.brighter(0.3f);
+            if (isFocused) col = col.brighter(0.3f);
             g.setColour(col.withAlpha(isFocused ? 1.0f : 0.7f));
             g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " " + name,
-                       listX, listY, listW, rh, juce::Justification::centredLeft, false);
+                       listX, curY, listW, rh, juce::Justification::centredLeft, false);
 
             if (isFocused) {
                 g.setColour(col.withAlpha(0.15f));
-                g.fillRoundedRectangle(static_cast<float>(listX - 2), static_cast<float>(listY - 1),
+                g.fillRoundedRectangle(static_cast<float>(listX - 2), static_cast<float>(curY - 1),
                                        static_cast<float>(listW + 4), static_cast<float>(rh + 2), 3.0f);
             }
 
-            instanceListHitBoxes_.push_back({{listX - 4, listY - 2, listW + 8, rh + 4}, i});
-            listY += rh + 2;
+            instanceListHitBoxes_.push_back({{listX - 4, curY - 2, listW + 8, rh + 4}, i});
+            curY += rh + 2;
         }
 
-        // Placeholder entries when no linked instances (for UI testing)
+        // Placeholder entries when no linked instances
         if (fp.count == 0) {
             g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
             for (int i = 0; i < 2; ++i) {
                 g.setColour(kLabelPalette[i].withAlpha(0.3f));
                 g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " Source " + juce::String(i + 1),
-                           listX, listY, listW, rowH, juce::Justification::centredLeft, false);
-                listY += rowH + 2;
+                           listX, curY, listW, rowH, juce::Justification::centredLeft, false);
+                curY += rowH + 2;
             }
         }
+
+        // Pilot status text (when linked-non-pilot)
+        if (!isPilot && pilotStatusText_.isNotEmpty()) {
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.setColour(juce::Colours::grey);
+            g.drawText(pilotStatusText_, listX, curY, listW, statusRowH,
+                       juce::Justification::centredLeft, false);
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// setLinkingPanelState — push link/pilot state from PluginEditor timer
+// ---------------------------------------------------------------------------
+void XYZPanGLView::setLinkingPanelState(bool linked, bool isPilot, const juce::String& pilotStatusText)
+{
+    linkingPanelLinked_ = linked;
+    linkingPanelPilot_  = isPilot;
+    pilotStatusText_    = pilotStatusText;
+    showInstanceList_   = linked;
+    repaint();
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1235,35 @@ void XYZPanGLView::mouseDown(const juce::MouseEvent& e)
 {
     lastDragPos_ = e.getPosition();
 
-    // Hit-test instance list overlay first
+    // Hit-test linking panel toggles first
+    {
+        const auto pos = e.getPosition();
+        for (const auto& entry : linkingPanelHitBoxes_) {
+            if (entry.bounds.contains(pos)) {
+                if (entry.type == LinkingPanelHitBox::Link && cachedLinkParam_) {
+                    const float cur = cachedLinkParam_->getValue();
+                    cachedLinkParam_->beginChangeGesture();
+                    cachedLinkParam_->setValueNotifyingHost(cur < 0.5f ? 1.0f : 0.0f);
+                    cachedLinkParam_->endChangeGesture();
+                    // Optimistic update for instant visual feedback
+                    linkingPanelLinked_ = (cur < 0.5f);
+                    showInstanceList_ = linkingPanelLinked_;
+                } else if (entry.type == LinkingPanelHitBox::Pilot && cachedPilotParam_ && linkingPanelLinked_) {
+                    const float cur = cachedPilotParam_->getValue();
+                    cachedPilotParam_->beginChangeGesture();
+                    cachedPilotParam_->setValueNotifyingHost(cur < 0.5f ? 1.0f : 0.0f);
+                    cachedPilotParam_->endChangeGesture();
+                    linkingPanelPilot_ = (cur < 0.5f);
+                }
+                if (onLinkingStateChanged)
+                    onLinkingStateChanged();
+                repaint();
+                return;
+            }
+        }
+    }
+
+    // Hit-test instance list overlay
     if (showInstanceList_) {
         const auto pos = e.getPosition();
         for (const auto& entry : instanceListHitBoxes_) {

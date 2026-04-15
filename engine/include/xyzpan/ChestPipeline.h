@@ -16,8 +16,10 @@ struct ChestPipeline {
     dsp::OnePoleLP lp;                        // 1x 6dB/oct LP at 1kHz
     dsp::FractionalDelayLine delay;           // 0–2ms delay
     dsp::OnePoleSmooth gainSmooth, delaySmooth;
+    float delayMaxSamp_ = 0.0f;              // pre-computed per-block
     void prepare(float sr);
     void reset();
+    void setBlockConstants(float sr, float chestDelayMaxMs) { delayMaxSamp_ = chestDelayMaxMs * 0.001f * sr; }
 
     // Process chest bounce for a single source node.
     // elevFactor: 0.0 (nadir/below) to 1.0 (zenith/above) from T/B virtual ear distance-difference.

@@ -13,8 +13,10 @@ struct FloorPipeline {
     dsp::FractionalDelayLine delayL, delayR;
     dsp::OnePoleLP lpfL, lpfR;               // separate L/R absorption
     dsp::OnePoleSmooth gainSmooth, delaySmooth;
+    float delayMaxSamp_ = 0.0f;              // pre-computed per-block
     void prepare(float sr);
     void reset();
+    void setBlockConstants(float sr, float floorDelayMaxMs) { delayMaxSamp_ = floorDelayMaxMs * 0.001f * sr; }
 
     // Process floor bounce for a single source node (modifies dL/dR in-place).
     // elevFactor: 0.0 (nadir/below) to 1.0 (zenith/above) from T/B virtual ear distance-difference.

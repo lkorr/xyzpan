@@ -219,6 +219,12 @@ public:
     void setShowInstanceList(bool show) { showInstanceList_ = show; repaint(); }
     bool getShowInstanceList() const { return showInstanceList_; }
 
+    // Linking panel — unified HUD overlay for Link/Pilot toggles + instance list
+    void setLinkingPanelState(bool linked, bool isPilot, const juce::String& pilotStatusText);
+
+    // Callback when user clicks Link or Pilot toggle in the GL panel
+    std::function<void()> onLinkingStateChanged;
+
     // Set the quaternion accumulator for head-follows mode (owned by PluginEditor).
     void setAccumulator(xyzpan::ListenerQuatAccumulator* a) { accumulator_ = a; }
 
@@ -546,6 +552,22 @@ private:
         int linkedIndex;  // -1 = self, 0+ = foreign source index
     };
     std::vector<InstanceListEntry> instanceListHitBoxes_;
+
+    // Linking panel state (message thread only)
+    bool linkingPanelLinked_ = false;
+    bool linkingPanelPilot_  = false;
+    juce::String pilotStatusText_;
+
+    // Cached parameter pointers for click-to-toggle in mouseDown
+    juce::RangedAudioParameter* cachedLinkParam_  = nullptr;
+    juce::RangedAudioParameter* cachedPilotParam_ = nullptr;
+
+    // Hit boxes for linking panel header toggles
+    struct LinkingPanelHitBox {
+        juce::Rectangle<int> bounds;
+        enum Type { Link, Pilot } type;
+    };
+    std::vector<LinkingPanelHitBox> linkingPanelHitBoxes_;
 
     // Smoothed input RMS for sound wave visualization (own + foreign sources)
     float smoothedRms_ = 0.0f;

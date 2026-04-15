@@ -80,6 +80,7 @@ private:
     float inputDiff2_ = kDatInputDiffCoeff2;   // AP3, AP4
     float decayGain_  = 0.0f;   // cross-feedback gain (from T60)
     float damping_    = 0.0f;   // one-pole LP coefficient
+    float dampCoeff_  = 1.0f;  // pre-computed (1 - damping_)
     float wetGain_    = 0.0f;
 
     // DC blocker state (one-pole HPF ~5 Hz per channel)

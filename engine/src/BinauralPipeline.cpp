@@ -1,5 +1,6 @@
 #include "xyzpan/BinauralPipeline.h"
 #include "xyzpan/Types.h"
+#include "xyzpan/dsp/FastMath.h"
 #include <algorithm>
 #include <cmath>
 
@@ -8,8 +9,8 @@
 static inline float computeAzimuthFactor(float x, float y, float z, float h) {
     if (h < 1e-7f) return 0.0f;
     const float yz2 = y * y + z * z;
-    const float distLeft  = std::sqrt((x + h) * (x + h) + yz2);
-    const float distRight = std::sqrt((x - h) * (x - h) + yz2);
+    const float distLeft  = xyzpan::dsp::fastSqrt((x + h) * (x + h) + yz2);
+    const float distRight = xyzpan::dsp::fastSqrt((x - h) * (x - h) + yz2);
     const float delta = distLeft - distRight;  // positive when source is right of center
     return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
 }
@@ -19,8 +20,8 @@ static inline float computeAzimuthFactor(float x, float y, float z, float h) {
 static inline float computeRearFactor(float x, float y, float z, float h) {
     if (h < 1e-7f) return 0.0f;
     const float xz2 = x * x + z * z;
-    const float distFront = std::sqrt(xz2 + (y - h) * (y - h));
-    const float distBack  = std::sqrt(xz2 + (y + h) * (y + h));
+    const float distFront = xyzpan::dsp::fastSqrt(xz2 + (y - h) * (y - h));
+    const float distBack  = xyzpan::dsp::fastSqrt(xz2 + (y + h) * (y + h));
     const float delta = distFront - distBack;  // positive when source is behind
     return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
 }

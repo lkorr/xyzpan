@@ -129,6 +129,7 @@ void FDNReverb::setDecay(float decayNorm) {
 
 void FDNReverb::setDamping(float d) {
     damping_ = std::clamp(d, 0.0f, 0.95f);
+    dampCoeff_ = 1.0f - damping_;
 }
 
 // ============================================================================
@@ -217,7 +218,7 @@ void FDNReverb::processSample(float inL, float inR,
         float delayOut = tankDelay_[h].readLinear(std::max(2.0f, tankDelayLens_[h]));
 
         // One-pole LP damping
-        dampState_[h] = (1.0f - damping_) * delayOut + damping_ * dampState_[h];
+        dampState_[h] = dampCoeff_ * delayOut + damping_ * dampState_[h];
 
         // Store feedback for the other half (will be used next sample)
         tankFB_[h] = dampState_[h];

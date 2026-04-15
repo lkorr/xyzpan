@@ -1,6 +1,7 @@
 #include "xyzpan/ERPipeline.h"
 #include "xyzpan/Types.h"
 #include "xyzpan/Constants.h"
+#include "xyzpan/dsp/FastMath.h"
 #include <algorithm>
 #include <cmath>
 
@@ -49,10 +50,15 @@ void ERPipeline::reset() {
     }
 }
 
+void ERPipeline::updateWallAbsorption(float dampCutoff, float sr, int blockSize) {
+    for (auto& er : reflections)
+        er.wallAbsorption.setCoefficientsSmoothed(dampCutoff, sr, blockSize);
+}
+
 ERPipeline::ERResult ERPipeline::processSample(
     float input, float nodeX, float nodeY, float nodeZ,
     float distGainTarget, float sr,
-    float dampCutoff, float roomHalf,
+    float roomHalf,
     float ildGainBase, bool rotated,
     float cY, float sY, float cP, float sP,
     float cR, float sR,
@@ -65,7 +71,7 @@ ERPipeline::ERResult ERPipeline::processSample(
     constexpr int wallAxis[6]  = { 0, 0, 1, 1, 2, 2 };
     constexpr float wallSign[6] = { 1.0f, -1.0f, 1.0f, -1.0f, 1.0f, -1.0f };
 
-    const float rawDist = std::sqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
+    const float rawDist = dsp::fastSqrt(nodeX * nodeX + nodeY * nodeY + nodeZ * nodeZ);
     const float directDist = std::max(rawDist, kMinDistance);
 
     for (int w = 0; w < kNumER; ++w) {
@@ -78,11 +84,9 @@ ERPipeline::ERResult ERPipeline::processSample(
         else if (axis == 1) imgY = 2.0f * sign - nodeY;
         else                imgZ = 2.0f * sign - nodeZ;
 
-        const float pathNorm = std::sqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
+        const float pathNorm = dsp::fastSqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
         const float pathMeters = pathNorm * roomHalf;
         const float delaySamp = std::max(2.0f, pathMeters / kSpeedOfSound * sr);
-
-        er.wallAbsorption.setCoefficients(dampCutoff, sr);
 
         const float reflDist = std::max(pathNorm, kMinDistance);
         const float ratioPenalty = directDist / reflDist;
@@ -107,7 +111,7 @@ ERPipeline::ERResult ERPipeline::processSample(
             lrImgX = lrImgX * cR + rrz * sR;
             // lrImgY unchanged by roll (forward axis)
         }
-        const float imgHorizMag = std::sqrt(lrImgX * lrImgX + lrImgY * lrImgY);
+        const float imgHorizMag = dsp::fastSqrt(lrImgX * lrImgX + lrImgY * lrImgY);
         const float imgAzFactor = (imgHorizMag > 1e-7f) ? lrImgX / imgHorizMag : 0.0f;
 
         const float erItdTarget = params.maxITD_ms * imgAzFactor * sr / 1000.0f;

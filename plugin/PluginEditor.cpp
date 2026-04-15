@@ -227,28 +227,33 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(headFollowsToggle_);
     headFollowsAtt_ = std::make_unique<BA>(p.apvts, ParamID::HEAD_FOLLOWS_CAMERA, headFollowsToggle_);
 
-    // Link Listener toggle
+    // Link Listener toggle — hidden, kept for ButtonParameterAttachment (APVTS save/restore)
     listenerLinkToggle_.setButtonText("Link Listener");
     listenerLinkToggle_.setClickingTogglesState(true);
-    addAndMakeVisible(listenerLinkToggle_);
+    // NOT added to visible hierarchy — GL view renders the toggle
     listenerLinkAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_LINK, listenerLinkToggle_);
-    listenerLinkToggle_.onClick = [this] {
-        updateListenerControlsEnabled();
-        // Show/hide instance list overlay based on link state
-        glView_.setShowInstanceList(listenerLinkToggle_.getToggleState());
-    };
 
-    // Pilot toggle — only pilot can drive shared listener position
+    // Pilot toggle — hidden, kept for ButtonParameterAttachment
     listenerPilotToggle_.setButtonText("Pilot");
     listenerPilotToggle_.setClickingTogglesState(true);
-    addAndMakeVisible(listenerPilotToggle_);
+    // NOT added to visible hierarchy — GL view renders the toggle
     listenerPilotAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_PILOT, listenerPilotToggle_);
-    listenerPilotToggle_.onClick = [this] { updateListenerControlsEnabled(); };
 
-    pilotStatusLabel_.setJustificationType(juce::Justification::centredLeft);
-    pilotStatusLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
-    pilotStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::grey);
-    addAndMakeVisible(pilotStatusLabel_);
+    // Pilot status label — no longer visible, status text rendered in GL panel
+    pilotStatusLabel_.setVisible(false);
+
+    // Non-pilot hint label — shown when linked as non-pilot
+    nonPilotHintLabel_.setText("Listener controls require pilot role",
+                               juce::dontSendNotification);
+    nonPilotHintLabel_.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::italic)));
+    nonPilotHintLabel_.setColour(juce::Label::textColourId,
+                                 juce::Colour(lookAndFeel_.currentTheme().brightGold).withAlpha(0.85f));
+    nonPilotHintLabel_.setJustificationType(juce::Justification::centred);
+    nonPilotHintLabel_.setVisible(false);
+    addAndMakeVisible(nonPilotHintLabel_);
+
+    // GL view linking panel callback — sync state when user clicks toggles in GL overlay
+    glView_.onLinkingStateChanged = [this] { updateListenerControlsEnabled(); };
 
     // ----- Walker mode knobs (Listener tab in left column) -----
     for (auto* knob : {&walkerXKnob_, &walkerYKnob_, &walkerZKnob_}) {
@@ -2090,12 +2095,10 @@ void XYZPanEditor::resized()
             wasdToggle_.setBounds(lx + togglePad, toggleY, halfW, bigToggleH);
             headFollowsToggle_.setBounds(lx + togglePad + halfW + togglePad, toggleY, halfW, bigToggleH);
 
-            // Link / Pilot / Remote row — same column split as above
-            const int linkY = toggleY + bigToggleH + 4;
-            const int smallToggleH = 20;
-            listenerLinkToggle_.setBounds(lx + togglePad, linkY, halfW, smallToggleH);
-            listenerPilotToggle_.setBounds(lx + togglePad + halfW + togglePad, linkY, halfW, smallToggleH);
-            pilotStatusLabel_.setBounds(lx + togglePad, linkY + smallToggleH + 1, lw - togglePad * 2, 14);
+            // Non-pilot hint label below toggles
+            nonPilotHintLabel_.setBounds(lx, toggleY + bigToggleH + 2, lw, 16);
+
+            // Link / Pilot toggles moved to GL view linking panel — no setBounds here
         }
 
         // --- STEREO ORBIT SECTION (always visible, right of listener) ---
@@ -2391,21 +2394,15 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     if (linked && listenerPilotToggle_.getToggleState() != isPilot)
         listenerPilotToggle_.setToggleState(isPilot, juce::dontSendNotification);
 
-    // Pilot status label — show who the pilot is when this instance isn't it
-    if (linked && !isPilot) {
-        auto name = proc_.getPilotName();
-        if (name.isNotEmpty())
-            pilotStatusLabel_.setText(name + " is the pilot", juce::dontSendNotification);
-        else
-            pilotStatusLabel_.setText("No pilot set", juce::dontSendNotification);
-        pilotStatusLabel_.setVisible(true);  // listener always visible in bottom row
-    } else {
-        pilotStatusLabel_.setText("", juce::dontSendNotification);
-        pilotStatusLabel_.setVisible(false);
+    // Push linking panel state to GL view (replaces old instance list + pilot label)
+    {
+        juce::String statusText;
+        if (linked && !isPilot) {
+            auto name = proc_.getPilotName();
+            statusText = name.isNotEmpty() ? (name + " is the pilot") : "No pilot set";
+        }
+        glView_.setLinkingPanelState(linked, isPilot, statusText);
     }
-
-    // Instance list overlay follows link state
-    glView_.setShowInstanceList(linked);
 
     // Notify GL view of non-pilot status so it can gate head-follows on the GL thread
     glView_.setLinkedNonPilot(linked && !isPilot);
@@ -2416,6 +2413,9 @@ void XYZPanEditor::updateListenerControlsEnabled() {
         knob->setEnabled(canControl);
     wasdToggle_.setEnabled(canControl);
     headFollowsToggle_.setEnabled(canControl);
+
+    // Show hint when linked as non-pilot
+    nonPilotHintLabel_.setVisible(linked && !isPilot);
 
     // Force head-follows OFF when linked-non-pilot to prevent broken camera movement
     if (linked && !isPilot && headFollowsToggle_.getToggleState())

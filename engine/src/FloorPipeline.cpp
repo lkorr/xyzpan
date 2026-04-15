@@ -35,7 +35,7 @@ void FloorPipeline::processSample(float& dL, float& dR, float elevFactor, float 
                                    float floorGainLin, const EngineParams& params) {
     // elevFactor: 0.0 = below (max floor bounce), 1.0 = above (no bounce)
     const float belowFactor    = 1.0f - elevFactor;
-    const float floorDelaySamp = elevFactor * params.floorDelayMaxMs * 0.001f * sr;
+    const float floorDelaySamp = elevFactor * delayMaxSamp_;
     const float floorLinTarget = floorGainLin * belowFactor;
 
     delayL.push(dL);

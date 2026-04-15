@@ -31,11 +31,14 @@ struct ERPipeline {
     void prepare(float sr);
     void reset();
 
+    // Per-block: update wall absorption coefficients (smoothed across block).
+    void updateWallAbsorption(float dampCutoff, float sr, int blockSize);
+
     // Process early reflections for a single source node.
     struct ERResult { float directL, directR, reverbL, reverbR; };
     ERResult processSample(float input, float nodeX, float nodeY, float nodeZ,
                            float distGainTarget, float sr,
-                           float dampCutoff, float roomHalf,
+                           float roomHalf,
                            float ildGainBase, bool rotated,
                            float cosY, float sinY, float cosP, float sinP,
                            float cosR, float sinR,

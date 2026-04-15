@@ -19,8 +19,10 @@ struct DistancePipeline {
     dsp::OnePoleSmooth distGainSmooth;
     dsp::OnePoleSmooth distDelaySmooth;
     float prevDelaySamp = 2.0f;  // rate limiter state for doppler
+    float delayMaxSamp_ = 0.0f; // pre-computed per-block
     void prepare(float sr);
     void reset();
+    void setBlockConstants(float sr, float distDelayMaxMs) { delayMaxSamp_ = distDelayMaxMs * 0.001f * sr; }
 
     // Mono doppler delay (applied before comb/binaural).
     float processDoppler(float input, float rawNodeDistFrac, float sr,

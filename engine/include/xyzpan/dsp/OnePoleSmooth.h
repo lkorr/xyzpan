@@ -51,6 +51,12 @@ public:
         return z_;
     }
 
+    // Analytically converge toward target by numSamples iterations.
+    // Equivalent to calling process(target) numSamples times but O(1).
+    void converge(float target, int numSamples) {
+        z_ = target + (z_ - target) * std::pow(a_, static_cast<float>(numSamples));
+    }
+
     // Return the current smoothed value without advancing state.
     float current() const {
         return z_;

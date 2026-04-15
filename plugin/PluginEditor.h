@@ -191,6 +191,7 @@ private:
     juce::ToggleButton listenerPilotToggle_;
     std::unique_ptr<BA> listenerPilotAtt_;
     juce::Label pilotStatusLabel_;  // shows "X is pilot" when linked-non-pilot
+    juce::Label nonPilotHintLabel_; // hint shown when linked-non-pilot
 
     void updateListenerControlsEnabled();
 

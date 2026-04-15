@@ -425,8 +425,13 @@ void AlchemyLookAndFeel::drawToggleButton(
 
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
 
+    const bool enabled = button.isEnabled();
+    const float disabledAlpha = enabled ? 1.0f : 0.35f;
+
     juce::Colour fill = juce::Colour(t.darkIron);
-    if (shouldDrawButtonAsDown)
+    if (!enabled)
+        fill = fill.darker(0.3f);
+    else if (shouldDrawButtonAsDown)
         fill = fill.brighter(0.2f);
     else if (shouldDrawButtonAsHighlighted)
         fill = fill.brighter(0.1f);
@@ -434,8 +439,8 @@ void AlchemyLookAndFeel::drawToggleButton(
     g.fillRoundedRectangle(bounds, 3.0f);
 
     const juce::Colour border = button.getToggleState()
-        ? juce::Colour(t.warmGold)
-        : juce::Colour(t.bronze);
+        ? juce::Colour(t.warmGold).withMultipliedAlpha(disabledAlpha)
+        : juce::Colour(t.bronze).withMultipliedAlpha(disabledAlpha);
     g.setColour(border);
     g.drawRoundedRectangle(bounds, 3.0f, 1.5f);
 

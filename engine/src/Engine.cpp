@@ -14,8 +14,8 @@ namespace xyzpan {
 static inline float computeAzimuthFactor(float x, float y, float z, float h) {
     if (h < 1e-7f) return 0.0f;
     const float yz2 = y * y + z * z;
-    const float distLeft  = std::sqrt((x + h) * (x + h) + yz2);
-    const float distRight = std::sqrt((x - h) * (x - h) + yz2);
+    const float distLeft  = dsp::fastSqrt((x + h) * (x + h) + yz2);
+    const float distRight = dsp::fastSqrt((x - h) * (x - h) + yz2);
     const float delta = distLeft - distRight;  // positive when source is right of center
     return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
 }
@@ -25,8 +25,8 @@ static inline float computeAzimuthFactor(float x, float y, float z, float h) {
 static inline float computeRearFactor(float x, float y, float z, float h) {
     if (h < 1e-7f) return 0.0f;
     const float xz2 = x * x + z * z;
-    const float distFront = std::sqrt(xz2 + (y - h) * (y - h));
-    const float distBack  = std::sqrt(xz2 + (y + h) * (y + h));
+    const float distFront = dsp::fastSqrt(xz2 + (y - h) * (y - h));
+    const float distBack  = dsp::fastSqrt(xz2 + (y + h) * (y + h));
     const float delta = distFront - distBack;  // positive when source is behind
     return std::clamp(delta / (2.0f * h), -1.0f, 1.0f);
 }
@@ -37,8 +37,8 @@ static inline float computeElevFactor(float x, float y, float z, float earOffset
     const float h = earOffset;
     if (h < 1e-7f) return 0.5f;
     const float xy2 = x * x + y * y;
-    const float distTop    = std::sqrt(xy2 + (z - h) * (z - h));
-    const float distBottom = std::sqrt(xy2 + (z + h) * (z + h));
+    const float distTop    = dsp::fastSqrt(xy2 + (z - h) * (z - h));
+    const float distBottom = dsp::fastSqrt(xy2 + (z + h) * (z + h));
     const float delta = distBottom - distTop;
     const float maxDelta = 2.0f * h;
     return std::clamp(delta / maxDelta * 0.5f + 0.5f, 0.0f, 1.0f);
@@ -389,6 +389,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         chestR_.lp.setCoefficients(chestLP, sr);
     }
 
+    // Per-block scaling factor pre-computation (avoids per-sample multiply)
+    chest_.setBlockConstants(sr, currentParams.chestDelayMaxMs);
+    chestR_.setBlockConstants(sr, currentParams.chestDelayMaxMs);
+    floor_.setBlockConstants(sr, currentParams.floorDelayMaxMs);
+    floorR_.setBlockConstants(sr, currentParams.floorDelayMaxMs);
+    dist_.setBlockConstants(sr, currentParams.distDelayMaxMs);
+    distR_.setBlockConstants(sr, currentParams.distDelayMaxMs);
+
     // Block-start position: peek LFO at block start (no phase advance) so
     // per-block filter coefficients track the modulated position.  LFO delta
     // within one 64-128 sample block is negligible for coefficient purposes.
@@ -630,6 +638,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     floorR_.lpfL.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
     floorR_.lpfR.setCoefficientsSmoothed(currentParams.floorAbsHz, sr, numSamples);
 
+    // ER wall absorption LPF — per-block smoothed (was per-sample setCoefficients)
+    const float erDampCutoff = kERDampingLPMaxHz
+        + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
+    er_.updateWallAbsorption(erDampCutoff, sr, numSamples);
+    erR_.updateWallAbsorption(erDampCutoff, sr, numSamples);
+
     // --- Stereo path per-block setCoefficients ---
     // For the stereo path, compute L-node and R-node block-start positions using
     // unmodulated params. The orbit LFO modulation changes slowly; per-block
@@ -848,6 +862,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     const float sawIncrement = currentParams.testTonePitchHz / sr;
     pulseLFO_.setRateHz(currentParams.testTonePulseHz);
     std::uniform_real_distribution<float> noiseDist(-1.0f, 1.0f);
+    const float verbPreDelayMaxSamp = currentParams.verbPreDelayMax * sr / 1000.0f;
 
     // Pre-compute position-derived values for zero-LFO fast path
     // Use listener-relative position for distance (walker mode)
@@ -859,17 +874,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                                         + relPosZ * relPosZ);
     // blkRawModDist is reused in the zero-LFO path below
 
-    // Pre-converge block-constant smoothers (targets don't change within a block)
-    for (int j = 0; j < numSamples; ++j) {
-        lfoDepthXSmooth_.process(currentParams.lfoXDepth);
-        lfoDepthYSmooth_.process(currentParams.lfoYDepth);
-        lfoDepthZSmooth_.process(currentParams.lfoZDepth);
-        orbitDepthXYSmooth_.process(currentParams.stereoOrbitXYDepth);
-        orbitDepthXZSmooth_.process(currentParams.stereoOrbitXZDepth);
-        orbitDepthYZSmooth_.process(currentParams.stereoOrbitYZDepth);
-        stereoWidthSmooth_.process(currentParams.stereoWidth);
-        binauralBlendSmooth_.process(currentParams.binauralEnabled ? 1.0f : 0.0f);
-    }
+    // Pre-converge block-constant smoothers analytically (O(1) instead of O(numSamples))
+    lfoDepthXSmooth_.converge(currentParams.lfoXDepth, numSamples);
+    lfoDepthYSmooth_.converge(currentParams.lfoYDepth, numSamples);
+    lfoDepthZSmooth_.converge(currentParams.lfoZDepth, numSamples);
+    orbitDepthXYSmooth_.converge(currentParams.stereoOrbitXYDepth, numSamples);
+    orbitDepthXZSmooth_.converge(currentParams.stereoOrbitXZDepth, numSamples);
+    orbitDepthYZSmooth_.converge(currentParams.stereoOrbitYZDepth, numSamples);
+    stereoWidthSmooth_.converge(currentParams.stereoWidth, numSamples);
+    binauralBlendSmooth_.converge(currentParams.binauralEnabled ? 1.0f : 0.0f, numSamples);
 
     for (int i = 0; i < numSamples; ++i) {
         // ----------------------------------------------------------------
@@ -1251,8 +1264,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
                 if (erLevelSm > 1e-6f) {
                     const float roomHalf = currentParams.erRoomSize;
-                    const float dampCutoff = kERDampingLPMaxHz
-                        + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
 
                     // Per-node distGainTarget for ER gain scaling (reuse cached distances)
                     const float lNodeDist = std::max(lNodeRawDist, kMinDistance);
@@ -1274,11 +1285,11 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float eCR = interpRotation ? rCosR : cosR;
                     const float eSR = interpRotation ? rSinR : sinR;
                     auto erLResult = er_.processSample(sampleL, lRelX, lRelY, lRelZ,
-                        lDistGainTarget, sr, dampCutoff, roomHalf,
+                        lDistGainTarget, sr, roomHalf,
                         ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
                     auto erRResult = erR_.processSample(sampleR, rRelX, rRelY, rRelZ,
-                        rDistGainTarget, sr, dampCutoff, roomHalf,
+                        rDistGainTarget, sr, roomHalf,
                         ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
 
@@ -1365,8 +1376,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
                 if (erLevelSm > 1e-6f) {
                     const float roomHalf = currentParams.erRoomSize;
-                    const float dampCutoff = kERDampingLPMaxHz
-                        + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
 
                     const float eCY = interpRotation ? rCosY : cosY;
                     const float eSY = interpRotation ? rSinY : sinY;
@@ -1376,7 +1385,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float eSR = interpRotation ? rSinR : sinR;
                     auto erResult = er_.processSample(dopplerInputMono,
                         worldModX, worldModY, worldModZ,
-                        distGainTarget, sr, dampCutoff, roomHalf,
+                        distGainTarget, sr, roomHalf,
                         ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
 
@@ -1398,7 +1407,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             auxPreDelayL_.push(dL);
             auxPreDelayR_.push(dR);
             const float auxDelaySamp = std::max(2.0f, auxDelaySmooth_.process(
-                effectiveDistFrac * currentParams.verbPreDelayMax * sr / 1000.0f));
+                effectiveDistFrac * verbPreDelayMaxSamp));
             const float auxGainTarget = 1.0f + effectiveDistFrac * (auxMaxBoostLin - 1.0f);
             const float auxGain = auxGainSmooth_.process(auxGainTarget);
             auxL[i] = std::clamp(auxPreDelayL_.read(auxDelaySamp) * auxGain, -2.0f, 2.0f);
@@ -1414,8 +1423,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         {
             const float wetGain = verbWetSmooth_.process(currentParams.verbWet);
             if (wetGain > 1e-6f || currentParams.verbWet > 1e-6f) {
-                const float preDelaySamp = effectiveDistFrac
-                    * (currentParams.verbPreDelayMax * static_cast<float>(sampleRate) / 1000.0f);
+                const float preDelaySamp = effectiveDistFrac * verbPreDelayMaxSamp;
                 float wetL, wetR;
                 reverb_.processSample(dL + erReverbAccumL, dR + erReverbAccumR, preDelaySamp, wetL, wetR);
                 if (!currentParams.bypassReverb) {

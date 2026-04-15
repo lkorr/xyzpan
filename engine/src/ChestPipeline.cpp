@@ -35,20 +35,25 @@ float ChestPipeline::processSample(float input, float elevFactor, float sr,
                                     float chestGainLin, const EngineParams& params) {
     // elevFactor: 0.0 = below (max chest bounce), 1.0 = above (no bounce)
     const float belowFactor    = 1.0f - elevFactor;
-    const float chestDelaySamp = elevFactor * params.chestDelayMaxMs * 0.001f * sr;
+    const float chestDelaySamp = elevFactor * delayMaxSamp_;
     const float chestLinTarget = chestGainLin * belowFactor;
-
-    float chestSig = input;
-    for (auto& hp_f : hpf)
-        chestSig = hp_f.process(chestSig);
-    chestSig = lp.process(chestSig);
-    delay.push(chestSig);
 
     const float chestGain = gainSmooth.process(chestLinTarget);
     const float chestReadSamp = std::max(2.0f, delaySmooth.process(chestDelaySamp));
 
-    if (!params.bypassChest && chestGain > 1e-6f)
-        return delay.read(chestReadSamp) * chestGain;
+    if (!params.bypassChest) {
+        float chestSig = input;
+        for (auto& hp_f : hpf)
+            chestSig = hp_f.process(chestSig);
+        chestSig = lp.process(chestSig);
+        delay.push(chestSig);
+
+        if (chestGain > 1e-6f)
+            return delay.read(chestReadSamp) * chestGain;
+        return 0.0f;
+    }
+
+    delay.push(input);
     return 0.0f;
 }
 
