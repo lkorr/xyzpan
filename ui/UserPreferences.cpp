@@ -20,18 +20,26 @@ void UserPreferences::setThemeIndex(int index)
 {
     themeIndex_ = juce::jlimit(0, kNumThemes - 1, index);
     save();
+    if (onSaved) onSaved();
 }
 
 void UserPreferences::setAvatarParams(const AvatarParams& params)
 {
     avatar_ = params;
     save();
+    if (onSaved) onSaved();
 }
 
 void UserPreferences::setSceneParams(const SceneParams& params)
 {
     scene_ = params;
     save();
+    if (onSaved) onSaved();
+}
+
+void UserPreferences::reload()
+{
+    load();
 }
 
 void UserPreferences::load()
@@ -62,8 +70,6 @@ void UserPreferences::load()
         scene_.groundHeight = ghVal.isVoid() ? 0.0f : static_cast<float>(juce::jlimit(0.0, 1.0, static_cast<double>(ghVal)));
         auto hillsVal = obj->getProperty("groundHills");
         scene_.groundHills = hillsVal.isVoid() ? 0.0f : static_cast<float>(juce::jlimit(0.0, 1.0, static_cast<double>(hillsVal)));
-        auto swapVal = obj->getProperty("swapPanels");
-        scene_.swapPanels = swapVal.isVoid() ? true : static_cast<bool>(swapVal);
         auto labelsVal = obj->getProperty("showLabels");
         scene_.showLabels = labelsVal.isVoid() ? true : static_cast<bool>(labelsVal);
         auto arrowVal = obj->getProperty("showArrow");
@@ -129,7 +135,6 @@ void UserPreferences::save() const
     root->setProperty("groundType",   scene_.groundType);
     root->setProperty("groundHeight", static_cast<double>(scene_.groundHeight));
     root->setProperty("groundHills",  static_cast<double>(scene_.groundHills));
-    root->setProperty("swapPanels",   scene_.swapPanels);
     root->setProperty("showLabels",   scene_.showLabels);
     root->setProperty("showArrow",    scene_.showArrow);
     root->setProperty("sourceShape",  scene_.sourceShape);

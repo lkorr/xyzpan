@@ -13,6 +13,10 @@ void AlchemyLookAndFeel::applyTheme(const ColorTheme& theme)
 {
     activeTheme_ = theme;
 
+    // ComboBox/PopupMenu text stays pinned to the initial (default Alchemy) theme so
+    // dropdown readability isn't affected by theme switches.
+    static const ColorTheme kInitialTheme{};
+
     setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(theme.background));
     setColour(juce::Slider::rotarySliderFillColourId,    juce::Colour(theme.lfoAccent));
     setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(theme.darkIron));
@@ -22,9 +26,9 @@ void AlchemyLookAndFeel::applyTheme(const ColorTheme& theme)
     setColour(juce::TextButton::textColourOffId,         juce::Colour(theme.parchment));
     setColour(juce::TextButton::textColourOnId,          juce::Colour(theme.brightGold));
     setColour(juce::ComboBox::backgroundColourId,        juce::Colour(theme.darkIron));
-    setColour(juce::ComboBox::textColourId,              juce::Colour(theme.parchment));
+    setColour(juce::ComboBox::textColourId,              juce::Colour(kInitialTheme.parchment));
     setColour(juce::PopupMenu::backgroundColourId,       juce::Colour(theme.darkIron));
-    setColour(juce::PopupMenu::textColourId,             juce::Colour(theme.parchment));
+    setColour(juce::PopupMenu::textColourId,             juce::Colour(kInitialTheme.parchment));
 }
 
 // ---------------------------------------------------------------------------

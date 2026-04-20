@@ -217,7 +217,12 @@ private:
     enum class LeftTab { Source, Customize };
     LeftTab activeLeftTab_ = LeftTab::Source;
     void setActiveLeftTab(LeftTab tab);
-    bool swapPanels_ = false;  // cached from SceneParams
+
+    enum class CustomizeSubTab { Environment, Wave, Avatar };
+    CustomizeSubTab activeCustomizeSubTab_ = CustomizeSubTab::Environment;
+    void setActiveCustomizeSubTab(CustomizeSubTab t);
+    void applyCustomizeSubTabVisibility();
+    int customizeSubTabHeaderY_ = 0;
 
     // Remote popup button (visible when linked instances >= 2)
     juce::TextButton remoteBtn_{"Remote"};
@@ -295,20 +300,20 @@ private:
     juce::Label       groundHeightLabel_;
     juce::Slider      groundHillsSlider_;
     juce::Label       groundHillsLabel_;
-    juce::ToggleButton swapPanelsToggle_{"Swap Listener/Orbit"};
-    juce::ToggleButton showLabelsToggle_{"Show Object Labels"};
-    juce::ToggleButton showArrowToggle_{"Show Direction Arrow"};
+    juce::ToggleButton showLabelsToggle_;
+    juce::Label        showLabelsLabel_;
+    juce::ToggleButton showArrowToggle_;
+    juce::Label        showArrowLabel_;
     juce::ComboBox sourceShapeCombo_;
     juce::Label    sourceShapeLabel_;
     juce::Slider   clusterCountSlider_;
     juce::Label    clusterCountLabel_;
-    juce::ToggleButton showAudibleSphereToggle_{"Always Show Audible Sphere"};
+    juce::ToggleButton showAudibleSphereToggle_;
+    juce::Label        showAudibleSphereLabel_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> showAudibleSphereAtt_;
     juce::Slider waveCountSlider_;
     juce::Label  waveCountLabel_;
     std::unique_ptr<SA> waveCountAtt_;
-    juce::ComboBox waveBlendCombo_;
-    juce::Label    waveBlendLabel_;
     juce::Slider   waveOpacitySlider_;
     juce::Label    waveOpacityLabel_;
     std::unique_ptr<SA> waveOpacityAtt_;
@@ -338,8 +343,6 @@ private:
     };
     CustomizeContent customizeContent_;
     int eyesSectionHeaderY_ = 0, earsSectionHeaderY_ = 0, hatsSectionHeaderY_ = 0;
-    int avatarHeaderY_ = 0;
-    bool avatarCollapsed_ = true;
 
     // Hat type combo + size slider
     juce::ComboBox hatTypeCombo_;
@@ -366,6 +369,20 @@ private:
     void pushAvatarToGL();
     void syncEyeSpacingSliderMode(bool isCyclops);
 
+    // Cross-instance preference sync — reloads from disk and refreshes all
+    // customize controls + GL view when another instance bumps the hub version.
+    void applyPreferencesToUI();
+    uint32_t lastPreferencesVersion_ = 0;
+
+    // Reset buttons — one per customize sub-tab, placed at top of active panel
+    juce::TextButton resetEnvBtn_{"Reset"};
+    juce::TextButton resetWavesBtn_{"Reset"};
+    juce::TextButton resetAvatarBtn_{"Reset"};
+
+    void resetEnvironment();
+    void resetWaves();
+    void resetAvatarAll();
+
     // Shared geometry: computed once per paint/resized call to avoid drift
     struct Layout {
         int contentY;       // = kPresetBarH
@@ -380,7 +397,7 @@ private:
         int leftContentTop; // = contentY + kSectionHdrH (top of left column content)
         int leftContentH;   // = bottomY - leftContentTop (left column content height)
 
-        static Layout compute(int totalW, int totalH, bool swapPanels = false);
+        static Layout compute(int totalW, int totalH);
     };
 
     void updateOrbitEnabled();

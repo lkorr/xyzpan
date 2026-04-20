@@ -308,6 +308,13 @@ public:
     std::atomic<float> sharedWalkerY{0.0f};
     std::atomic<float> sharedWalkerZ{0.0f};
 
+    // Monotonic counter — bumped whenever any instance persists user preferences
+    // (theme / scene / avatar). Other instances poll this and reload on increment.
+    std::atomic<uint32_t> sharedPreferencesVersion{0};
+    void bumpPreferencesVersion() {
+        sharedPreferencesVersion.fetch_add(1, std::memory_order_release);
+    }
+
 private:
     struct RemovalCB {
         void* owner;

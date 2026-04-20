@@ -18,7 +18,7 @@ struct AvatarParams {
     float eyeSize        = 1.0f;  // scale of eye spheres
     float eyeSpacing     = 1.0f;  // horizontal distance between eyes
     float eyeHeight      = 0.5f;  // vertical position on face (0=center, 1=top)
-    float earSize        = 1.0f;  // scale of ear ellipsoids
+    float earSize        = 0.6f;  // scale of ear ellipsoids
     float earOffset      = 1.0f;  // lateral offset of ears from head center
     float headSize       = 1.0f;  // uniform scale of entire head assembly
     float pupilSize      = 0.35f; // pupil scale 0..1 (0=no pupil, 1=fills entire eye socket)
@@ -29,8 +29,8 @@ struct AvatarParams {
     int   earType        = kEarDefault;  // EarType (stored as int for POD trivial-copy)
     float hatSize        = 1.0f;  // uniform scale of hat/hair (0.2..3.0)
     int   hatType        = kHatNone;    // HatType (stored as int for POD trivial-copy)
-    float noseSize       = 1.0f;  // uniform scale of nose (0.2..3.0)
-    int   noseType       = kNoseCone;   // NoseType (stored as int for POD trivial-copy)
+    float noseSize       = 0.5f;  // uniform scale of nose (0.2..3.0)
+    int   noseType       = kNoseButton; // NoseType (stored as int for POD trivial-copy)
     int   bodyType       = kBodySolid;  // BodyType (stored as int for POD trivial-copy)
 
     // Per-user color overrides (0xFFRRGGBB format). 0 = inherit from active theme.

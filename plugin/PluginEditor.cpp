@@ -363,6 +363,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // ----- Doppler knob (distance delay amount) -----
     dopplerKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     dopplerKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 64, 14);
+    dopplerKnob_.setTextValueSuffix(" ms");
     addAndMakeVisible(dopplerKnob_);
     dopplerAtt_ = std::make_unique<SA>(p.apvts, ParamID::DIST_DELAY_MAX_MS, dopplerKnob_);
     dopplerLabel_.setText("Doppler", juce::dontSendNotification);
@@ -485,6 +486,14 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // ----- User preferences (theme + avatar persistence) -----
     userPrefs_ = std::make_unique<xyzpan::UserPreferences>();
+    // Bump the shared version counter after every local save so other instances notice
+    userPrefs_->onSaved = [this] {
+        auto& hub = proc_.getListenerHub();
+        hub.bumpPreferencesVersion();
+        // Advance our own "last seen" so we don't re-apply our own write next tick.
+        lastPreferencesVersion_ = hub.sharedPreferencesVersion.load(std::memory_order_acquire);
+    };
+    lastPreferencesVersion_ = proc_.getListenerHub().sharedPreferencesVersion.load(std::memory_order_acquire);
     lookAndFeel_.applyTheme(userPrefs_->activeTheme());
     glView_.setColorTheme(userPrefs_->activeTheme());
     glView_.setAvatarParams(userPrefs_->avatarParams());
@@ -599,19 +608,15 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     customizeContent_.addAndMakeVisible(groundHillsSlider_);
     customizeContent_.addAndMakeVisible(groundHillsLabel_);
 
-    // ----- Customize tab: swap panels toggle -----
-    swapPanels_ = userPrefs_->sceneParams().swapPanels;
-    swapPanelsToggle_.setToggleState(swapPanels_, juce::dontSendNotification);
-    swapPanelsToggle_.onClick = [this] {
-        swapPanels_ = swapPanelsToggle_.getToggleState();
-        auto sp = userPrefs_->sceneParams();
-        sp.swapPanels = swapPanels_;
-        userPrefs_->setSceneParams(sp);
-        resized();
-        repaint();
+    auto setupCbLabel = [this](juce::Label& lbl, const juce::String& text) {
+        lbl.setText(text, juce::dontSendNotification);
+        lbl.setFont(juce::Font(juce::FontOptions(10.0f)));
+        lbl.setJustificationType(juce::Justification::centredLeft);
+        customizeContent_.addAndMakeVisible(lbl);
     };
-    customizeContent_.addAndMakeVisible(swapPanelsToggle_);
 
+    showLabelsToggle_.setButtonText("");
+    showLabelsToggle_.setClickingTogglesState(true);
     showLabelsToggle_.setToggleState(userPrefs_->sceneParams().showLabels, juce::dontSendNotification);
     showLabelsToggle_.onClick = [this] {
         auto sp = userPrefs_->sceneParams();
@@ -620,7 +625,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         glView_.setSceneParams(sp);
     };
     customizeContent_.addAndMakeVisible(showLabelsToggle_);
+    setupCbLabel(showLabelsLabel_, "Labels");
 
+    showArrowToggle_.setButtonText("");
+    showArrowToggle_.setClickingTogglesState(true);
     showArrowToggle_.setToggleState(userPrefs_->sceneParams().showArrow, juce::dontSendNotification);
     showArrowToggle_.onClick = [this] {
         auto sp = userPrefs_->sceneParams();
@@ -628,6 +636,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         userPrefs_->setSceneParams(sp);
         glView_.setSceneParams(sp);
     };
+    setupCbLabel(showArrowLabel_, "Arrow");
     customizeContent_.addAndMakeVisible(showArrowToggle_);
 
     // ----- Customize tab: source shape combo -----
@@ -686,9 +695,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         clusterCountLabel_.setVisible(isCluster);
     }
 
+    showAudibleSphereToggle_.setButtonText("");
     showAudibleSphereToggle_.setClickingTogglesState(true);
     showAudibleSphereAtt_ = std::make_unique<BA>(p.apvts, ParamID::SHOW_AUDIBLE_SPHERE, showAudibleSphereToggle_);
     customizeContent_.addAndMakeVisible(showAudibleSphereToggle_);
+    setupCbLabel(showAudibleSphereLabel_, "Sphere");
 
     // ----- Customize tab: wave count slider (coupled to intensity) -----
     waveCountSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -726,43 +737,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     waveSpeedLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     customizeContent_.addAndMakeVisible(waveSpeedSlider_);
     customizeContent_.addAndMakeVisible(waveSpeedLabel_);
-
-    // ----- Customize tab: wave blend mode combo -----
-    waveBlendLabel_.setText("Wave Blend", juce::dontSendNotification);
-    waveBlendLabel_.setJustificationType(juce::Justification::centredLeft);
-    waveBlendLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
-    customizeContent_.addAndMakeVisible(waveBlendLabel_);
-    // Single modes
-    waveBlendCombo_.addItem("Normal",      1);
-    waveBlendCombo_.addItem("Additive",    2);
-    waveBlendCombo_.addItem("Difference",  3);
-    waveBlendCombo_.addItem("Min (Darken)",     4);
-    waveBlendCombo_.addItem("Max (Brighten)",   5);
-    waveBlendCombo_.addItem("Multiply",    6);
-    waveBlendCombo_.addItem("Screen",      7);
-    waveBlendCombo_.addItem("Invert",      8);
-    // Compound modes
-    waveBlendCombo_.addSeparator();
-    waveBlendCombo_.addItem("Pulse",       9);
-    waveBlendCombo_.addItem("Strobe",     10);
-    waveBlendCombo_.addItem("Breath",     11);
-    waveBlendCombo_.addItem("Prism",      12);
-    waveBlendCombo_.addItem("Haze",       13);
-    waveBlendCombo_.addItem("Shatter",    14);
-    waveBlendCombo_.addItem("Nebula",     15);
-    waveBlendCombo_.addItem("Void",       16);
-    {
-        const int initMode = static_cast<int>(p.apvts.getRawParameterValue(ParamID::WAVE_BLEND_MODE)->load());
-        waveBlendCombo_.setSelectedId(initMode + 1, juce::dontSendNotification);
-    }
-    waveBlendCombo_.onChange = [this] {
-        if (waveBlendCombo_.getSelectedId() > 0) {
-            const float mode = static_cast<float>(waveBlendCombo_.getSelectedId() - 1);
-            if (auto* p = proc_.apvts.getParameter(ParamID::WAVE_BLEND_MODE))
-                p->setValueNotifyingHost(p->convertTo0to1(mode));
-        }
-    };
-    customizeContent_.addAndMakeVisible(waveBlendCombo_);
 
     // ----- Customize tab: color swatches -----
     {
@@ -964,6 +938,19 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
     customizeContent_.addAndMakeVisible(bodyTypeCombo_);
 
+    // ----- Customize tab: group reset buttons -----
+    {
+        auto initResetBtn = [this](juce::TextButton& btn, const juce::String& tip, std::function<void()> onClick) {
+            btn.setButtonText("Reset");
+            btn.setTooltip(tip);
+            btn.onClick = std::move(onClick);
+            customizeContent_.addAndMakeVisible(btn);
+        };
+        initResetBtn(resetEnvBtn_,          "Reset sky / ground settings",           [this] { resetEnvironment(); });
+        initResetBtn(resetWavesBtn_,        "Reset wave settings",                   [this] { resetWaves(); });
+        initResetBtn(resetAvatarBtn_,       "Reset entire avatar to defaults",       [this] { resetAvatarAll(); });
+    }
+
     // Apply initial Cyclops state for eyeSpacing/eyeHeight mode
     syncEyeSpacingSliderMode(userPrefs_->avatarParams().eyeType == xyzpan::kEyeCyclops);
     // Googly slider only active for Googly eyes
@@ -1035,25 +1022,45 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     hatSizeSlider_.onValueChange        = onAvatarChange;
     noseSizeSlider_.onValueChange       = onAvatarChange;
 
-    // Section header paint callback
+    // Sub-tab header + section labels paint
     customizeContent_.onPaint = [this](juce::Graphics& g) {
-        // Collapsible AVATAR header
+        const auto& ct = lookAndFeel_.currentTheme();
+        const juce::Colour activeColor  = juce::Colour(ct.brightGold);
+        const juce::Colour inactiveColor = juce::Colour(ct.bronze);
+
+        const int aw = customizeContent_.getWidth();
+        const int hdrH = 22;
+
+        // Sub-tab header row — mirrors parent Source/Customize styling
         {
-            const int aw = customizeContent_.getWidth();
-            auto hdr = juce::Rectangle<int>(0, avatarHeaderY_, aw, 20);
-            g.setColour(juce::Colour(0xFFC9A84C).withAlpha(0.15f));
-            g.fillRect(hdr);
-            g.setColour(juce::Colour(0xFFC9A84C).withAlpha(0.8f));
-            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-            juce::String arrow = avatarCollapsed_ ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6"))
-                                                  : juce::String(juce::CharPointer_UTF8("\xe2\x96\xbc"));
-            g.drawText(arrow + " AVATAR", 6, avatarHeaderY_, aw - 12, 20, juce::Justification::centredLeft);
-            g.setColour(juce::Colour(0xFFC9A84C).withAlpha(0.4f));
-            g.drawHorizontalLine(avatarHeaderY_ + 19, 0.0f, static_cast<float>(aw));
+            auto hdrBg = juce::Rectangle<int>(0, customizeSubTabHeaderY_, aw, hdrH);
+            g.setColour(inactiveColor.withAlpha(0.10f));
+            g.fillRect(hdrBg);
+
+            g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+            const int thirdW = aw / 3;
+            auto drawTab = [&](int idx, const char* label, CustomizeSubTab t) {
+                const bool active = activeCustomizeSubTab_ == t;
+                g.setColour(active ? activeColor : inactiveColor.withAlpha(0.6f));
+                const int x = idx * thirdW;
+                const int w = (idx == 2) ? (aw - x) : thirdW;
+                g.drawText(label, x, customizeSubTabHeaderY_, w, hdrH, juce::Justification::centred);
+                if (active) {
+                    g.setColour(activeColor);
+                    g.fillRect(x + w / 4, customizeSubTabHeaderY_ + hdrH - 2, w / 2, 2);
+                }
+            };
+            drawTab(0, "Environment", CustomizeSubTab::Environment);
+            drawTab(1, "Waves",       CustomizeSubTab::Wave);
+            drawTab(2, "Avatar",      CustomizeSubTab::Avatar);
+
+            g.setColour(inactiveColor.withAlpha(0.4f));
+            g.drawHorizontalLine(customizeSubTabHeaderY_ + hdrH - 1, 0.0f, static_cast<float>(aw));
         }
 
-        if (!avatarCollapsed_) {
-            g.setColour(juce::Colour(0xFFC9A84C).withAlpha(0.7f));
+        // Avatar sub-section labels (only when Avatar tab is active)
+        if (activeCustomizeSubTab_ == CustomizeSubTab::Avatar) {
+            g.setColour(inactiveColor.withAlpha(0.7f));
             g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
             g.drawText("EYES", 4, eyesSectionHeaderY_, 60, 16, juce::Justification::centredLeft);
             g.drawText("EARS", 4, earsSectionHeaderY_, 60, 16, juce::Justification::centredLeft);
@@ -1063,11 +1070,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
 
     customizeContent_.onMouseDown = [this](const juce::MouseEvent& e) {
-        // Click on AVATAR header toggles collapse
-        if (e.y >= avatarHeaderY_ && e.y < avatarHeaderY_ + 20) {
-            avatarCollapsed_ = !avatarCollapsed_;
-            resized();
-            customizeContent_.repaint();
+        const int hdrH = 22;
+        if (e.y >= customizeSubTabHeaderY_ && e.y < customizeSubTabHeaderY_ + hdrH) {
+            const int aw = customizeContent_.getWidth();
+            const int thirdW = aw / 3;
+            if (e.x < thirdW)            setActiveCustomizeSubTab(CustomizeSubTab::Environment);
+            else if (e.x < 2 * thirdW)   setActiveCustomizeSubTab(CustomizeSubTab::Wave);
+            else                          setActiveCustomizeSubTab(CustomizeSubTab::Avatar);
         }
     };
 
@@ -1078,6 +1087,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // Customize tab starts hidden
     customizeViewport_.setVisible(false);
+
+    // Default to Environment sub-tab; apply visibility so inactive controls stay hidden
+    applyCustomizeSubTabVisibility();
 
     // Remote button removed — instance list now auto-shown when link listener is active
 
@@ -1252,7 +1264,7 @@ XYZPanEditor::~XYZPanEditor()
 // ---------------------------------------------------------------------------
 // Layout::compute — single source of structural geometry used by paint + resized
 // ---------------------------------------------------------------------------
-XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool swapPanels)
+XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 {
     Layout l;
     l.contentY    = kPresetBarH;  // left column: Source/Customize header starts below preset bar
@@ -1260,19 +1272,11 @@ XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH, bool 
     l.bottomY     = juce::jmax(1, totalH - kBottomH);
     l.reverbX     = juce::jmax(1, totalW - kMeterW - kReverbSectionW);
 
-    if (!swapPanels) {
-        // Default: Listener (left, kLeftColW) | Stereo Orbit (right, flex) | Reverb
-        l.listenerX   = 0;
-        l.listenerW   = kLeftColW;
-        l.orbitX      = kLeftColW;
-        l.orbitW      = juce::jmax(1, l.reverbX - kLeftColW);
-    } else {
-        // Swapped: Stereo Orbit (left, kLeftColW) | Listener (right, flex) | Reverb
-        l.orbitX      = 0;
-        l.orbitW      = kLeftColW;
-        l.listenerX   = kLeftColW;
-        l.listenerW   = juce::jmax(1, l.reverbX - kLeftColW);
-    }
+    // Stereo Orbit (bottom-left, kLeftColW) | Listener (bottom-right, flex) | Reverb
+    l.orbitX      = 0;
+    l.orbitW      = kLeftColW;
+    l.listenerX   = kLeftColW;
+    l.listenerW   = juce::jmax(1, l.reverbX - kLeftColW);
 
     l.contentTop  = l.bottomY + kSectionHdrH;
 
@@ -1297,7 +1301,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
         return;
     }
 
-    const auto lo = Layout::compute(getWidth(), getHeight(), swapPanels_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
     const int bw = getWidth() - kMeterW;
 
     // ===== BACKGROUNDS =====
@@ -1622,11 +1626,10 @@ void XYZPanEditor::paint(juce::Graphics& g)
         }
     }
 
-    // Vertical divider between Listener and Stereo Orbit sections
+    // Vertical divider between Stereo Orbit (left) and Listener (right) sections
     {
-        const int divX = swapPanels_ ? lo.listenerX : lo.orbitX;
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
-        g.drawVerticalLine(divX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
+        g.drawVerticalLine(lo.listenerX, static_cast<float>(lo.contentTop), static_cast<float>(lo.bottomY + kBottomH));
     }
 
     // Vertical dividers between orbit LFO strips (XY | XZ | YZ) + horizontal separators
@@ -1744,7 +1747,7 @@ void XYZPanEditor::resized()
     auto glArea = b;
 
     // Shared structural geometry — used by both left column and bottom row blocks
-    const auto lo = Layout::compute(getWidth(), getHeight(), swapPanels_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
     // Remote instance list is now rendered as GL view overlay — no left column layout needed
 
@@ -1871,39 +1874,20 @@ void XYZPanEditor::resized()
         const int labelW   = 68;
         const int gap      = 4;
         const int headerH  = 16;
+        const int resetBtnW = 44;
+        const int resetBtnH = 18;
 
         int cy = 2;
+
+        // ===== FIXED TOP SECTION (always visible) =====
         themeLabel_.setBounds(pad, cy, labelW, comboH);
         themeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
         cy += comboH + gap;
 
-        skyLabel_.setBounds(pad, cy, labelW, comboH);
-        skyCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-        cy += comboH + gap;
-
-        groundLabel_.setBounds(pad, cy, labelW, comboH);
-        groundCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-        cy += comboH + gap;
-
-        groundHeightLabel_.setBounds(pad, cy, labelW, sliderH);
-        groundHeightSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-        cy += sliderH + gap;
-
-        groundHillsLabel_.setBounds(pad, cy, labelW, sliderH);
-        groundHillsSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-        cy += sliderH + gap;
-
-        swapPanelsToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
-        cy += comboH + gap;
-
-        showLabelsToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
-        cy += comboH + gap;
-
-        showArrowToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
-        cy += comboH + gap;
-
-        sourceShapeLabel_.setBounds(pad, cy, labelW, comboH);
-        sourceShapeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+        // "Source Shape" label needs extra width to render without truncation
+        const int sourceShapeLabelW = 82;
+        sourceShapeLabel_.setBounds(pad, cy, sourceShapeLabelW, comboH);
+        sourceShapeCombo_.setBounds(pad + sourceShapeLabelW, cy, ow - pad * 2 - sourceShapeLabelW, comboH);
         cy += comboH + gap;
 
         if (clusterCountSlider_.isVisible()) {
@@ -1912,112 +1896,119 @@ void XYZPanEditor::resized()
             cy += sliderH + gap;
         }
 
-        showAudibleSphereToggle_.setBounds(pad, cy, ow - pad * 2, comboH);
-        cy += comboH + gap;
+        // Checkboxes — 3 across in a single row (same style as binaural/earlyRefl toggles)
+        {
+            const int boxSz = 18;
+            const int cbGap = 4;
+            const int colW  = (ow - pad * 2) / 3;
+            const int rowH  = juce::jmax(boxSz, 16);
 
-        waveCountLabel_.setBounds(pad, cy, labelW, sliderH);
-        waveCountSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-        cy += sliderH + gap;
+            auto placeCb = [&](int idx, juce::ToggleButton& tb, juce::Label& lbl) {
+                const int x = pad + colW * idx;
+                const int cy2 = cy + (rowH - boxSz) / 2;
+                tb.setBounds(x, cy2, boxSz, boxSz);
+                lbl.setBounds(x + boxSz + cbGap, cy, colW - boxSz - cbGap - 2, rowH);
+            };
+            placeCb(0, showLabelsToggle_,        showLabelsLabel_);
+            placeCb(1, showArrowToggle_,         showArrowLabel_);
+            placeCb(2, showAudibleSphereToggle_, showAudibleSphereLabel_);
+            cy += rowH + gap;
+        }
 
-        waveOpacityLabel_.setBounds(pad, cy, labelW, sliderH);
-        waveOpacitySlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-        cy += sliderH + gap;
+        // ===== SUB-TAB HEADER =====
+        const int subTabHdrH = 22;
+        customizeSubTabHeaderY_ = cy;
+        cy += subTabHdrH + gap;
 
-        waveSpeedLabel_.setBounds(pad, cy, labelW, sliderH);
-        waveSpeedSlider_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-        cy += sliderH + gap;
-
-        waveBlendLabel_.setBounds(pad, cy, labelW, comboH);
-        waveBlendCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
-        cy += comboH + gap;
-
-        // --- Collapsible AVATAR header ---
-        avatarHeaderY_ = cy;
-        cy += 20 + gap;  // header height 20px
-
-        // All avatar components — toggled visible/invisible based on collapse state
-        auto avatarComponents = {
-            (juce::Component*)&bodyTypeCombo_,   (juce::Component*)&bodyTypeLabel_,
-            (juce::Component*)&headColorSwatch_, (juce::Component*)&headColorLabel_,
-            (juce::Component*)&headSizeSlider_,  (juce::Component*)&headSizeLabel_,
-            (juce::Component*)&headElongationSlider_, (juce::Component*)&headElongationLabel_,
-            (juce::Component*)&eyeTypeCombo_,    (juce::Component*)&eyeTypeLabel_,
-            (juce::Component*)&eyeSizeSlider_,   (juce::Component*)&eyeSizeLabel_,
-            (juce::Component*)&eyeSpacingSlider_,(juce::Component*)&eyeSpacingLabel_,
-            (juce::Component*)&pupilSizeSlider_, (juce::Component*)&pupilSizeLabel_,
-            (juce::Component*)&googlySlider_,    (juce::Component*)&googlyLabel_,
-            (juce::Component*)&eyeColorSwatch_,  (juce::Component*)&eyeColorLabel_,
-            (juce::Component*)&earTypeCombo_,    (juce::Component*)&earTypeLabel_,
-            (juce::Component*)&earSizeSlider_,   (juce::Component*)&earSizeLabel_,
-            (juce::Component*)&earRotationSlider_,(juce::Component*)&earRotationLabel_,
-            (juce::Component*)&noseTypeCombo_,   (juce::Component*)&noseTypeLabel_,
-            (juce::Component*)&noseSizeSlider_,  (juce::Component*)&noseSizeLabel_,
-            (juce::Component*)&noseColorSwatch_, (juce::Component*)&noseColorLabel_,
-            (juce::Component*)&hatTypeCombo_,    (juce::Component*)&hatTypeLabel_,
-            (juce::Component*)&hatSizeSlider_,   (juce::Component*)&hatSizeLabel_,
-            (juce::Component*)&hatColorSwatch_,  (juce::Component*)&hatColorLabel_
+        // ===== ACTIVE SUB-TAB PANEL =====
+        // Reset button at top-right of panel
+        auto placeSlider = [&](juce::Slider& slider, juce::Label& label) {
+            label.setBounds(pad, cy, labelW, sliderH);
+            slider.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
+            cy += sliderH + gap;
+        };
+        auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
+            label.setBounds(pad, cy, labelW, sliderH);
+            swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
+            cy += sliderH + gap;
         };
 
-        if (avatarCollapsed_) {
-            for (auto* c : avatarComponents)
-                c->setVisible(false);
-        } else {
-            for (auto* c : avatarComponents)
-                c->setVisible(true);
+        const int resetRowY = cy;
 
-            auto placeAvatarSlider = [&](juce::Slider& slider, juce::Label& label) {
-                label.setBounds(pad, cy, labelW, sliderH);
-                slider.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, sliderH);
-                cy += sliderH + gap;
-            };
+        if (activeCustomizeSubTab_ == CustomizeSubTab::Environment) {
+            resetEnvBtn_.setBounds(ow - pad - resetBtnW, resetRowY, resetBtnW, resetBtnH);
+            cy += resetBtnH + gap;
 
-            auto placeColorSwatch = [&](ColorSwatch& swatch, juce::Label& label) {
-                label.setBounds(pad, cy, labelW, sliderH);
-                swatch.setBounds(pad + labelW, cy, sliderH, sliderH);
-                cy += sliderH + gap;
-            };
+            skyLabel_.setBounds(pad, cy, labelW, comboH);
+            skyCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+            cy += comboH + gap;
+
+            groundLabel_.setBounds(pad, cy, labelW, comboH);
+            groundCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
+            cy += comboH + gap;
+
+            placeSlider(groundHeightSlider_, groundHeightLabel_);
+            placeSlider(groundHillsSlider_,  groundHillsLabel_);
+        }
+        else if (activeCustomizeSubTab_ == CustomizeSubTab::Wave) {
+            resetWavesBtn_.setBounds(ow - pad - resetBtnW, resetRowY, resetBtnW, resetBtnH);
+            cy += resetBtnH + gap;
+
+            placeSlider(waveCountSlider_,   waveCountLabel_);
+            placeSlider(waveOpacitySlider_, waveOpacityLabel_);
+            placeSlider(waveSpeedSlider_,   waveSpeedLabel_);
+        }
+        else {  // Avatar
+            resetAvatarBtn_.setBounds(ow - pad - resetBtnW, resetRowY, resetBtnW, resetBtnH);
+            cy += resetBtnH + gap;
 
             bodyTypeLabel_.setBounds(pad, cy, labelW, comboH);
             bodyTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
             cy += comboH + gap;
-            placeColorSwatch(headColorSwatch_,  headColorLabel_);
-            placeAvatarSlider(headSizeSlider_,       headSizeLabel_);
-            placeAvatarSlider(headElongationSlider_, headElongationLabel_);
 
+            // HEAD
+            placeColorSwatch(headColorSwatch_,      headColorLabel_);
+            placeSlider(headSizeSlider_,            headSizeLabel_);
+            placeSlider(headElongationSlider_,      headElongationLabel_);
+
+            // EYES
             eyesSectionHeaderY_ = cy;
             cy += headerH + gap;
             eyeTypeLabel_.setBounds(pad, cy, labelW, comboH);
             eyeTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
             cy += comboH + gap;
-            placeAvatarSlider(eyeSizeSlider_,        eyeSizeLabel_);
-            placeAvatarSlider(eyeSpacingSlider_,     eyeSpacingLabel_);
-            placeAvatarSlider(pupilSizeSlider_,      pupilSizeLabel_);
-            placeAvatarSlider(googlySlider_,          googlyLabel_);
-            placeColorSwatch(eyeColorSwatch_,   eyeColorLabel_);
+            placeSlider(eyeSizeSlider_,    eyeSizeLabel_);
+            placeSlider(eyeSpacingSlider_, eyeSpacingLabel_);
+            placeSlider(pupilSizeSlider_,  pupilSizeLabel_);
+            placeSlider(googlySlider_,     googlyLabel_);
+            placeColorSwatch(eyeColorSwatch_, eyeColorLabel_);
 
+            // EARS
             earsSectionHeaderY_ = cy;
             cy += headerH + gap;
             earTypeLabel_.setBounds(pad, cy, labelW, comboH);
             earTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
             cy += comboH + gap;
-            placeAvatarSlider(earSizeSlider_,        earSizeLabel_);
-            placeAvatarSlider(earRotationSlider_,    earRotationLabel_);
+            placeSlider(earSizeSlider_,     earSizeLabel_);
+            placeSlider(earRotationSlider_, earRotationLabel_);
 
+            // NOSE
             noseSectionHeaderY_ = cy;
             cy += headerH + gap;
             noseTypeLabel_.setBounds(pad, cy, labelW, comboH);
             noseTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
             cy += comboH + gap;
-            placeAvatarSlider(noseSizeSlider_, noseSizeLabel_);
-            placeColorSwatch(noseColorSwatch_,  noseColorLabel_);
+            placeSlider(noseSizeSlider_, noseSizeLabel_);
+            placeColorSwatch(noseColorSwatch_, noseColorLabel_);
 
+            // HATS
             hatsSectionHeaderY_ = cy;
             cy += headerH + gap;
             hatTypeLabel_.setBounds(pad, cy, labelW, comboH);
             hatTypeCombo_.setBounds(pad + labelW, cy, ow - pad * 2 - labelW, comboH);
             cy += comboH + gap;
-            placeAvatarSlider(hatSizeSlider_, hatSizeLabel_);
-            placeColorSwatch(hatColorSwatch_,   hatColorLabel_);
+            placeSlider(hatSizeSlider_,        hatSizeLabel_);
+            placeColorSwatch(hatColorSwatch_,  hatColorLabel_);
         }
 
         customizeContent_.setSize(ow, cy + 2);
@@ -2304,6 +2295,75 @@ void XYZPanEditor::applyCurrentTheme()
     if (!avp.hatColor)   hatColorSwatch_.setColour(toJuceCol(theme.glHat));
     if (!avp.eyeColor)   eyeColorSwatch_.setColour(toJuceCol(theme.glEyeWhite));
 
+    customizeContent_.repaint();
+    repaint();
+}
+
+// ---------------------------------------------------------------------------
+// applyPreferencesToUI — reload prefs from disk and sync all customize controls
+// (called when another instance bumps the shared prefs version counter).
+// ---------------------------------------------------------------------------
+void XYZPanEditor::applyPreferencesToUI()
+{
+    userPrefs_->reload();
+    const auto& sp = userPrefs_->sceneParams();
+    const auto& ap = userPrefs_->avatarParams();
+
+    applyCurrentTheme();
+
+    glView_.setSceneParams(sp);
+    proc_.setSourceShape(sp.sourceShape);
+
+    themeCombo_.setSelectedId(userPrefs_->themeIndex() + 1, juce::dontSendNotification);
+
+    skyCombo_.setSelectedId(sp.skyType + 1, juce::dontSendNotification);
+    groundCombo_.setSelectedId(sp.groundType + 1, juce::dontSendNotification);
+    groundHeightSlider_.setValue(sp.groundHeight, juce::dontSendNotification);
+    groundHillsSlider_.setValue(sp.groundHills, juce::dontSendNotification);
+    showLabelsToggle_.setToggleState(sp.showLabels, juce::dontSendNotification);
+    showArrowToggle_.setToggleState(sp.showArrow, juce::dontSendNotification);
+
+    sourceShapeCombo_.setSelectedId(sp.sourceShape + 1, juce::dontSendNotification);
+    clusterCountSlider_.setValue(sp.clusterCount, juce::dontSendNotification);
+    const bool isCluster = sp.sourceShape >= xyzpan::kShapeClusterSpheres;
+    clusterCountSlider_.setVisible(isCluster);
+    clusterCountLabel_.setVisible(isCluster);
+
+    // Wave sliders are APVTS-bound, so they sync via the hub link mechanism — no
+    // direct set needed here. (They're plugin parameters, not UserPreferences.)
+
+    pushAvatarToGL();
+
+    bodyTypeCombo_.setSelectedId(ap.bodyType + 1, juce::dontSendNotification);
+    headSizeSlider_.setValue(ap.headSize, juce::dontSendNotification);
+    headElongationSlider_.setValue(ap.headElongation, juce::dontSendNotification);
+    eyeTypeCombo_.setSelectedId(ap.eyeType + 1, juce::dontSendNotification);
+    eyeSizeSlider_.setValue(ap.eyeSize, juce::dontSendNotification);
+    syncEyeSpacingSliderMode(ap.eyeType == xyzpan::kEyeCyclops);
+    pupilSizeSlider_.setValue(ap.pupilSize, juce::dontSendNotification);
+    googlySlider_.setEnabled(ap.eyeType == xyzpan::kEyeGoogly);
+    earTypeCombo_.setSelectedId(ap.earType + 1, juce::dontSendNotification);
+    earSizeSlider_.setValue(ap.earSize, juce::dontSendNotification);
+    earRotationSlider_.setValue(ap.earRotation, juce::dontSendNotification);
+    noseTypeCombo_.setSelectedId(ap.noseType + 1, juce::dontSendNotification);
+    noseSizeSlider_.setValue(ap.noseSize, juce::dontSendNotification);
+    hatTypeCombo_.setSelectedId(ap.hatType + 1, juce::dontSendNotification);
+    hatSizeSlider_.setValue(ap.hatSize, juce::dontSendNotification);
+
+    // Color swatches — theme default when avatar color == 0, otherwise custom
+    const auto& thm = userPrefs_->activeTheme();
+    auto swatchCol = [&](uint32_t avCol, const glm::vec3& themeCol) {
+        return avCol != 0
+            ? juce::Colour(avCol)
+            : juce::Colour::fromFloatRGBA(themeCol.r, themeCol.g, themeCol.b, 1.0f);
+    };
+    headColorSwatch_.setColour(swatchCol(ap.headColor, thm.glListenerHead));
+    eyeColorSwatch_.setColour(swatchCol(ap.eyeColor,  thm.glEyeWhite));
+    noseColorSwatch_.setColour(swatchCol(ap.noseColor, thm.glNose));
+    hatColorSwatch_.setColour(swatchCol(ap.hatColor,  thm.glHat));
+
+    resized();
+    customizeContent_.repaint();
     repaint();
 }
 
@@ -2372,12 +2432,66 @@ void XYZPanEditor::setActiveLeftTab(LeftTab tab)
 
     // Customize tab (scrollable viewport)
     customizeViewport_.setVisible(customize);
+    if (customize)
+        applyCustomizeSubTabVisibility();
 
     // Only trigger relayout if we've been sized (avoid crash during construction)
     if (getWidth() > 0 && getHeight() > 0) {
         resized();
         repaint();
     }
+}
+
+void XYZPanEditor::setActiveCustomizeSubTab(CustomizeSubTab t)
+{
+    activeCustomizeSubTab_ = t;
+    applyCustomizeSubTabVisibility();
+    if (getWidth() > 0 && getHeight() > 0) {
+        resized();
+        customizeContent_.repaint();
+    }
+}
+
+void XYZPanEditor::applyCustomizeSubTabVisibility()
+{
+    const bool env    = activeCustomizeSubTab_ == CustomizeSubTab::Environment;
+    const bool wave   = activeCustomizeSubTab_ == CustomizeSubTab::Wave;
+    const bool avatar = activeCustomizeSubTab_ == CustomizeSubTab::Avatar;
+
+    // Environment sub-tab
+    resetEnvBtn_.setVisible(env);
+    skyLabel_.setVisible(env);           skyCombo_.setVisible(env);
+    groundLabel_.setVisible(env);        groundCombo_.setVisible(env);
+    groundHeightLabel_.setVisible(env);  groundHeightSlider_.setVisible(env);
+    groundHillsLabel_.setVisible(env);   groundHillsSlider_.setVisible(env);
+
+    // Wave sub-tab
+    resetWavesBtn_.setVisible(wave);
+    waveCountLabel_.setVisible(wave);    waveCountSlider_.setVisible(wave);
+    waveOpacityLabel_.setVisible(wave);  waveOpacitySlider_.setVisible(wave);
+    waveSpeedLabel_.setVisible(wave);    waveSpeedSlider_.setVisible(wave);
+
+    // Avatar sub-tab
+    resetAvatarBtn_.setVisible(avatar);
+    bodyTypeCombo_.setVisible(avatar);   bodyTypeLabel_.setVisible(avatar);
+    headColorSwatch_.setVisible(avatar); headColorLabel_.setVisible(avatar);
+    headSizeSlider_.setVisible(avatar);  headSizeLabel_.setVisible(avatar);
+    headElongationSlider_.setVisible(avatar); headElongationLabel_.setVisible(avatar);
+    eyeTypeCombo_.setVisible(avatar);    eyeTypeLabel_.setVisible(avatar);
+    eyeSizeSlider_.setVisible(avatar);   eyeSizeLabel_.setVisible(avatar);
+    eyeSpacingSlider_.setVisible(avatar);eyeSpacingLabel_.setVisible(avatar);
+    pupilSizeSlider_.setVisible(avatar); pupilSizeLabel_.setVisible(avatar);
+    googlySlider_.setVisible(avatar);    googlyLabel_.setVisible(avatar);
+    eyeColorSwatch_.setVisible(avatar);  eyeColorLabel_.setVisible(avatar);
+    earTypeCombo_.setVisible(avatar);    earTypeLabel_.setVisible(avatar);
+    earSizeSlider_.setVisible(avatar);   earSizeLabel_.setVisible(avatar);
+    earRotationSlider_.setVisible(avatar);earRotationLabel_.setVisible(avatar);
+    noseTypeCombo_.setVisible(avatar);   noseTypeLabel_.setVisible(avatar);
+    noseSizeSlider_.setVisible(avatar);  noseSizeLabel_.setVisible(avatar);
+    noseColorSwatch_.setVisible(avatar); noseColorLabel_.setVisible(avatar);
+    hatTypeCombo_.setVisible(avatar);    hatTypeLabel_.setVisible(avatar);
+    hatSizeSlider_.setVisible(avatar);   hatSizeLabel_.setVisible(avatar);
+    hatColorSwatch_.setVisible(avatar);  hatColorLabel_.setVisible(avatar);
 }
 
 void XYZPanEditor::updateListenerControlsEnabled() {
@@ -2437,7 +2551,7 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
     if (zone != RandZone::None)
         lastClickedZone_ = zone;
 
-    const auto lo = Layout::compute(getWidth(), getHeight(), swapPanels_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
 
     // Hit-test left column tab header — "Source | Customize"
     if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
@@ -2552,6 +2666,17 @@ void XYZPanEditor::endWasdGestureIfActive()
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
 {
+    // Cross-instance preferences sync — reload + refresh UI if another instance
+    // persisted a change since we last checked.
+    {
+        const uint32_t curVer = proc_.getListenerHub()
+            .sharedPreferencesVersion.load(std::memory_order_acquire);
+        if (curVer != lastPreferencesVersion_) {
+            lastPreferencesVersion_ = curVer;
+            applyPreferencesToUI();
+        }
+    }
+
     // Update undo/redo button enabled state
     undoBtn_.setEnabled(proc_.getUndoManager().canUndo());
     redoBtn_.setEnabled(proc_.getUndoManager().canRedo());
@@ -2706,13 +2831,15 @@ void XYZPanEditor::timerCallback()
 // ---------------------------------------------------------------------------
 XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) const
 {
-    const auto lo = Layout::compute(getWidth(), getHeight(), swapPanels_);
+    const auto lo = Layout::compute(getWidth(), getHeight());
     const int x = pos.x;
     const int y = pos.y;
 
     // Left column: depends on active tab (Source or Customize)
     if (x >= 0 && x < kLeftColW && y >= kPresetBarH && y < lo.bottomY) {
         if (activeLeftTab_ == LeftTab::Customize) {
+            if (activeCustomizeSubTab_ != CustomizeSubTab::Avatar)
+                return RandZone::None;
             int localY = y - customizeViewport_.getY() + customizeViewport_.getViewPositionY();
             if (localY < eyesSectionHeaderY_)
                 return RandZone::CustColors;
@@ -2998,6 +3125,82 @@ void XYZPanEditor::randomizeCustHats()
     hatColorSwatch_.setColour(juce::Colour(ap.hatColor));
     hatTypeCombo_.setSelectedId(ap.hatType + 1, juce::dontSendNotification);
     hatSizeSlider_.setValue(static_cast<double>(ap.hatSize), juce::dontSendNotification);
+}
+
+// ---------------------------------------------------------------------------
+// Group reset helpers — restore init defaults for a customize panel section
+// ---------------------------------------------------------------------------
+
+static void setApvtsParam(juce::AudioProcessorValueTreeState& apvts, const char* id, float value)
+{
+    if (auto* p = apvts.getParameter(id)) {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost(p->convertTo0to1(value));
+        p->endChangeGesture();
+    }
+}
+
+void XYZPanEditor::resetEnvironment()
+{
+    const xyzpan::SceneParams def{};
+    auto sp = userPrefs_->sceneParams();
+    sp.skyType      = def.skyType;
+    sp.groundType   = def.groundType;
+    sp.groundHeight = def.groundHeight;
+    sp.groundHills  = def.groundHills;
+    userPrefs_->setSceneParams(sp);
+    glView_.setSceneParams(sp);
+
+    skyCombo_.setSelectedId(sp.skyType + 1, juce::dontSendNotification);
+    groundCombo_.setSelectedId(sp.groundType + 1, juce::dontSendNotification);
+    groundHeightSlider_.setValue(sp.groundHeight, juce::dontSendNotification);
+    groundHillsSlider_.setValue(sp.groundHills, juce::dontSendNotification);
+    resized();
+    repaint();
+}
+
+void XYZPanEditor::resetWaves()
+{
+    // APVTS defaults sourced from ParamLayout.cpp
+    setApvtsParam(proc_.apvts, ParamID::WAVE_COUNT,      3.0f);
+    setApvtsParam(proc_.apvts, ParamID::WAVE_OPACITY,    0.02f);
+    setApvtsParam(proc_.apvts, ParamID::WAVE_SPEED,      0.8f);
+    setApvtsParam(proc_.apvts, ParamID::WAVE_BLEND_MODE, 6.0f);
+    setApvtsParam(proc_.apvts, ParamID::WAVE_INTENSITY,  3.5f);
+}
+
+void XYZPanEditor::resetAvatarAll()
+{
+    const xyzpan::AvatarParams def{};
+    userPrefs_->setAvatarParams(def);
+    pushAvatarToGL();
+
+    const auto& thm = userPrefs_->activeTheme();
+    headColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+        thm.glListenerHead.r, thm.glListenerHead.g, thm.glListenerHead.b, 1.0f));
+    eyeColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+        thm.glEyeWhite.r, thm.glEyeWhite.g, thm.glEyeWhite.b, 1.0f));
+    noseColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+        thm.glNose.r, thm.glNose.g, thm.glNose.b, 1.0f));
+    hatColorSwatch_.setColour(juce::Colour::fromFloatRGBA(
+        thm.glHat.r, thm.glHat.g, thm.glHat.b, 1.0f));
+
+    bodyTypeCombo_.setSelectedId(def.bodyType + 1, juce::dontSendNotification);
+    headSizeSlider_.setValue(def.headSize, juce::dontSendNotification);
+    headElongationSlider_.setValue(def.headElongation, juce::dontSendNotification);
+    eyeTypeCombo_.setSelectedId(def.eyeType + 1, juce::dontSendNotification);
+    eyeSizeSlider_.setValue(def.eyeSize, juce::dontSendNotification);
+    syncEyeSpacingSliderMode(def.eyeType == xyzpan::kEyeCyclops);
+    pupilSizeSlider_.setValue(def.pupilSize, juce::dontSendNotification);
+    googlySlider_.setValue(0.0, juce::dontSendNotification);
+    googlySlider_.setEnabled(def.eyeType == xyzpan::kEyeGoogly);
+    earTypeCombo_.setSelectedId(def.earType + 1, juce::dontSendNotification);
+    earSizeSlider_.setValue(def.earSize, juce::dontSendNotification);
+    earRotationSlider_.setValue(def.earRotation, juce::dontSendNotification);
+    noseTypeCombo_.setSelectedId(def.noseType + 1, juce::dontSendNotification);
+    noseSizeSlider_.setValue(def.noseSize, juce::dontSendNotification);
+    hatTypeCombo_.setSelectedId(def.hatType + 1, juce::dontSendNotification);
+    hatSizeSlider_.setValue(def.hatSize, juce::dontSendNotification);
 }
 
 // ---------------------------------------------------------------------------

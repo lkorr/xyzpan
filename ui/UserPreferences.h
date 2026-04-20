@@ -2,6 +2,7 @@
 #include "ColorTheme.h"
 #include "AvatarParams.h"
 #include "SceneParams.h"
+#include <functional>
 
 namespace xyzpan {
 
@@ -19,6 +20,13 @@ public:
     void setThemeIndex(int index);
     void setAvatarParams(const AvatarParams& params);
     void setSceneParams(const SceneParams& params);
+
+    // Reload from disk — used when another instance has updated preferences.
+    void reload();
+
+    // Fired after a successful save() (message thread). Consumers use this to
+    // broadcast a cross-instance invalidation signal.
+    std::function<void()> onSaved;
 
 private:
     void load();
