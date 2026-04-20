@@ -37,6 +37,7 @@ struct ERPipeline {
     // Process early reflections for a single source node.
     struct ERResult { float directL, directR, reverbL, reverbR; };
     ERResult processSample(float input, float nodeX, float nodeY, float nodeZ,
+                           float listenerX, float listenerY, float listenerZ,
                            float distGainTarget, float sr,
                            float roomHalf,
                            float ildGainBase, bool rotated,

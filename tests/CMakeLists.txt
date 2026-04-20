@@ -11,6 +11,7 @@ add_executable(XYZPanTests
     engine/TestGoldenReference.cpp
     engine/TestOrientationMath.cpp
     engine/TestListenerRoll.cpp
+    engine/TestEarlyReflections.cpp
 )
 
 target_link_libraries(XYZPanTests

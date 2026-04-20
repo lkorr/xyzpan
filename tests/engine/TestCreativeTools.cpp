@@ -752,7 +752,7 @@ TEST_CASE("LFO-05: Tempo sync at 120 BPM produces 2Hz rate (22050-sample period)
         paramsTempoSync.lfoXWaveform = 0;  // sine
         paramsTempoSync.lfoXTempoSync = true;
         paramsTempoSync.hostBpm = 120.0f;
-        paramsTempoSync.lfoXBeatDiv = 1.0f;
+        paramsTempoSync.lfoXBeatDiv = 0.25f;  // 1/4 bar = quarter note = 2 Hz at 120 BPM in 4/4
 
         EngineParams paramsNoLFO = paramsTempoSync;
         paramsNoLFO.lfoXDepth = 0.0f;

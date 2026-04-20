@@ -186,6 +186,10 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     pulseLFO_.waveform = dsp::LFOWaveform::Square;
     pulseLFO_.reset(0.0f);
     noiseRng_.seed(12345u);
+
+    // Test tone gain — start muted so first block ramps up smoothly if enabled
+    testToneGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    testToneGainSmooth_.reset(0.0f);
 }
 
 // ============================================================================
@@ -287,9 +291,18 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     // Phase 5: LFO — set rate and waveform per block
     // -------------------------------------------------------------------------
+    // beatDiv is in BARS. One bar = hostTimeSigNum beats (quarter-note beats when
+    // denominator is 4). Seconds per bar = hostTimeSigNum * (60 / BPM) * (4 / den).
+    // LFO freq = 1 / (beatDiv * secondsPerBar).
     auto lfoRate = [&](float freeHz, float beatDiv, bool tempoSync) -> float {
-        if (tempoSync && currentParams.hostBpm > 0.0f)
-            return (currentParams.hostBpm / 60.0f) / beatDiv;
+        if (tempoSync && currentParams.hostBpm > 0.0f && beatDiv > 0.0f) {
+            const int num = currentParams.hostTimeSigNum > 0 ? currentParams.hostTimeSigNum : 4;
+            const int den = currentParams.hostTimeSigDen > 0 ? currentParams.hostTimeSigDen : 4;
+            // secondsPerBar = num * (4.0 / den) * (60.0 / bpm)
+            const float secondsPerBar = static_cast<float>(num) * (4.0f / static_cast<float>(den))
+                                      * (60.0f / currentParams.hostBpm);
+            return 1.0f / (beatDiv * secondsPerBar);
+        }
         return freeHz;
     };
     lfoX_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoXWaveform);
@@ -856,7 +869,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // -------------------------------------------------------------------------
     // Per-sample loop
     // -------------------------------------------------------------------------
-    const float testGainLin = currentParams.testToneEnabled
+    const float testGainTargetBlock = currentParams.testToneEnabled
         ? std::pow(10.0f, currentParams.testToneGainDb / 20.0f)
         : 0.0f;
     const float sawIncrement = currentParams.testTonePitchHz / sr;
@@ -892,6 +905,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         float testSigL = 0.0f;
         float testSigR = 0.0f;
         bool  testStereo = false;
+        const float smoothedTestGain = testToneGainSmooth_.process(testGainTargetBlock);
         if (currentParams.testToneEnabled) {
             switch (currentParams.testToneWaveform) {
                 case xyzpan::TestToneWaveform::WhiteNoise:
@@ -920,8 +934,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 case xyzpan::TestToneWaveform::StereoNoiseSaw: {
                     testStereo = true;
                     const float gate = pulseLFO_.tick() > 0.0f ? 1.0f : 0.0f;
-                    testSigL = noiseDist(noiseRng_) * gate * testGainLin;
-                    testSigR = (2.0f * sawPhase_ - 1.0f) * gate * testGainLin;
+                    testSigL = noiseDist(noiseRng_) * gate;
+                    testSigR = (2.0f * sawPhase_ - 1.0f) * gate;
                     sawPhase_ += sawIncrement;
                     if (sawPhase_ >= 1.0f) sawPhase_ -= 1.0f;
                     break;
@@ -952,7 +966,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     if (sawPhase_ >= 1.0f) sawPhase_ -= 1.0f;
                     break;
             }
-            if (!testStereo) testSig *= testGainLin;
+            if (testStereo) {
+                testSigL *= smoothedTestGain;
+                testSigR *= smoothedTestGain;
+            } else {
+                testSig *= smoothedTestGain;
+            }
         }
 
         // ----------------------------------------------------------------
@@ -1285,10 +1304,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float eCR = interpRotation ? rCosR : cosR;
                     const float eSR = interpRotation ? rSinR : sinR;
                     auto erLResult = er_.processSample(sampleL, lRelX, lRelY, lRelZ,
+                        currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
                         lDistGainTarget, sr, roomHalf,
                         ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
                     auto erRResult = erR_.processSample(sampleR, rRelX, rRelY, rRelZ,
+                        currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
                         rDistGainTarget, sr, roomHalf,
                         ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
@@ -1383,8 +1404,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float eSP = interpRotation ? rSinP : sinP;
                     const float eCR = interpRotation ? rCosR : cosR;
                     const float eSR = interpRotation ? rSinR : sinR;
+                    // Listener-relative (pre-rotation) node coords — ER applies head rotation
+                    // internally for binaural panning.
+                    const float mRelX = worldModX - currentParams.listenerX;
+                    const float mRelY = worldModY - currentParams.listenerY;
+                    const float mRelZ = worldModZ - currentParams.listenerZ;
                     auto erResult = er_.processSample(dopplerInputMono,
-                        worldModX, worldModY, worldModZ,
+                        mRelX, mRelY, mRelZ,
+                        currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
                         distGainTarget, sr, roomHalf,
                         ildGainBase_, listenerRotated, eCY, eSY, eCP, eSP, eCR, eSR,
                         currentParams);
@@ -1541,6 +1568,7 @@ void XYZPanEngine::reset() {
     clickSamplesLeft_ = 0.0f;
     prevPulseGate_ = false;
     pulseLFO_.reset(0.0f);
+    testToneGainSmooth_.reset(0.0f);
 }
 
 XYZPanEngine::LFOOutputs XYZPanEngine::getLastLFOOutputs() const noexcept {

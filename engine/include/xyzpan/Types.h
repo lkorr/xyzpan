@@ -130,6 +130,8 @@ struct EngineParams {
     bool  lfoYTempoSync = false;
     bool  lfoZTempoSync = false;
     float hostBpm       = 120.0f;           // passed from processBlock AudioPlayHead
+    int   hostTimeSigNum = 4;               // time signature numerator (beats per bar)
+    int   hostTimeSigDen = 4;               // time signature denominator (beat unit)
     float lfoXBeatDiv   = 1.0f;             float lfoYBeatDiv   = 1.0f;             float lfoZBeatDiv   = 1.0f;
 
     // =========================================================================

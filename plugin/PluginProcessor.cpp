@@ -764,12 +764,17 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Binaural toggle (user-facing)
     params.binauralEnabled = binauralEnabledParam->load() >= 0.5f;
 
-    // Phase 5: Read host BPM for LFO tempo sync (LFO-05)
+    // Phase 5: Read host BPM and time signature for LFO tempo sync (LFO-05)
     if (auto* ph = getPlayHead()) {
         if (auto pos = ph->getPosition()) {
             if (pos->getBpm().hasValue())
                 params.hostBpm = static_cast<float>(*pos->getBpm());
             // else: hostBpm stays at its EngineParams default (120.0f)
+            if (pos->getTimeSignature().hasValue()) {
+                params.hostTimeSigNum = pos->getTimeSignature()->numerator;
+                params.hostTimeSigDen = pos->getTimeSignature()->denominator;
+            }
+            // else: defaults (4/4) from EngineParams
         }
     }
 

@@ -74,7 +74,7 @@ constexpr float kDefaultSmoothMs_Gain   = 5.0f;   // ILD gain smoother
 constexpr float kSqrt3 = 1.7320508f;
 
 // Sphere of Influence default radius — matches kSqrt3 so default behavior is unchanged.
-constexpr float kSphereRadiusDefault = 2.0f;
+constexpr float kSphereRadiusDefault = 3.5f;
 
 // ============================================================================
 // Phase 3: Depth (comb filter bank)
@@ -305,16 +305,17 @@ constexpr float kLFOSpeedMulDefault = 1.0f;
 constexpr float kLFOSpeedMulSkew    = 0.431f; // exponential: slider midpoint = 1.0
 
 // Beat division discrete values for tempo-synced LFOs
-// Index 6 ("1") = quarter note = default
-constexpr int   kBeatDivCount        = 11;
+// Beat-div values expressed in BARS relative to the host time signature.
+// Index 6 ("1") = one bar = default.
+constexpr int   kBeatDivCount        = 13;
 constexpr int   kBeatDivDefaultIndex = 6;
 constexpr float kBeatDivValues[kBeatDivCount] = {
     0.0625f, 0.125f, 0.25f, 0.3333f, 0.5f,
-    0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f
+    0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f
 };
 constexpr const char* kBeatDivLabels[kBeatDivCount] = {
     "1/16", "1/8", "1/4", "1/3", "1/2",
-    "3/4", "1", "1.5", "2", "3", "4"
+    "3/4", "1", "1.5", "2", "3", "4", "6", "8"
 };
 
 // ============================================================================
@@ -351,7 +352,7 @@ constexpr int   kNumER                = 6;       // 6 walls: ±X, ±Y, ±Z
 constexpr float kERRoomSizeMin        = 1.0f;    // meters, half-dimension
 constexpr float kERRoomSizeMax        = 30.0f;
 constexpr float kERRoomSizeDefault    = 5.0f;
-constexpr float kERDampingDefault     = 0.5f;    // maps to 500–16000 Hz wall LPF cutoff
+constexpr float kERDampingDefault     = 0.97f;   // ~1 kHz wall LPF cutoff (965 Hz)
 constexpr float kERDampingLPMinHz     = 500.0f;  // fully damped wall cutoff
 constexpr float kERDampingLPMaxHz     = 16000.0f;// undamped wall cutoff
 constexpr float kERLevelDefault       = 0.5f;

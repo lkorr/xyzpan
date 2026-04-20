@@ -57,6 +57,7 @@ void ERPipeline::updateWallAbsorption(float dampCutoff, float sr, int blockSize)
 
 ERPipeline::ERResult ERPipeline::processSample(
     float input, float nodeX, float nodeY, float nodeZ,
+    float listenerX, float listenerY, float listenerZ,
     float distGainTarget, float sr,
     float roomHalf,
     float ildGainBase, bool rotated,
@@ -80,14 +81,21 @@ ERPipeline::ERResult ERPipeline::processSample(
         float imgX = nodeX, imgY = nodeY, imgZ = nodeZ;
         const int axis = wallAxis[w];
         const float sign = wallSign[w];
-        if (axis == 0)      imgX = 2.0f * sign - nodeX;
-        else if (axis == 1) imgY = 2.0f * sign - nodeY;
-        else                imgZ = 2.0f * sign - nodeZ;
+        // Wall plane in listener-relative coords: wRel = s * roomHalf - listenerCoord.
+        // Image position = 2 * wRel - nodeCoord on the reflecting axis.
+        if (axis == 0)      { const float wRel = sign * roomHalf - listenerX; imgX = 2.0f * wRel - nodeX; }
+        else if (axis == 1) { const float wRel = sign * roomHalf - listenerY; imgY = 2.0f * wRel - nodeY; }
+        else                { const float wRel = sign * roomHalf - listenerZ; imgZ = 2.0f * wRel - nodeZ; }
 
-        const float pathNorm = dsp::fastSqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
-        const float pathMeters = pathNorm * roomHalf;
-        const float delaySamp = std::max(2.0f, pathMeters / kSpeedOfSound * sr);
+        const float pathMeters = dsp::fastSqrt(imgX * imgX + imgY * imgY + imgZ * imgZ);
+        const float delayCap = kERMaxDelayMs * 0.001f * sr;
+        const float delaySamp = std::clamp(pathMeters / kSpeedOfSound * sr, 2.0f, delayCap);
 
+        // ratioPenalty uses pathMeters/roomHalf (normalized to ~1 at room edge) to keep
+        // reflection level perceptually balanced with direct sound. Using raw meters here
+        // makes reflections disproportionately quiet since the source xyz range is much
+        // smaller than room dimensions. This mirrors the original level-tuning scheme.
+        const float pathNorm = pathMeters / std::max(roomHalf, kMinDistance);
         const float reflDist = std::max(pathNorm, kMinDistance);
         const float ratioPenalty = directDist / reflDist;
         const float gainTarget = std::clamp(distGainTarget * ratioPenalty, 0.0f, params.distGainMax);

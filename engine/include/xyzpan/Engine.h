@@ -169,6 +169,10 @@ private:
     dsp::OnePoleSmooth erLevelSmooth_;
     dsp::OnePoleSmooth erReverbSendSmooth_;
 
+    // Test tone gain smoother — prevents click when test tone is enabled
+    // on fresh prepare/reset (first block goes from silence to full gain).
+    dsp::OnePoleSmooth testToneGainSmooth_;
+
     // Last LFO output values (tick()*depth) — captured per block for UI display
     float lastLfoOutX_ = 0.f, lastLfoOutY_ = 0.f, lastLfoOutZ_ = 0.f;
     float lastLfoOutOrbitXY_ = 0.f, lastLfoOutOrbitXZ_ = 0.f, lastLfoOutOrbitYZ_ = 0.f;
