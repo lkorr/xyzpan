@@ -431,6 +431,7 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // the transition is smooth.  Once converged, snap to exact target for
     // deterministic steady-state.
     float cosY, sinY, cosP, sinP, cosR, sinR;
+    bool listenerFlipSnap = false;
     {
         const bool listenerParamsChanged =
             (currentParams.listenerYaw   != prevListenerYaw_) ||
@@ -438,20 +439,53 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
             (currentParams.listenerRoll  != prevListenerRoll_);
 
         if (listenerParamsChanged) {
+            // Snap-on-flip: when pitch crosses ±90° via mouse drag, quatToRPY
+            // (ui/QuatMath.h) jumps yaw and roll by ~π simultaneously. The physical
+            // orientation is continuous, but its Euler representation isn't — so
+            // IIR-ramping the cos/sin pairs through the flip would collapse the
+            // rotation matrix mid-block (click). Detect and snap instead.
+            auto wrapPi = [](float a) {
+                constexpr float kTwoPi = 6.28318530717958647692f;
+                constexpr float kPi    = 3.14159265358979323846f;
+                a = std::fmod(a + kPi, kTwoPi);
+                if (a < 0.0f) a += kTwoPi;
+                return a - kPi;
+            };
+            constexpr float kHalfPi   = 1.57079632679489661923f;
+            constexpr float kPi       = 3.14159265358979323846f;
+            constexpr float kFlipTol  = 0.35f;   // ~20° around the ideal ±π jump
+            constexpr float kPitchTol = 0.30f;   // only near the pole
+            const float dYaw  = wrapPi(currentParams.listenerYaw  - prevListenerYaw_);
+            const float dRoll = wrapPi(currentParams.listenerRoll - prevListenerRoll_);
+            listenerFlipSnap =
+                std::abs(std::abs(dYaw)  - kPi) < kFlipTol &&
+                std::abs(std::abs(dRoll) - kPi) < kFlipTol &&
+                std::abs(std::abs(currentParams.listenerPitch) - kHalfPi) < kPitchTol;
+
             prevListenerYaw_   = currentParams.listenerYaw;
             prevListenerPitch_ = currentParams.listenerPitch;
             prevListenerRoll_  = currentParams.listenerRoll;
             listenerSettled_ = false;
 
-            // While knob is moving: block-rate IIR (5ms time constant, tracks rapidly)
-            const float aM = listenerMovSmA_;
-            const float bM = 1.0f - aM;
-            yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw)   * bM + yawSmCos_   * aM;
-            yawSmSin_   = dsp::SineLUT::lookupAngle(currentParams.listenerYaw)       * bM + yawSmSin_   * aM;
-            pitchSmCos_ = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch) * bM + pitchSmCos_ * aM;
-            pitchSmSin_ = dsp::SineLUT::lookupAngle(currentParams.listenerPitch)     * bM + pitchSmSin_ * aM;
-            rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll)  * bM + rollSmCos_  * aM;
-            rollSmSin_  = dsp::SineLUT::lookupAngle(currentParams.listenerRoll)      * bM + rollSmSin_  * aM;
+            if (listenerFlipSnap) {
+                // Bypass IIR: write targets directly so rotation matrix stays unit.
+                yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw);
+                yawSmSin_   = dsp::SineLUT::lookupAngle   (currentParams.listenerYaw);
+                pitchSmCos_ = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch);
+                pitchSmSin_ = dsp::SineLUT::lookupAngle   (currentParams.listenerPitch);
+                rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll);
+                rollSmSin_  = dsp::SineLUT::lookupAngle   (currentParams.listenerRoll);
+            } else {
+                // While knob is moving: block-rate IIR (5ms time constant, tracks rapidly)
+                const float aM = listenerMovSmA_;
+                const float bM = 1.0f - aM;
+                yawSmCos_   = dsp::SineLUT::cosLookupAngle(currentParams.listenerYaw)   * bM + yawSmCos_   * aM;
+                yawSmSin_   = dsp::SineLUT::lookupAngle(currentParams.listenerYaw)       * bM + yawSmSin_   * aM;
+                pitchSmCos_ = dsp::SineLUT::cosLookupAngle(currentParams.listenerPitch) * bM + pitchSmCos_ * aM;
+                pitchSmSin_ = dsp::SineLUT::lookupAngle(currentParams.listenerPitch)     * bM + pitchSmSin_ * aM;
+                rollSmCos_  = dsp::SineLUT::cosLookupAngle(currentParams.listenerRoll)  * bM + rollSmCos_  * aM;
+                rollSmSin_  = dsp::SineLUT::lookupAngle(currentParams.listenerRoll)      * bM + rollSmSin_  * aM;
+            }
 
             // Normalize IIR vectors to extract cos/sin directly
             auto normCS = [](float c, float s, float& outCos, float& outSin) {
@@ -523,6 +557,15 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     constexpr float kRotEps = 1e-7f;
     const bool listenerRotated = (std::abs(sinY) > kRotEps || std::abs(cosY - 1.0f) > kRotEps
                                || std::abs(sinP) > kRotEps || std::abs(sinR) > kRotEps);
+
+    // If an Euler-representation flip was detected, align the per-sample ramp
+    // start with this block's target so no interpolation occurs — otherwise the
+    // cos/sin pair would still lerp through (0,0) over the block (click).
+    if (listenerFlipSnap) {
+        prevCosY_ = cosY; prevSinY_ = sinY;
+        prevCosP_ = cosP; prevSinP_ = sinP;
+        prevCosR_ = cosR; prevSinR_ = sinR;
+    }
 
     // Per-sample trig interpolation: linearly ramp cos/sin from previous block's
     // values to this block's values, eliminating block-boundary discontinuities
