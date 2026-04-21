@@ -508,8 +508,9 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Snapshot current parameter values from APVTS atomics (safe on audio thread)
     xyzpan::EngineParams params;
     // Phase 6: smoothed R multiplier — rSmooth_ prevents zipper noise during automation (PARAM-03)
-    // Process once per block (R multiplies position, not audio; per-block smoothing is sufficient)
-    const float r = rSmooth_.process(rParam->load());
+    // Converge by full block so the 20ms time constant behaves correctly at block rate.
+    rSmooth_.converge(rParam->load(), buffer.getNumSamples());
+    const float r = rSmooth_.current();
     // Spatial position — scaled by smoothed R
     params.x = xParam->load() * r;
     params.y = yParam->load() * r;
@@ -524,9 +525,12 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                             : walkerYParam->load();
     const float wz = linked ? listenerHub_->sharedWalkerZ.load(std::memory_order_acquire)
                             : walkerZParam->load();
-    params.listenerX = walkerXSmooth_.process(wx) * r;
-    params.listenerY = walkerYSmooth_.process(wy) * r;
-    params.listenerZ = walkerZSmooth_.process(wz) * r;
+    walkerXSmooth_.converge(wx, buffer.getNumSamples());
+    walkerYSmooth_.converge(wy, buffer.getNumSamples());
+    walkerZSmooth_.converge(wz, buffer.getNumSamples());
+    params.listenerX = walkerXSmooth_.current() * r;
+    params.listenerY = walkerYSmooth_.current() * r;
+    params.listenerZ = walkerZSmooth_.current() * r;
 
     // Dev panel: binaural panning tuning
     params.maxITD_ms       = itdMaxParam->load();
