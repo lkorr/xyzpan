@@ -61,6 +61,11 @@ XYZPanGLView::XYZPanGLView(juce::AudioProcessorValueTreeState& apvts,
     waveCountParam_        = apvts_.getRawParameterValue("wave_count");
     waveBlendModeParam_    = apvts_.getRawParameterValue("wave_blend_mode");
     showAudibleSphereParam_ = apvts_.getRawParameterValue("show_audible_sphere");
+
+    // Walker listener position — direct APVTS read for immediate startup accuracy
+    walkerXParam_ = apvts_.getRawParameterValue("walker_x");
+    walkerYParam_ = apvts_.getRawParameterValue("walker_y");
+    walkerZParam_ = apvts_.getRawParameterValue("walker_z");
     sourceSphereOpacityParam_ = apvts_.getRawParameterValue("source_sphere_opacity");
 }
 
@@ -314,18 +319,6 @@ void XYZPanGLView::renderOpenGL()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Walker listener position in GL coordinates (computed early for camera)
-    const glm::vec3 listenerPos(snap.listenerPosX, snap.listenerPosZ, -snap.listenerPosY);
-    const bool walkerActive = (std::abs(snap.listenerPosX) > 1e-7f ||
-                               std::abs(snap.listenerPosY) > 1e-7f ||
-                               std::abs(snap.listenerPosZ) > 1e-7f);
-
-    // Update matrices — camera follows walker listener position
-    viewMatrix_ = camera_.getViewMatrix(listenerPos);
-    const float aspect = static_cast<float>(w) / static_cast<float>(h);
-    const float nearPlane = std::max(0.001f, camera_.dist * 0.1f);
-    projMatrix_ = glm::perspective(glm::radians(45.0f), aspect, nearPlane, 100.0f);
-
     // Scale room wireframe + floor grid by R so the cube boundary matches
     // the effective coordinate range (params * R).
     const float r = [&]() -> float {
@@ -334,6 +327,23 @@ void XYZPanGLView::renderOpenGL()
         return 1.0f;
     }();
     const glm::mat4 roomModelMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(r, r, r));
+
+    // Walker listener position — read directly from APVTS params (× R) for
+    // immediate accuracy.  The bridge carries smoothed values from processBlock
+    // which can lag on startup before the smoothers converge.
+    const float lpX = (walkerXParam_ ? walkerXParam_->load() : 0.0f) * r;
+    const float lpY = (walkerYParam_ ? walkerYParam_->load() : 0.0f) * r;
+    const float lpZ = (walkerZParam_ ? walkerZParam_->load() : 0.0f) * r;
+    const glm::vec3 listenerPos(lpX, lpZ, -lpY);
+    const bool walkerActive = (std::abs(lpX) > 1e-7f ||
+                               std::abs(lpY) > 1e-7f ||
+                               std::abs(lpZ) > 1e-7f);
+
+    // Update matrices — camera follows walker listener position
+    viewMatrix_ = camera_.getViewMatrix(listenerPos);
+    const float aspect = static_cast<float>(w) / static_cast<float>(h);
+    const float nearPlane = std::max(0.001f, camera_.dist * 0.1f);
+    projMatrix_ = glm::perspective(glm::radians(45.0f), aspect, nearPlane, 100.0f);
 
     // Coordinate convention mapping:
     //   XYZPan X = left/right  → GL X

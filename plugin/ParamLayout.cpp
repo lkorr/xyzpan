@@ -66,7 +66,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         PID{ ParamID::ILD_MAX_DB, 1 },
         "ILD Max (dB)",
         NR(0.0f, 24.0f, 0.1f),
-        8.0f
+        4.5f
     ));
 
     // Dev Panel: Rear shadow — both-ear LPF minimum cutoff when source is behind

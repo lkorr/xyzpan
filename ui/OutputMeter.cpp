@@ -39,8 +39,13 @@ void OutputMeter::timerCallback() {
     updatePeak(smoothL_, peakL_, peakDecayL_);
     updatePeak(smoothR_, peakR_, peakDecayR_);
 
-    // Skip repaint when meter is fully silent and settled
-    if (smoothL_ < 1e-6f && smoothR_ < 1e-6f && peakL_ < 1e-6f && peakR_ < 1e-6f)
+    // Latch clip when signal exceeds 0 dB
+    if (rawL > 1.0f) clipL_ = true;
+    if (rawR > 1.0f) clipR_ = true;
+
+    // Skip repaint when meter is fully silent, settled, and no clip latched
+    if (smoothL_ < 1e-6f && smoothR_ < 1e-6f && peakL_ < 1e-6f && peakR_ < 1e-6f
+        && !clipL_ && !clipR_)
         return;
     repaint();
 }
@@ -104,6 +109,17 @@ void OutputMeter::paint(juce::Graphics& g) {
     drawBar(lx, smoothL_, peakL_, juce::Colour(ALF::kGoldLeaf));
     drawBar(rx, smoothR_, peakR_, juce::Colour(ALF::kGoldLeaf));
 
+    // Clip indicators — red rect at top of each bar
+    const float clipH = 4.0f;
+    if (clipL_) {
+        g.setColour(juce::Colour(ALF::kCinnabarLight));
+        g.fillRect(lx, pad, barW, clipH);
+    }
+    if (clipR_) {
+        g.setColour(juce::Colour(ALF::kCinnabarLight));
+        g.fillRect(rx, pad, barW, clipH);
+    }
+
     // "L" / "R" labels at bottom
     g.setColour(juce::Colour(ALF::kAgedPapyrusDark).withAlpha(0.7f));
     g.setFont(juce::Font(juce::FontOptions(9.0f)));
@@ -111,6 +127,12 @@ void OutputMeter::paint(juce::Graphics& g) {
                static_cast<int>(barW), 12, juce::Justification::centred);
     g.drawText("R", static_cast<int>(rx), static_cast<int>(pad + barH - 12),
                static_cast<int>(barW), 12, juce::Justification::centred);
+}
+
+void OutputMeter::mouseDown(const juce::MouseEvent&) {
+    clipL_ = false;
+    clipR_ = false;
+    repaint();
 }
 
 } // namespace xyzpan

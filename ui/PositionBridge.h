@@ -7,7 +7,7 @@ namespace xyzpan {
 // Written by audio thread after engine.process(); read by GL thread in renderOpenGL().
 struct SourcePositionSnapshot {
     float x        = 0.0f;
-    float y        = 1.0f;  // default: front (Y-forward convention)
+    float y        = 0.0f;
     float z        = 0.0f;
     float distance = 1.0f;
 

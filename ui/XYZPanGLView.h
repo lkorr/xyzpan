@@ -467,6 +467,12 @@ private:
     std::atomic<int>    sphereKnobActive_{0};  // 1 when sphere knob is hovered/dragged
     std::atomic<float>* sourceSphereOpacityParam_ = nullptr;
 
+    // Walker listener position — read directly from APVTS for immediate accuracy
+    // (bridge listener pos lags on startup before processBlock smoothers converge)
+    std::atomic<float>* walkerXParam_ = nullptr;
+    std::atomic<float>* walkerYParam_ = nullptr;
+    std::atomic<float>* walkerZParam_ = nullptr;
+
     // Ear/eye type draw dispatchers
     // Nose type draw dispatchers
     void drawNoseCone(const glm::mat4& headRot, const AvatarParams& avatar,

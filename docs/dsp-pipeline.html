@@ -14,13 +14,53 @@
   #controls button:hover { background: #3a3a5a; }
   #container { width: 100vw; height: 100vh; padding-top: 50px; }
   .mermaid { visibility: hidden; }
+
+  /* Canvas wrapper — holds SVG + annotation, both zoom together */
+  #canvas-wrapper { position: relative; transform-origin: 0 0; cursor: grab; }
   #svg-container { width: 100%; height: 100%; }
+
+  /* In-canvas annotation card — scales with zoom */
+  .annotation-card {
+    position: absolute;
+    width: 600px;
+    background: #16162aF0; border: 2px solid #ffcc00; border-radius: 12px;
+    padding: 24px 28px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+    font-size: 18px; line-height: 1.6;
+    color: #d0d0e0;
+    pointer-events: none;
+    display: none;
+    z-index: 5;
+    user-select: none;
+  }
+  .annotation-card.visible { display: block; pointer-events: auto; user-select: text; cursor: text; }
+  .annotation-card h3 {
+    font-size: 22px; color: #fff; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .annotation-card p { margin-bottom: 10px; }
+  .annotation-card p:last-child { margin-bottom: 0; }
+  .annotation-card .condition { font-size: 15px; color: #888; font-style: italic; }
+
+  /* Axis badges */
+  .badge { font-size: 15px; font-weight: 600; padding: 3px 10px; border-radius: 4px; white-space: nowrap; display: inline-block; }
+  .badge-lr { background: #1a3a6a; color: #6ab0ff; }
+  .badge-fb { background: #1a5a2a; color: #6aff8a; }
+  .badge-tb { background: #5a3a1a; color: #ffaa6a; }
+  .badge-fixed { background: #3a3a3a; color: #aaa; }
+  .badge-dual { background: #4a2a4a; color: #cc8acc; }
+  .badge-dist { background: #3a1a5c; color: #b08aee; }
+
+  /* Highlight clicked node */
+  .node-highlighted rect,
+  .node-highlighted polygon,
+  .node-highlighted circle { stroke: #ffcc00 !important; stroke-width: 3px !important; }
 </style>
 </head>
 <body>
 <div id="header">
   <h1>XYZPan DSP Signal Processing Pipeline</h1>
-  <p>Scroll to zoom | Click+drag to pan | Buttons bottom-right to reset/fit</p>
+  <p>Scroll to zoom | Click+drag to pan | Click a node for details | Zoom in to read</p>
 </div>
 <div id="controls">
   <button onclick="zoomIn()">+</button>
@@ -28,8 +68,12 @@
   <button onclick="resetView()">Fit</button>
 </div>
 <div id="container">
-  <div id="svg-container"></div>
+  <div id="canvas-wrapper">
+    <div id="svg-container"></div>
+    <div id="annotation" class="annotation-card"></div>
+  </div>
 </div>
+
 <div class="mermaid" id="mermaid-src">
 flowchart LR
     classDef input fill:#2d5016,stroke:#4a8c2a,color:#fff
@@ -48,16 +92,13 @@ flowchart LR
     subgraph POS["POSITION MOD"]
         direction TB
         LFO_MOD["LFOs X,Y,Z\n6 waveforms\ntempo sync"]:::position
-        LISTENER_SUB["Listener Sub\nworld→relative"]:::position
+        LISTENER_SUB["Listener Sub\nworld to relative"]:::position
         HEAD_ROT["Head Rotation\nYaw/Pitch/Roll\nper-sample interp"]:::position
         LFO_MOD --> LISTENER_SUB --> HEAD_ROT
     end
     MONO_SUM --> POS
 
-    GATE_STEREO{{"width>0?"}}:::gate
-    POS --> GATE_STEREO
-
-    subgraph STEREO_SPLIT["STEREO NODE SPLIT"]
+    subgraph STEREO_SPLIT["STEREO NODE SPLIT  when width > 0"]
         direction TB
         ORBIT_LFO["Orbit LFOs\nXY/XZ/YZ"]:::stereo
         SPREAD_DIR["Spread Dir"]:::stereo
@@ -66,28 +107,21 @@ flowchart LR
         ORBIT_LFO --> SPREAD_DIR --> NODE_OFFSET --> NODE_POS
     end
 
-    GATE_STEREO -->|"YES"| STEREO_SPLIT
-    STEREO_SPLIT --> ENTRY_S["L: inL+lXYZ\nR: inR+rXYZ\nx2"]:::stereo
-    GATE_STEREO -.->|"NO"| ENTRY_M["Mono: sum+XYZ\nx1"]:::stereo
-
-    ENTRY_S --> DOP_PRE
-    ENTRY_M --> DOP_PRE
+    POS --> STEREO_SPLIT --> GATE_DOP
 
     subgraph PER_NODE["PER-NODE — x1 mono / x2 stereo — independent position params"]
         direction LR
 
-        subgraph DOPPLER["DOPPLER"]
+        GATE_DOP{{"doppler?"}}:::gate
+        GATE_DOP -->|"YES"| DOP_DELAY
+        GATE_DOP -.->|"NO:2samp"| SPLIT_D
+
+        subgraph DOPPLER["DOPPLER [DIST]"]
             direction TB
-            DOP_PRE["Pre-AA 18kHz"]:::distance
             DOP_DELAY["FracDelay\nHermite\nrawDistFrac"]:::distance
-            DOP_POST["Post-AA 18kHz"]:::distance
-            DOP_PRE --> DOP_DELAY --> DOP_POST
         end
 
-        GATE_DOP{{"doppler?"}}:::gate
-        DOP_POST --> GATE_DOP
-        GATE_DOP -->|"YES"| SPLIT_D
-        DOP_PRE -.->|"NO:2samp\nAA runs"| SPLIT_D
+        DOP_DELAY --> SPLIT_D
 
         SPLIT_D["dopplerInput"]:::split
 
@@ -97,34 +131,34 @@ flowchart LR
             subgraph BIN_M["MONO"]
                 direction TB
                 VEAR["VirtualEar Cues\nL/R F/B T/B\nh=0.087"]:::binaural
-                COMBS["10x Combs\n0.21-1.50ms\n15% rear"]:::binaural
+                COMBS["10x Combs\n0.21-1.50ms\n15% [F/B rear only]"]:::binaural
                 VEAR --> COMBS
             end
 
             subgraph PIN["PINNA EQ 10x"]
                 direction TB
-                EQ1["Pres 3k +/-4 rearF"]:::binaural
-                EQ2["Ear 2.7k 0/-4 rearF"]:::binaural
-                EQ3["Shldr 1.5k +2 *exp*"]:::binaural
-                EQ4["Cncha 4k -8 *exp*"]:::binaural
-                EQ5["P1 5k +2.8 fixed"]:::binaural
-                EQ6["N1 6.5-10k -8 elevF"]:::binaural
-                EQ7["N2 +3k -8 fixed"]:::binaural
-                EQ8["Upr 12k -4/+3 *exp*"]:::binaural
-                EQ9["Trag 8.5k -5 *exp*"]:::binaural
-                EQ10["Shelf 4k elevF"]:::binaural
+                EQ1["Pres 3k +/-1dB\n[F/B]\nBlauert69 Algazi01"]:::binaural
+                EQ2["Ear 2.7k 0/-4dB\n[F/B]\nShaw74 Stinson89"]:::binaural
+                EQ3["Shldr 1.5k +2dB\n[T/B below]\nAlgazi01,02"]:::binaural
+                EQ4["Cncha 4k -8dB\n[T/B below]\nShaw97 LopezPoveda96"]:::binaural
+                EQ5["P1 5k +2.8dB\n[FIXED]\nMokhtari15 Shaw97"]:::binaural
+                EQ6["N1 6.5-10k\n-15/+5dB [T/B]\nRaykar05 Iida07"]:::binaural
+                EQ7["N2 N1+3k -8dB\n[FIXED gain T/B freq]\nRaykar05"]:::binaural
+                EQ8["Upr 12k -4/+3dB\n[T/B]\nShaw97 Hebrank74"]:::binaural
+                EQ9["Trag 8.5k -5dB\n[F/B + T/B]\nTakemoto12 Shaw97"]:::binaural
+                EQ10["Shelf 4k 0/+3dB\n[T/B]\nShaw97 Hebrank74"]:::binaural
                 EQ1 --> EQ2 --> EQ3 --> EQ4 --> EQ5 --> EQ6 --> EQ7 --> EQ8 --> EQ9 --> EQ10
             end
 
-            GATE_BIN{{"bin?"}}:::gate
+            GATE_BIN{{"binaural?"}}:::gate
 
             subgraph BIN_LR["BINAURAL L/R"]
                 direction TB
-                ITD["ITD .72-5ms"]:::binaural
-                ILD["ILD 0-8dB"]:::binaural
-                NF["NF LF 200Hz"]:::binaural
-                HS["HeadShd 16-1.2k"]:::binaural
-                RS["RearShd 22-20k"]:::binaural
+                ITD["ITD +/-0.72ms\n[L/R]"]:::binaural
+                ILD["ILD 0-4.5dB\n[L/R]"]:::binaural
+                NF["NF LF +/-6dB\n[L/R + dist]"]:::binaural
+                HS["HeadShd 16-1.2kHz\n[L/R far ear]"]:::binaural
+                RS["RearShd 22-20kHz\n[F/B rear]"]:::binaural
                 ITD --> ILD --> NF --> HS --> RS
             end
 
@@ -135,9 +169,12 @@ flowchart LR
             GATE_BIN -.->|"N"| HP
         end
 
-        subgraph CHEST["CHEST — parallel"]
-            direction LR
-            CH1["4xHPF 700Hz"]:::body --> CH2["LPF 1kHz"]:::body --> CH3["Dly 0-2ms"]:::body
+        subgraph CHEST["CHEST [T/B below]\nparallel"]
+            direction TB
+            CH1["4xHPF 700Hz"]:::body
+            CH2["LPF 1kHz"]:::body
+            CH3["Dly 0-2ms\n[T/B below]"]:::body
+            CH1 --> CH2 --> CH3
         end
 
         SPLIT_D --> VEAR
@@ -148,19 +185,19 @@ flowchart LR
         HP --> BIN_MERGE
         CH3 --> BIN_MERGE
 
-        subgraph DIST["DISTANCE"]
+        subgraph DIST["DISTANCE [DIST]"]
             direction TB
             DG["Gain Hermite\n-72/+6dB"]:::distance
-            A1["AirAbs 22-8k"]:::distance
-            A2["AirAbs 22-12k\n12dB/oct"]:::distance
+            A1["AirAbs 22-8kHz\n[DIST]"]:::distance
+            A2["AirAbs 22-12kHz\n12dB/oct [DIST]"]:::distance
             DG --> A1 --> A2
         end
 
         BIN_MERGE --> DIST
 
-        subgraph FLOOR["FLOOR\nstereo:post-dist\nmono:pre-dist"]
+        subgraph FLOOR["FLOOR [T/B below]\nstereo:post-dist\nmono:pre-dist"]
             direction TB
-            FD["Dly 0-20ms"]:::body
+            FD["Dly 0-20ms\n[T/B below]"]:::body
             FL["LPF 5kHz"]:::body
             FD --> FL
         end
@@ -168,7 +205,6 @@ flowchart LR
         DIST --> FLOOR
     end
 
-    %% ER taps from dopplerInput but drawn after PER_NODE to avoid crossings
     GATE_ER{{"ER?"}}:::gate
     FLOOR --> COMBINE
     SPLIT_D -.->|"dopplerInput\npre-binaural"| GATE_ER
@@ -177,10 +213,11 @@ flowchart LR
         direction LR
         ERD["6 Walls\n+/-XYZ"]:::reverb
         ERW["WallAbs LPF\n500-16kHz"]:::reverb
-        ERB["Own Bin/Tap\nITD+ILD+shd"]:::reverb
+        ERP["PinnaEQ 9band\nelev+rear"]:::reverb
+        ERB["Full Bin/Tap\nITD+ILD+NF+shd+rear"]:::reverb
         ERDL["Delay\n343m/s 1-30m"]:::reverb
         ERS{"Split"}:::split
-        ERD --> ERW --> ERB --> ERDL --> ERS
+        ERD --> ERW --> ERP --> ERB --> ERDL --> ERS
     end
 
     GATE_ER -->|"YES"| ER
@@ -242,6 +279,202 @@ flowchart LR
 <script type="module">
   import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
+  // ─── Annotation data keyed by Mermaid node ID ───
+  const notes = {
+    VEAR: `<h3>Virtual Ear Model</h3>
+      <p>Three pairs of virtual ears at &plusmn;0.087 units on X, Y, Z axes. Distance difference between each pair produces:</p>
+      <p><span class="badge badge-lr">L/R</span> <b>azimuthFactor</b> &mdash; -1 (left) to +1 (right). Drives ITD, ILD, head shadow, near-field.</p>
+      <p><span class="badge badge-fb">F/B</span> <b>rearFactor</b> &mdash; -1 (front) to +1 (behind). Drives combs, presence shelf, ear canal, rear shadow, tragus.</p>
+      <p><span class="badge badge-tb">T/B</span> <b>elevFactor</b> &mdash; 0 (below) to 1 (above). Drives all pinna EQ, chest/floor bounce.</p>
+      <p class="condition">These three factors drive ALL downstream spatial processing.</p>`,
+
+    COMBS: `<h3>Comb Filter Bank <span class="badge badge-fb">F/B</span> rear only</h3>
+      <p>10 feedback combs in series. Adds subtle metallic coloration when sound comes from behind. Models the spectral complexity humans associate with rear sources.</p>
+      <p>Wet: 0% (front) to 15% (directly behind). Delays: 0.21&ndash;1.50 ms.</p>
+      <p class="condition">Only active when rearFactor &gt; 0 (behind listener). Completely bypassed for frontal sources.</p>
+      <p class="condition">Ref: Batteau 1967 (pinna transforms via short-delay reflections); Takemoto+ 2012 (mixed structural modeling of pinna spectral effects).</p>`,
+
+    EQ1: `<h3>Presence Shelf &mdash; 3 kHz, &plusmn;1 dB default <span class="badge badge-fb">F/B</span></h3>
+      <p>High shelf that attenuates highs when source is behind. The pinna faces forward, so rear sounds lose brightness as they diffract around it.</p>
+      <p>Front: +1 dB. Behind: -1 dB. (Tunable 0&ndash;12 dB range via dev panel.)</p>
+      <p class="condition">Always active. Gain = presenceShelfMaxDb &times; (-rearFactor).</p>
+      <p class="condition">Ref: Blauert 1969 (directional bands, front at 2&ndash;5 kHz); Algazi+ 2001 (pinna effects begin &gt;3.5 kHz). Approximation &mdash; gentle model of pinna front-back spectral tilt onset.</p>`,
+
+    EQ2: `<h3>Ear Canal Peak &mdash; 2.7 kHz, 0/-4 dB <span class="badge badge-fb">F/B</span></h3>
+      <p>Peaking EQ (Q=2.0) that cuts up to -4 dB when behind. The ear canal entrance faces forward &mdash; its natural 2.7 kHz resonance only excites for frontal sounds. Clamped &le;0 dB (never boosts).</p>
+      <p class="condition">Always active. Driven by -rearFactor, clamped to cuts only.</p>
+      <p class="condition">Ref: Shaw 1974 (ear canal resonance 12&ndash;17 dB at ~2.7 kHz); Stinson &amp; Lawton 1989 (canal geometry). Conservative 4 dB &mdash; headphones already include listener's own canal resonance.</p>`,
+
+    EQ3: `<h3>Shoulder Peak &mdash; 1.5 kHz, +2 dB <span class="badge badge-tb">T/B</span> below</h3>
+      <p>Models acoustic reflection off the listener's shoulders. Sound from below bounces off the shoulder, creating a subtle 1.5 kHz resonance before entering the ear.</p>
+      <p>Above: 0 dB. Below: +2 dB.</p>
+      <p class="condition">Expanded Pinna only. Driven by inverted elevFactor (belowFactor = 1 - elevFactor).</p>
+      <p class="condition">Ref: Algazi+ 2001, 2002 (&plusmn;5 dB torso comb-filter, 700 Hz&ndash;3 kHz); Brown &amp; Duda 1998 (structural shoulder-echo model). +2 dB at 1.5 kHz is a conservative simplification of the first comb maximum.</p>`,
+
+    EQ4: `<h3>Concha Notch &mdash; 4 kHz, -8 dB <span class="badge badge-tb">T/B</span> below</h3>
+      <p>The concha (bowl of the outer ear) creates a deep notch at 4 kHz for sounds below ear level. This is one of the brain's primary cues for distinguishing "below" from "above."</p>
+      <p>Above/ear level: 0 dB. Below: -8 dB (Q=3.0).</p>
+      <p class="condition">Expanded Pinna only. Driven by inverted elevFactor: max notch at nadir, gone at zenith.</p>
+      <p class="condition">Ref: Shaw 1997 (concha mode 1 at ~4 kHz); Lopez-Poveda &amp; Meddis 1996 (physical concha model).</p>`,
+
+    EQ5: `<h3>Pinna P1 Peak &mdash; 5 kHz, +2.8 dB <span class="badge badge-fixed">FIXED</span></h3>
+      <p>Constant resonance peak of the pinna regardless of direction. Every sound entering the ear canal gets this coloration &mdash; it's a property of the ear's shape, not the incoming angle.</p>
+      <p class="condition">Always active. The only truly fixed-gain band &mdash; set once, never modulated.</p>
+      <p class="condition">Ref: Mokhtari+ 2015 (P1 from pinna anthropometry, r=0.84); Shaw 1997 (concha depth resonance).</p>`,
+
+    EQ6: `<h3>Pinna N1 Notch &mdash; 6.5&rarr;10 kHz <span class="badge badge-tb">T/B</span></h3>
+      <p>The most important elevation cue in the pipeline. Both frequency and gain depend on elevation:</p>
+      <p><b>Frequency</b>: sweeps linearly with elevFactor &mdash; 6.5 kHz (below) &rarr; 8 kHz (horizon) &rarr; 10 kHz (above). The brain tracks this shift to judge elevation.</p>
+      <p><b>Gain</b>: -15 dB from below through horizon, then ramps to +5 dB at zenith. The notch only begins to fill in above the horizon (elevAbove = max(0, elevFactor&times;2 - 1)).</p>
+      <p class="condition">Always active. Frequency driven by elevFactor (full range). Gain driven by elevAbove (only changes above horizon). This asymmetry means the notch is deep and stable for most positions, with the peak only appearing overhead.</p>
+      <p class="condition">Ref: Raykar+ 2005 (N1 extraction from measured HRTFs); Iida+ 2007 (parametric HRTF using N1+N2+P1); Hebrank &amp; Wright 1974 (median plane spectral cues).</p>`,
+
+    EQ7: `<h3>Pinna N2 Notch &mdash; N1+3 kHz, -8 dB <span class="badge badge-fixed">FIXED</span> gain <span class="badge badge-tb">T/B</span> freq</h3>
+      <p>Secondary harmonic notch always 3 kHz above N1 (sweeps 9.5&ndash;13 kHz). Fixed -8 dB depth. The brain uses the spacing between N1 and N2 as an additional elevation signal.</p>
+      <p class="condition">Always active. Frequency tracks N1 via elevFactor, gain is fixed.</p>
+      <p class="condition">Ref: Raykar+ 2005 (N2 ~3 kHz above N1 from shorter-path reflection).</p>`,
+
+    EQ8: `<h3>Upper Pinna &mdash; 12 kHz, -4/+3 dB <span class="badge badge-tb">T/B</span></h3>
+      <p>Models how upper ear folds scatter high frequencies differently with angle. Sounds from above get a brightness boost, sounds from below get attenuated.</p>
+      <p>Below: -4 dB. Ear level: -0.5 dB. Above: +3 dB.</p>
+      <p class="condition">Expanded Pinna only. Driven by elevFactor, linear interpolation.</p>
+      <p class="condition">Ref: Shaw 1997 modes 4&ndash;6 (12&ndash;18 kHz "horizontal triplet," elevation-dependent); Hebrank &amp; Wright 1974 (10&ndash;12 kHz rear cue). Inferred &mdash; models higher-order pinna scattering.</p>`,
+
+    EQ9: `<h3>Tragus Notch &mdash; 8.5 kHz, -5 dB <span class="badge badge-dual">F/B + T/B</span></h3>
+      <p>Unique dual-axis notch (Q=3.5). Only activates when source is BOTH behind AND below. The tragus &mdash; the cartilage flap at the ear canal entrance &mdash; blocks high frequencies from rear-below.</p>
+      <p>Front or above: 0 dB. Behind + below: up to -5 dB.</p>
+      <p class="condition">Expanded Pinna only. Gain = tragusMax &times; max(0, rearFactor) &times; (1 - elevFactor). Both conditions must be met.</p>
+      <p class="condition">Ref: Takemoto+ 2012 (FEM analysis of tragus spectral effects); Shaw 1997 (pinna feature catalog). Inferred &mdash; 8.5 kHz and dual-axis activation are geometrically motivated, not directly measured in isolation.</p>`,
+
+    EQ10: `<h3>Pinna High Shelf &mdash; 4 kHz, 0/+3 dB <span class="badge badge-tb">T/B</span></h3>
+      <p>Boosts frequencies above 4 kHz as the source rises from below. The pinna acts as a small horn pointing slightly upward, collecting HF energy from elevated sources more efficiently.</p>
+      <p>Below (elevFactor=0): 0 dB. Horizon (elevFactor&asymp;0.5): already at full +3 dB. Stays at +3 dB for everything above.</p>
+      <p class="condition">Always active. Gain = 3 &times; min(1, elevFactor&times;2). Reaches max at elevFactor=0.5, so the transition happens entirely in the lower hemisphere.</p>
+      <p class="condition">Ref: Shaw 1997 (elevation-dependent pinna modes); Hebrank &amp; Wright 1974 (elevation cues require 4&ndash;16 kHz content).</p>`,
+
+    ITD: `<h3>ITD &mdash; Interaural Time Difference <span class="badge badge-lr">L/R</span></h3>
+      <p>Delays the far ear by up to 0.72 ms. The brain's primary horizontal cue at low frequencies &mdash; sound reaches the near ear first and the brain measures the gap.</p>
+      <p>Center: 0 ms. Hard pan: &plusmn;0.72 ms (tunable up to 5 ms).</p>
+      <p class="condition">Driven by azimuthFactor. Smoothed at 8 ms (slowest in chain) to prevent pitch artifacts. Scaled by binBlend.</p>
+      <p class="condition">Ref: Kuhn 1977 (max ITD ~660&ndash;760 &mu;s); Woodworth 1938 (spherical-head formula); Strutt/Rayleigh 1907 (duplex theory).</p>`,
+
+    GATE_BIN: `<h3>Binaural Toggle</h3>
+      <p>Controls whether the full binaural pipeline (ITD + ILD + head shadow + near-field + rear shadow) is active, or whether the signal falls back to simple hardpan level panning.</p>
+      <p>Internally this is a smooth crossfade via binBlend (0&ndash;1), not a hard switch. ITD delays are scaled by binBlend, and the hardpan compensator scales by (1 - binBlend).</p>
+      <p class="condition">Driven by binauralEnabled param, smoothed at 5 ms to prevent clicks.</p>`,
+
+    HP: `<h3>Hardpan Mode <span class="badge badge-lr">L/R</span></h3>
+      <p>Fallback when binaural processing is disabled. Applies simple azimuth-based panning with up to -4 dB attenuation on the far channel. No ITD, ILD, head shadow, or near-field &mdash; just level panning.</p>
+      <p class="condition">Active when binaural is OFF (binBlend = 0). The binaural toggle smoothly crossfades between full binaural (ITD/ILD/shadow) and this simple panner.</p>`,
+
+    ILD: `<h3>ILD &mdash; Interaural Level Difference <span class="badge badge-lr">L/R</span></h3>
+      <p>Attenuates the far ear by up to 4.5 dB. The brain's primary horizontal cue at high frequencies &mdash; works with ITD to create a convincing stereo image.</p>
+      <p>Center: 0 dB. Hard pan: 4.5 dB attenuation on far ear.</p>
+      <p class="condition">Driven by azimuthFactor. Crossfaded over 4 samples at median plane to prevent clicks.</p>
+      <p class="condition">Ref: Shaw 1974 (ILD measurements up to ~20 dB); Mills 1960 (ITD/ILD crossover ~1500 Hz). Conservative 4.5 dB broadband approximation.</p>`,
+
+    NF: `<h3>Near-Field LF Boost <span class="badge badge-dual">L/R + Dist</span></h3>
+      <p>Low-shelf at 200 Hz, &plusmn;6 dB per ear. When a source is very close, bass wraps around the head unevenly &mdash; the near ear gets a bass boost ("proximity effect").</p>
+      <p>Far: 0 dB. Close + hard pan: &plusmn;6 dB.</p>
+      <p class="condition">Driven by proximity &times; azimuthFactor. Only the ipsilateral (same-side) ear is boosted.</p>
+      <p class="condition">Ref: Brungart &amp; Rabinowitz 1999 (near-field HRTF measurements); Duda &amp; Martens 1998 (LF ILD significant &lt;5&times; head radius).</p>`,
+
+    HS: `<h3>Head Shadow <span class="badge badge-lr">L/R</span> far ear only</h3>
+      <p>LPF on the far ear: 16 kHz (center) &rarr; 1.2 kHz (hard pan). High frequencies can't diffract around the head, so the far ear hears a darker, muffled version.</p>
+      <p class="condition">Driven by azimuthFactor, per-ear asymmetric. SVF topology for safe per-sample modulation.</p>
+      <p class="condition">Ref: Shaw 1974 (HRTF head shadow measurements); Strutt/Rayleigh 1907 (duplex theory &mdash; ILD dominates &gt;1500 Hz).</p>`,
+
+    RS: `<h3>Rear Shadow <span class="badge badge-fb">F/B</span> rear, both ears</h3>
+      <p>LPF on both ears: 22 kHz (front) &rarr; 20 kHz (behind). Very subtle (~2 kHz near Nyquist). Models slight HF absorption for rear sources.</p>
+      <p class="condition">Driven by rearFactor (positive only = behind). Applied equally to both ears.</p>
+      <p class="condition">Ref: Batteau 1967 (pinna shape critical for F/B); Musicant &amp; Butler 1984 (pinna occlusion increases F/B confusion).</p>`,
+
+    CH1: `<h3>Chest Bounce &mdash; HPF Stage <span class="badge badge-tb">T/B</span> below</h3>
+      <p>4x cascaded HPF at 700 Hz (24 dB/oct). Removes low-frequency rumble from the chest reflection, leaving only the mid-band content that characterizes a torso bounce.</p>
+      <p class="condition">Part of chest reflection path. Driven by inverted elevFactor.</p>
+      <p class="condition">Ref: Algazi+ 2001 (torso reflections contribute below 3 kHz); Algazi+ 2002 (geometric torso model validated against KEMAR).</p>`,
+
+    CH2: `<h3>Chest Bounce &mdash; LPF Stage <span class="badge badge-tb">T/B</span> below</h3>
+      <p>1x LPF at 1 kHz. The chest absorbs high frequencies, so the reflection is band-limited to a narrow mid-range. Combined with the HPF, creates a 700 Hz&ndash;1 kHz bandpass reflection.</p>
+      <p class="condition">Part of chest reflection path.</p>`,
+
+    CH3: `<h3>Chest Bounce &mdash; Delay <span class="badge badge-tb">T/B</span> below</h3>
+      <p>Fractional delay line modeling sound bouncing off the listener's chest.</p>
+      <p>Delay = elevFactor &times; 2 ms (increases toward zenith, but gain is zero there so inaudible). Gain = -8 dB &times; belowFactor (max at nadir, zero at zenith). The net effect: strongest at below with minimal delay, fading out as the source rises.</p>
+      <p class="condition">Driven by elevFactor (delay) and 1-elevFactor (gain). Output is muted above horizon.</p>`,
+
+    FD: `<h3>Floor Bounce &mdash; Delay <span class="badge badge-tb">T/B</span> below</h3>
+      <p>Stereo fractional delay modeling sound reflecting off the floor. Much longer max delay than chest (20 ms vs 2 ms).</p>
+      <p>Delay = elevFactor &times; 20 ms (same direction as chest &mdash; increases toward zenith but gain is zero there). Gain = -5 dB &times; belowFactor (max at nadir). Net effect: strongest reflection at below with short delay, fading as source rises.</p>
+      <p class="condition">Driven by elevFactor (delay) and 1-elevFactor (gain). Stereo path runs post-distance; mono pre-distance.</p>
+      <p class="condition">Ref: Behrens+ 2016 (floor reflection influences vertical auditory movement perception); Algazi+ 2002 (floor reflection in HRTF).</p>`,
+
+    FL: `<h3>Floor Bounce &mdash; LPF <span class="badge badge-tb">T/B</span> below</h3>
+      <p>LPF at 5 kHz simulating floor material HF absorption. Floors reflect less high-frequency energy than hard walls.</p>
+      <p class="condition">Part of floor reflection path.</p>`,
+
+    DG: `<h3>Distance Gain <span class="badge badge-dist">DIST</span></h3>
+      <p>Compressed cubic Hermite spline mapping distance to gain. Close: up to +6 dB. Far: down to -72 dB. "Steepness" parameter controls the rolloff curve shape.</p>
+      <p class="condition">Driven by modDistFrac. Smoothed at 150 ms.</p>
+      <p class="condition">Ref: Zahorik+ 2005 (perceived distance follows compressive power function); Blauert 1997 (distance perception cues).</p>`,
+
+    A1: `<h3>Air Absorption Stage 1 <span class="badge badge-dist">DIST</span></h3>
+      <p>OnePole LPF sweeping 22&rarr;8 kHz with distance. Models high-frequency absorption by air &mdash; distant sources lose treble first.</p>
+      <p class="condition">Driven by distance fraction. Stage 1 of 2-stage cascade (12 dB/oct total).</p>
+      <p class="condition">Ref: ISO 9613-1:1993 (atmospheric absorption coefficients); Xie &amp; Yu 2021 (air absorption as spectral distance cue).</p>`,
+
+    A2: `<h3>Air Absorption Stage 2 <span class="badge badge-dist">DIST</span></h3>
+      <p>OnePole LPF sweeping 22&rarr;12 kHz. Second cascade stage &mdash; together with Stage 1, provides 12 dB/oct rolloff at max distance. Distant sources sound progressively duller.</p>
+      <p class="condition">Driven by distance fraction.</p>`,
+
+    DOP_DELAY: `<h3>Doppler Delay Line <span class="badge badge-dist">DIST</span></h3>
+      <p>Fractional delay with cubic Hermite (Catmull-Rom) interpolation. Delay = distance &times; speed of sound. Moving sources create pitch shift (Doppler effect).</p>
+      <p>Hermite interpolation acts as a natural reconstruction filter &mdash; no separate anti-aliasing LPF needed. The delay-change rate limiter (distDelaySmooth) prevents extreme pitch jumps.</p>
+      <p class="condition">Driven by rawNodeDistFrac. Applied FIRST so pitch modulation propagates through all downstream processing. When bypassed, reads at fixed 2-sample delay.</p>
+      <p class="condition">Ref: Neuhoff 2001 (auditory looming bias); Oechslin+ 2008 (Doppler as direction-of-motion cue).</p>`,
+
+    LFO_MOD: `<h3>Position LFOs</h3>
+      <p>Three independent LFOs (X, Y, Z) that modulate source position. 6 waveforms (sine, triangle, saw, square, S&H, noise). Each has rate, depth, phase, and speed multiplier.</p>
+      <p class="condition">Supports tempo sync (bars/beats). Per-sample phase accumulation.</p>`,
+
+    LISTENER_SUB: `<h3>Listener Position Subtraction</h3>
+      <p>Converts world-space source coordinates to listener-relative coordinates. In walker mode, the listener moves through the scene and the source position is recalculated relative to the listener's current position.</p>`,
+
+    HEAD_ROT: `<h3>Listener Head Rotation</h3>
+      <p>Applies inverse yaw, pitch, and roll rotations to convert listener-relative coordinates into head-relative coordinates. Per-sample trigonometric interpolation ensures smooth rotation without zipper noise.</p>
+      <p class="condition">Driven by listenerYaw/Pitch/Roll params. Can be linked across instances.</p>`,
+
+    ORBIT_LFO: `<h3>Stereo Orbit LFOs</h3>
+      <p>3 independent LFOs modulating stereo node separation in XY, XZ, and YZ planes. Creates orbital motion where L and R nodes rotate around the center position.</p>
+      <p class="condition">Angular smoothers handle phase wrapping. Pi phase difference between L and R nodes.</p>`,
+
+    ERD: `<h3>Early Reflections &mdash; Wall Geometry</h3>
+      <p>6 virtual walls (&plusmn;X, &plusmn;Y, &plusmn;Z) using image source method. Each wall creates a mirror-image source whose position determines delay and spatial cues.</p>
+      <p class="condition">Room size: 1&ndash;30m. Listener-relative wall positions.</p>
+      <p class="condition">Ref: Allen &amp; Berkley 1979 (foundational ISM paper); Barron &amp; Marshall 1981 (early lateral reflections determine apparent source width).</p>`,
+
+    ERW: `<h3>ER Wall Absorption</h3>
+      <p>Per-wall LPF: 500 Hz (max damping) to 16 kHz (undamped). Models how wall materials absorb high frequencies on reflection.</p>
+      <p class="condition">Driven by erDamping parameter.</p>`,
+
+    ERP: `<h3>ER Pinna EQ Per-Tap</h3>
+      <p>9-band pinna EQ per reflection (same chain as direct sound minus the fixed P1 peak): presence shelf, ear canal, shoulder, concha, N1 notch, N2 notch, upper pinna, tragus, pinna shelf. Coefficients driven by image source elevation and rear factor, updated per-block.</p>`,
+
+    ERB: `<h3>ER Full Binaural Per-Tap</h3>
+      <p>Each of the 6 wall reflections gets full binaural processing: ITD + ILD + near-field LF boost + head shadow + rear shadow, driven by the image source's 3D direction (azimuth, elevation, and front/back).</p>`,
+
+    ERDL: `<h3>ER Image Source Delay</h3>
+      <p>Delay based on image source distance at 343 m/s (speed of sound). Room size 1&ndash;30m determines the reflection distances and arrival times.</p>`,
+
+    RP: `<h3>Reverb Pre-Delay <span class="badge badge-dist">DIST</span></h3>
+      <p>Distance-scaled pre-delay: distFrac &times; maxPreDelay. Closer sources have shorter pre-delay, creating tighter reverb onset.</p>`,
+
+    RW: `<h3>Reverb Wet/Dry</h3>
+      <p>Final mix between dry signal and reverb output. CPU-gated: when wet &lt; 1e-6, the entire FDN is skipped.</p>
+      <p class="condition">Driven by verbWet (0&ndash;1).</p>
+      <p class="condition">Ref: Dattorro 1997 (plate reverb topology); Jot &amp; Chaigne 1991 (FDN theory); Schlecht 2018 (echo density, mixing time).</p>`,
+  };
+
   mermaid.initialize({
     startOnLoad: false,
     theme: 'dark',
@@ -259,83 +492,123 @@ flowchart LR
   });
 
   const src = document.getElementById('mermaid-src');
-  const container = document.getElementById('svg-container');
+  const svgContainer = document.getElementById('svg-container');
   const { svg } = await mermaid.render('diagram', src.textContent.trim());
-  container.innerHTML = svg;
+  svgContainer.innerHTML = svg;
   src.remove();
 
-  // Pan + zoom state
-  const svgEl = container.querySelector('svg');
-  svgEl.style.transformOrigin = '0 0';
-  svgEl.style.cursor = 'grab';
+  const canvasWrapper = document.getElementById('canvas-wrapper');
+  const container = document.getElementById('container');
+  const svgEl = svgContainer.querySelector('svg');
+  const annotation = document.getElementById('annotation');
 
+  // ─── Annotation logic ───
+  let activeNode = null;
+  let didDrag = false;
+
+  function showAnnotation(nodeEl, html) {
+    if (activeNode) activeNode.classList.remove('node-highlighted');
+    activeNode = nodeEl;
+    nodeEl.classList.add('node-highlighted');
+
+    annotation.innerHTML = html;
+    annotation.classList.add('visible');
+
+    // Position the annotation card next to the clicked node in canvas space
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const wrapperRect = canvasWrapper.getBoundingClientRect();
+
+    // Convert screen coords to canvas-wrapper local coords (undo the transform)
+    const localX = (nodeRect.right - wrapperRect.left) / scale + 12;
+    const localY = (nodeRect.top - wrapperRect.top) / scale;
+
+    annotation.style.left = localX + 'px';
+    annotation.style.top = localY + 'px';
+  }
+
+  function hideAnnotation() {
+    annotation.classList.remove('visible');
+    if (activeNode) { activeNode.classList.remove('node-highlighted'); activeNode = null; }
+  }
+
+  // Attach click handlers to SVG nodes
+  svgEl.querySelectorAll('g.node').forEach(g => {
+    const match = g.id.match(/flowchart-(\w+)-/);
+    if (!match) return;
+    const nodeId = match[1];
+    if (!notes[nodeId]) return;
+
+    g.style.cursor = 'pointer';
+    g.addEventListener('click', (e) => {
+      if (didDrag) return;
+      e.stopPropagation();
+      if (activeNode === g) { hideAnnotation(); return; }
+      showAnnotation(g, notes[nodeId]);
+    });
+  });
+
+  // Click background dismisses
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('g.node') && !e.target.closest('.annotation-card') && !e.target.closest('#controls')) {
+      hideAnnotation();
+    }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideAnnotation(); });
+
+  // ─── Pan + zoom on the canvas wrapper ───
   let scale = 1, panX = 0, panY = 0;
   let dragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
 
   function applyTransform() {
-    svgEl.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    canvasWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
   }
 
   function fitView() {
     const cRect = container.getBoundingClientRect();
-    const sW = svgEl.getBBox ? svgEl.viewBox?.baseVal?.width || svgEl.scrollWidth : svgEl.scrollWidth;
-    const sH = svgEl.getBBox ? svgEl.viewBox?.baseVal?.height || svgEl.scrollHeight : svgEl.scrollHeight;
-    // Use the natural rendered size
-    svgEl.style.transform = 'none';
+    canvasWrapper.style.transform = 'none';
     const natRect = svgEl.getBoundingClientRect();
-    const natW = natRect.width;
-    const natH = natRect.height;
-    const scaleX = cRect.width / natW;
-    const scaleY = cRect.height / natH;
-    scale = Math.min(scaleX, scaleY) * 0.95;
-    panX = (cRect.width - natW * scale) / 2;
-    panY = (cRect.height - natH * scale) / 2;
+    scale = Math.min(cRect.width / natRect.width, cRect.height / natRect.height) * 0.95;
+    panX = (cRect.width - natRect.width * scale) / 2;
+    panY = (cRect.height - natRect.height * scale) / 2;
     applyTransform();
   }
 
-  // Mouse wheel zoom (zoom toward cursor)
   container.addEventListener('wheel', (e) => {
     e.preventDefault();
     const rect = container.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const prevScale = scale;
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    scale = Math.max(0.05, Math.min(10, scale * delta));
-
-    // Zoom toward cursor position
-    panX = mouseX - (mouseX - panX) * (scale / prevScale);
-    panY = mouseY - (mouseY - panY) * (scale / prevScale);
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const prev = scale;
+    scale = Math.max(0.05, Math.min(10, scale * (e.deltaY > 0 ? 0.9 : 1.1)));
+    panX = mx - (mx - panX) * (scale / prev);
+    panY = my - (my - panY) * (scale / prev);
     applyTransform();
   }, { passive: false });
 
-  // Click+drag to pan
   container.addEventListener('mousedown', (e) => {
-    dragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startPanX = panX;
-    startPanY = panY;
-    svgEl.style.cursor = 'grabbing';
+    if (e.target.closest('.annotation-card')) return;  // allow text selection in cards
+    dragging = true; didDrag = false;
+    startX = e.clientX; startY = e.clientY;
+    startPanX = panX; startPanY = panY;
+    canvasWrapper.style.cursor = 'grabbing';
   });
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    panX = startPanX + (e.clientX - startX);
-    panY = startPanY + (e.clientY - startY);
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag = true;
+    panX = startPanX + dx;
+    panY = startPanY + dy;
     applyTransform();
   });
   window.addEventListener('mouseup', () => {
     dragging = false;
-    svgEl.style.cursor = 'grab';
+    canvasWrapper.style.cursor = 'grab';
+    setTimeout(() => { didDrag = false; }, 0);
   });
 
-  // Expose for buttons
   window.zoomIn = () => { scale = Math.min(10, scale * 1.3); applyTransform(); };
   window.zoomOut = () => { scale = Math.max(0.05, scale * 0.7); applyTransform(); };
   window.resetView = fitView;
 
-  // Initial fit
   fitView();
 </script>
 </body>

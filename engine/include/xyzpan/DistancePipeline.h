@@ -14,8 +14,6 @@ struct DistancePipeline {
     dsp::FractionalDelayLine dopplerDelay;        // mono doppler delay line
     dsp::OnePoleLP airLPF_L, airLPF_R;            // air absorption stage 1 (stereo, post-binaural)
     dsp::OnePoleLP airLPF2_L, airLPF2_R;          // air absorption stage 2 (stereo, post-binaural)
-    dsp::OnePoleLP dopplerPostAA;                  // post-delay anti-alias LP (mono)
-    dsp::OnePoleLP dopplerPreAA;                   // pre-delay anti-alias LP (mono)
     dsp::OnePoleSmooth distGainSmooth;
     dsp::OnePoleSmooth distDelaySmooth;
     float prevDelaySamp = 2.0f;  // rate limiter state for doppler

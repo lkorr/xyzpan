@@ -298,7 +298,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     binauralAtt_ = std::make_unique<BA>(p.apvts, ParamID::BINAURAL_ENABLED, binauralToggle_);
 
     binauralLabel_.setText("Binaural", juce::dontSendNotification);
-    binauralLabel_.setJustificationType(juce::Justification::centredLeft);
+    binauralLabel_.setJustificationType(juce::Justification::centred);
     binauralLabel_.setFont(juce::Font(juce::FontOptions(8.0f)));
     addAndMakeVisible(binauralLabel_);
 
@@ -308,7 +308,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     earlyReflAtt_ = std::make_unique<BA>(p.apvts, ParamID::ER_ENABLED, earlyReflToggle_);
 
     earlyReflLabel_.setText("Early Reflections", juce::dontSendNotification);
-    earlyReflLabel_.setJustificationType(juce::Justification::centredLeft);
+    earlyReflLabel_.setJustificationType(juce::Justification::centred);
     earlyReflLabel_.setFont(juce::Font(juce::FontOptions(8.0f)));
     addAndMakeVisible(earlyReflLabel_);
 
@@ -403,6 +403,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // ----- Output meter (right edge) -----
     addAndMakeVisible(outputMeter_);
     outputMeter_.setRMSSources(&p.outputRmsL, &p.outputRmsR);
+    outputMeter_.setTooltip("Output level (click to clear clip indicator)");
 
     // ----- Preset controls (top bar) -----
     addAndMakeVisible(presetCombo_);
@@ -448,8 +449,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
                 if (file == juce::File{})
                     return;
                 auto name = file.getFileNameWithoutExtension();
-                proc_.presetManager.saveUserPreset(name);
-                rebuildPresetCombo();
+                if (proc_.presetManager.saveUserPreset(name))
+                    rebuildPresetCombo();
+                else
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Save Failed",
+                        "Could not save preset. Check folder permissions.");
             });
     };
 
@@ -1215,6 +1221,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     resetXYZPhasesBtn_.setTooltip("Reset position LFO phases");
     resetOrbitPhasesBtn_.setTooltip("Reset orbit LFO phases");
     devToggle_.setTooltip("Advanced DSP tuning panel");
+    presetSaveBtn_.setTooltip("Save current settings as a user preset");
+    presetLoadBtn_.setTooltip("Load a preset from file");
+    presetPrevBtn_.setTooltip("Previous preset");
+    presetNextBtn_.setTooltip("Next preset");
     listenerYawKnob_.setTooltip("Head yaw (horizontal)");
     listenerPitchKnob_.setTooltip("Head pitch (up/down)");
     listenerRollKnob_.setTooltip("Head roll (tilt)");
@@ -1814,19 +1824,19 @@ void XYZPanEditor::resized()
 
             // Checkboxes — vertically centered on the knobs
             const int boxSz = 22;
-            const int cbGap = 6;
             const int cbY = knobY + (knobSz - boxSz) / 2;
 
-            // Binaural (column 3)
+            // Binaural (column 3) — checkbox centered, label below
             int col3X = knobColW * 3;
-            int cbLabelW = cbColW - boxSz - cbGap - 4;
-            binauralToggle_.setBounds(col3X + 4, cbY, boxSz, boxSz);
-            binauralLabel_.setBounds(col3X + 4 + boxSz + cbGap, cbY, cbLabelW, boxSz);
+            int cbCenterX3 = col3X + (cbColW - boxSz) / 2;
+            binauralToggle_.setBounds(cbCenterX3, cbY, boxSz, boxSz);
+            binauralLabel_.setBounds(col3X, cbY + boxSz + 2, cbColW, labelH_b);
 
-            // Early Reflections (column 4)
+            // Early Reflections (column 4) — checkbox centered, label below
             int col4X = knobColW * 3 + cbColW;
-            earlyReflToggle_.setBounds(col4X + 4, cbY, boxSz, boxSz);
-            earlyReflLabel_.setBounds(col4X + 4 + boxSz + cbGap, cbY, cbColW - boxSz - cbGap - 4, boxSz);
+            int cbCenterX4 = col4X + (cbColW - boxSz) / 2;
+            earlyReflToggle_.setBounds(cbCenterX4, cbY, boxSz, boxSz);
+            earlyReflLabel_.setBounds(col4X, cbY + boxSz + 2, cbColW, labelH_b);
         }
 
         // --- SOURCE POSITION SECTION (below options) ---

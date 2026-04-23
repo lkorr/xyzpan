@@ -1,5 +1,6 @@
 #pragma once
 #include "xyzpan/Constants.h"
+#include "xyzpan/dsp/BiquadFilter.h"
 #include "xyzpan/dsp/FractionalDelayLine.h"
 #include "xyzpan/dsp/OnePoleLP.h"
 #include "xyzpan/dsp/OnePoleSmooth.h"
@@ -14,11 +15,29 @@ struct EarlyReflection {
     dsp::OnePoleLP wallAbsorption;          // Wall absorption LPF
     dsp::OnePoleSmooth delaySmooth;         // Smooth delay transitions
     dsp::OnePoleSmooth gainSmooth;          // Smooth gain transitions
-    // Simplified binaural (ITD + ILD + head shadow per ear)
+    // Binaural: ITD + ILD + head shadow + rear shadow per ear
     dsp::FractionalDelayLine itdDelayL, itdDelayR;
     dsp::SVFLowPass shadowL, shadowR;
     dsp::OnePoleSmooth itdSmooth;
     dsp::OnePoleSmooth ildSmooth;
+
+    // Pinna EQ chain (9 bands — excludes fixed P1 peak)
+    dsp::BiquadFilter presenceShelf;        // F/B: 3kHz high shelf
+    dsp::BiquadFilter earCanalPeak;         // F/B: 2.7kHz peak
+    dsp::BiquadFilter shoulderPeak;         // T/B: 1.5kHz (expanded pinna)
+    dsp::BiquadFilter conchaNotch;          // T/B: 4kHz (expanded pinna)
+    dsp::BiquadFilter pinnaNotch;           // T/B: N1 6.5-10kHz
+    dsp::BiquadFilter pinnaNotch2;          // T/B: N2 = N1+3kHz
+    dsp::BiquadFilter upperPinna;           // T/B: 12kHz (expanded pinna)
+    dsp::BiquadFilter tragusNotch;          // F/B+T/B: 8.5kHz (expanded pinna)
+    dsp::BiquadFilter pinnaShelf;           // T/B: 4kHz high shelf
+
+    // Rear shadow SVFs (both ears)
+    dsp::SVFLowPass rearSvfL, rearSvfR;
+    dsp::OnePoleSmooth rearCutoffSmooth;
+
+    // Near-field LF boost (per ear)
+    dsp::BiquadFilter nearFieldLF_L, nearFieldLF_R;
 };
 
 // Per-node early reflections DSP state. When stereo width > 0, each node
@@ -33,6 +52,16 @@ struct ERPipeline {
 
     // Per-block: update wall absorption coefficients (smoothed across block).
     void updateWallAbsorption(float dampCutoff, float sr, int blockSize);
+
+    // Per-block: compute image source directions and set pinna EQ + near-field
+    // coefficients for each tap based on elevation, rear, and azimuth factors.
+    void updateTapDirectionalCoeffs(
+        float nodeX, float nodeY, float nodeZ,
+        float listenerX, float listenerY, float listenerZ,
+        float roomHalf, float sr, int blockSize,
+        bool rotated, float cY, float sY, float cP, float sP, float cR, float sR,
+        float sphereRadius,
+        const EngineParams& params);
 
     // Process early reflections for a single source node.
     struct ERResult { float directL, directR, reverbL, reverbR; };

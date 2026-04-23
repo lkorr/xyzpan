@@ -86,23 +86,18 @@ flowchart LR
                     EQ1 --> EQ2 --> EQ3 --> EQ4 --> EQ5 --> EQ6 --> EQ7 --> EQ8 --> EQ9 --> EQ10
                 end
 
-                GATE_BIN{{"bin?"}}:::gate
-
                 subgraph BIN_LR["BINAURAL L/R"]
                     direction TB
-                    ITD["ITD .72-5ms"]:::binaural
+                    ITD["ITD .72-5ms\n×binBlend"]:::binaural
+                    HP["Hardpan Comp\n0-4dB far ear\nwhen binBlend<1"]:::binaural
                     ILD["ILD 0-8dB"]:::binaural
                     NF["NF LF 200Hz"]:::binaural
                     HS["HeadShd 16-1.2k"]:::binaural
                     RS["RearShd 22-20k"]:::binaural
-                    ITD --> ILD --> NF --> HS --> RS
+                    ITD --> HP --> ILD --> NF --> HS --> RS
                 end
 
-                HP["HARDPAN\naz-mod -4dB"]:::binaural
-
-                BIN_M --> PIN --> GATE_BIN
-                GATE_BIN -->|"Y"| BIN_LR
-                GATE_BIN -.->|"N"| HP
+                BIN_M --> PIN --> BIN_LR
             end
 
             subgraph CHEST["CHEST -- parallel"]
@@ -149,10 +144,11 @@ flowchart LR
         direction LR
         ERD["6 Walls\n+/-XYZ"]:::reverb
         ERW["WallAbs LPF\n500-16kHz"]:::reverb
-        ERB["Own Bin/Tap\nITD+ILD+shd"]:::reverb
+        ERP["PinnaEQ 9band\nelev+rear"]:::reverb
+        ERB["Full Bin/Tap\nITD+ILD+NF+shd+rear"]:::reverb
         ERDL["Delay\n343m/s 1-30m"]:::reverb
         ERS{"Split"}:::split
-        ERD --> ERW --> ERB --> ERDL --> ERS
+        ERD --> ERW --> ERP --> ERB --> ERDL --> ERS
     end
 
     GATE_ER -->|"YES"| ER

@@ -11,11 +11,6 @@ void DistancePipeline::prepare(float sr) {
     int distDelayCap = static_cast<int>(kDistDelayMaxMs * 0.001f * 192000.0f) + 8;
     dopplerDelay.prepare(distDelayCap);
     dopplerDelay.reset();
-    const float aaCutoff = std::min(kDopplerAAMaxHz, sr * 0.45f);
-    dopplerPostAA.setCoefficients(aaCutoff, sr);
-    dopplerPostAA.reset();
-    dopplerPreAA.setCoefficients(aaCutoff, sr);
-    dopplerPreAA.reset();
     airLPF_L.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_R.setCoefficients(kAirAbsMaxHz, sr);
     airLPF_L.reset();
@@ -32,8 +27,6 @@ void DistancePipeline::prepare(float sr) {
 
 void DistancePipeline::reset() {
     dopplerDelay.reset();
-    dopplerPostAA.reset();
-    dopplerPreAA.reset();
     airLPF_L.reset();
     airLPF_R.reset();
     airLPF2_L.reset();
@@ -50,7 +43,6 @@ float DistancePipeline::processDoppler(float input, float rawNodeDistFrac, float
 
     float out;
     if (effectiveDoppler) {
-        input = dopplerPreAA.process(input);
         dopplerDelay.push(input);
         float smoothed = distDelaySmooth.process(delayTargetSamples);
         prevDelaySamp = smoothed;
@@ -62,7 +54,6 @@ float DistancePipeline::processDoppler(float input, float rawNodeDistFrac, float
         prevDelaySamp = 2.0f;
         out = dopplerDelay.read(2.0f);
     }
-    out = dopplerPostAA.process(out);
     return out;
 }
 

@@ -9,13 +9,14 @@ namespace xyzpan {
 // Reads two atomic<float> RMS values (linear 0..1+) from the audio thread.
 // Repaints on a timer at ~30Hz.
 // ---------------------------------------------------------------------------
-class OutputMeter : public juce::Component, private juce::Timer {
+class OutputMeter : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
 public:
     OutputMeter();
 
     void setRMSSources(std::atomic<float>* left, std::atomic<float>* right);
 
     void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent&) override;
     void resized() override {}
 
 private:
@@ -39,6 +40,7 @@ private:
     float smoothL_ = 0.f, smoothR_ = 0.f;         // smoothed RMS (linear)
     float peakL_ = 0.f, peakR_ = 0.f;              // peak hold (linear)
     float peakDecayL_ = 0.f, peakDecayR_ = 0.f;    // peak decay timer
+    bool clipL_ = false, clipR_ = false;            // latched clip indicators
 
     static constexpr float kSmoothCoeff = 0.15f;   // EMA rise/fall
     static constexpr float kPeakHoldSec = 1.0f;

@@ -1165,6 +1165,7 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
             if (listenerPilotParam->load() >= 0.5f)
                 listenerHub_->claimPilot(this);
         }
+
     }
 }
 

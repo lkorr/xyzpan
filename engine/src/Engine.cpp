@@ -589,9 +589,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     prevCosP_ = cosP; prevSinP_ = sinP;
     prevCosR_ = cosR; prevSinR_ = sinR;
 
-    // Save listener-relative (pre-head-rotation) coords for face-observer spread
+    // Save listener-relative (pre-head-rotation) coords for face-observer spread + ER
     const float blkRelX = blkX;
     const float blkRelY = blkY;
+    const float blkRelZ = blkZ;
 
     // Rotate block-start position into listener-relative frame for EQ targets.
     // Inverse yaw around Z, then inverse pitch around X, then roll around Y-forward.
@@ -699,6 +700,17 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         + (kERDampingLPMinHz - kERDampingLPMaxHz) * currentParams.erDamping;
     er_.updateWallAbsorption(erDampCutoff, sr, numSamples);
     erR_.updateWallAbsorption(erDampCutoff, sr, numSamples);
+
+    // ER directional cues — per-block pinna EQ + near-field coefficients (mono path).
+    // Skip when stereo is active — the stereo path below sets per-node ER coefficients.
+    if (!blkStereoLikely) {
+        er_.updateTapDirectionalCoeffs(
+            blkRelX, blkRelY, blkRelZ,
+            currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
+            currentParams.erRoomSize, sr, numSamples,
+            listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
+            currentParams.sphereRadius, currentParams);
+    }
 
     // --- Stereo path per-block setCoefficients ---
     // For the stereo path, compute L-node and R-node block-start positions using
@@ -906,6 +918,20 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         distR_.airLPF_R.setCoefficientsSmoothed(rAirCut1, sr, numSamples);
         distR_.airLPF2_L.setCoefficientsSmoothed(rAirCut2, sr, numSamples);
         distR_.airLPF2_R.setCoefficientsSmoothed(rAirCut2, sr, numSamples);
+
+        // ER directional cues (stereo path) — pre-rotation listener-relative coords
+        er_.updateTapDirectionalCoeffs(
+            blkRelX + blkLOffX, blkRelY + blkLOffY, blkRelZ + blkLOffZ,
+            currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
+            currentParams.erRoomSize, sr, numSamples,
+            listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
+            currentParams.sphereRadius, currentParams);
+        erR_.updateTapDirectionalCoeffs(
+            blkRelX + blkROffX, blkRelY + blkROffY, blkRelZ + blkROffZ,
+            currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
+            currentParams.erRoomSize, sr, numSamples,
+            listenerRotated, cosY, sinY, cosP, sinP, cosR, sinR,
+            currentParams.sphereRadius, currentParams);
 
     }
 

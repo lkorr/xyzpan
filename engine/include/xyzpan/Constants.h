@@ -45,7 +45,7 @@ constexpr float kHeadShadowMinHz       = 1200.0f;   // LPF at full azimuth (~12d
 // ILD (Interaural Level Difference) — ipsilateral (near) ear boost
 // At close range + full azimuth: maximum boost on near ear (hard panning feel).
 // At max distance: negligible boost (both ears roughly equal).
-constexpr float kDefaultILDMaxDb       = 8.0f;      // max ILD boost in dB (near ear, far ear = unity)
+constexpr float kDefaultILDMaxDb       = 4.5f;      // max ILD boost in dB (near ear, far ear = unity)
 
 // ILD crossfade width: smooth linear crossfade over this ITD range (in samples)
 // to avoid gain discontinuity when ITD crosses zero (median plane crossing).
@@ -135,7 +135,7 @@ constexpr float kPinnaP1Q         = 1.5f;
 
 // Front-boosting presence shelf: high shelf at 3 kHz, Y-mapped gain
 constexpr float kPresenceShelfFreqHz  = 3000.0f;
-constexpr float kPresenceShelfMaxDb   = 4.0f;   // +4 dB at Y=1 (front), -4 dB at Y=-1 (back)
+constexpr float kPresenceShelfMaxDb   = 1.0f;   // +1 dB at Y=1 (front), -1 dB at Y=-1 (back)
 
 // Ear canal resonance peak: ~2.7 kHz, Y-mapped gain (quarter-wave resonance, highly universal)
 constexpr float kEarCanalFreqHz = 2700.0f;  // ear canal quarter-wave resonance center
@@ -175,11 +175,6 @@ constexpr float kVertMonoCylinderRadiusMax = 1.0f;
 // ============================================================================
 
 // Doppler anti-alias LP cutoff: band-limits signal before distance delay line
-// to prevent Catmull-Rom interpolation aliasing during delay modulation.
-// 18kHz is above audible range; combined with Hermite ~20dB stopband rejection,
-// total fold-back attenuation is 24+ dB.
-constexpr float kDopplerAAMaxHz = 18000.0f;
-
 // Maximum propagation delay for distance effect (DIST-03).
 // At the unit-cube corner (sqrt(3) away), the source has a 500ms delay offset.
 constexpr float kDistDelayMaxMs = 500.0f;
@@ -352,7 +347,7 @@ constexpr int   kNumER                = 6;       // 6 walls: ±X, ±Y, ±Z
 constexpr float kERRoomSizeMin        = 1.0f;    // meters, half-dimension
 constexpr float kERRoomSizeMax        = 30.0f;
 constexpr float kERRoomSizeDefault    = 5.0f;
-constexpr float kERDampingDefault     = 0.97f;   // ~1 kHz wall LPF cutoff (965 Hz)
+constexpr float kERDampingDefault     = 0.903f;  // ~2 kHz wall LPF cutoff
 constexpr float kERDampingLPMinHz     = 500.0f;  // fully damped wall cutoff
 constexpr float kERDampingLPMaxHz     = 16000.0f;// undamped wall cutoff
 constexpr float kERLevelDefault       = 0.5f;
