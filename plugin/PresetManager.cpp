@@ -1,4 +1,5 @@
 #include "PresetManager.h"
+#include "ParamIDs.h"
 #include "FactoryPresetData.h"
 
 // ---------------------------------------------------------------------------
@@ -137,7 +138,7 @@ bool PresetManager::loadPreset(int index)
     if (entry.file.existsAsFile()) {
         auto xml = juce::parseXML(entry.file);
         if (xml != nullptr && xml->hasTagName(apvts_.state.getType())) {
-            apvts_.replaceState(juce::ValueTree::fromXml(*xml));
+            applyPresetXml(*xml);
             currentIndex_ = index;
             return true;
         }
@@ -146,7 +147,9 @@ bool PresetManager::loadPreset(int index)
     // Embedded fallback for factory presets
     if (entry.isFactory && index < kNumFactory) {
         auto& ep = getEmbeddedPresets()[static_cast<size_t>(index)];
-        if (applyXml(juce::String::fromUTF8(ep.data, ep.size))) {
+        auto xml = juce::parseXML(juce::String::fromUTF8(ep.data, ep.size));
+        if (xml != nullptr && xml->hasTagName(apvts_.state.getType())) {
+            applyPresetXml(*xml);
             currentIndex_ = index;
             return true;
         }
@@ -171,10 +174,24 @@ bool PresetManager::saveUserPreset(const juce::String& name)
 
     auto file = dir.getChildFile(name + ".xml");
 
-    auto state = apvts_.copyState();
-    auto xml = state.createXml();
-    if (xml == nullptr)
-        return false;
+    // Build XML with only exposed (non-dev-panel) params
+    const auto& exposed = ParamID::getExposedParamIDs();
+    auto xml = std::make_unique<juce::XmlElement>(apvts_.state.getType());
+
+    for (const auto& id : exposed) {
+        auto* param = apvts_.getParameter(juce::String(id));
+        if (param == nullptr)
+            continue;
+
+        auto* elem = xml->createNewChildElement("PARAM");
+        elem->setAttribute("id", juce::String(id));
+
+        if (auto* bp = dynamic_cast<juce::AudioParameterBool*>(param))
+            elem->setAttribute("value", bp->get() ? 1.0 : 0.0);
+        else
+            elem->setAttribute("value",
+                static_cast<double>(param->convertFrom0to1(param->getValue())));
+    }
 
     if (!xml->writeTo(file))
         return false;
@@ -229,14 +246,29 @@ juce::String PresetManager::getFactoryPresetName(int index) const
 }
 
 // ---------------------------------------------------------------------------
-// applyXml — parse XML text and replace APVTS state
+// applyPresetXml — selectively apply only exposed params from preset XML.
+// Dev panel / virtualizer tuning params are skipped so presets never
+// overwrite the user's custom virtualizer configuration.
 // ---------------------------------------------------------------------------
-bool PresetManager::applyXml(const juce::String& xmlText)
+bool PresetManager::applyPresetXml(const juce::XmlElement& xml)
 {
-    auto xml = juce::parseXML(xmlText);
-    if (xml != nullptr && xml->hasTagName(apvts_.state.getType())) {
-        apvts_.replaceState(juce::ValueTree::fromXml(*xml));
-        return true;
+    const auto& exposed = ParamID::getExposedParamIDs();
+
+    for (int i = 0; i < xml.getNumChildElements(); ++i) {
+        auto* child = xml.getChildElement(i);
+        if (!child->hasTagName("PARAM"))
+            continue;
+
+        auto id = child->getStringAttribute("id").toStdString();
+        if (exposed.find(id) == exposed.end())
+            continue;
+
+        auto* param = apvts_.getParameter(juce::String(id));
+        if (param == nullptr)
+            continue;
+
+        float value = static_cast<float>(child->getDoubleAttribute("value", 0.0));
+        param->setValueNotifyingHost(param->convertTo0to1(value));
     }
-    return false;
+    return true;
 }

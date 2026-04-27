@@ -21,11 +21,13 @@ XYZPan is a 3D spatial audio panner. Place a sound source in 3D space around a v
 
 Input Gain - Boost input signal before processing
 
-Binaural - Enable/disable ITD (interaural time difference) panning. When ITD is enabled, sounds will experience comb filtering and phase cancelation when summed to mono, so be careful and always doublecheck your mixes in mono, especially if binaural panning is applied to a centrally important element. When disabled, extra hard panning is applied to the virtualizer to compensate.
+Binaural - Enable/disable ITD (interaural time difference) panning. When ITD is enabled, sounds will experience comb filtering and phase cancelation when summed to mono, so be careful and always doublecheck your mixes in mono, especially if binaural panning is applied to a centrally important element. When disabled, extra hard panning is applied to the virtualizer to compensate. Alt+click to toggle across all linked instances at once.
 
-Early Reflections - Enable/disable image-source room reflections. Will sound a bit like reverb and scattered/smeared delay is added to the sound. This effect helps with localizing front/back discrimination.
+Early Reflections - Enable/disable image-source room reflections. Will sound a bit like reverb and scattered/smeared delay is added to the sound. This effect helps with localizing front/back discrimination. Alt+click to toggle across all linked instances at once.
 
 Doppler - Distance-based delay (0 = off). Adds delay proportional to source distance. This is not latency compensated, so keep in mind when composing that you may have to compensate for added time delay if the doppler amount is high.
+
+Sphere Radius - Scales the panning sphere size. Larger sphere = louder object (or a smaller room!)
 
 
 --- SOURCE POSITION ---
@@ -33,7 +35,6 @@ Doppler - Distance-based delay (0 = off). Adds delay proportional to source dist
 X - Left/right position (-1 = left, +1 = right)
 Y - Front/back depth (-1 = behind, +1 = in front)
 Z - Up/down elevation (-1 = below, +1 = above)
-Sphere Radius - Scales the panning sphere size. Larger sphere = louder object (or a smaller room!)
 You can click drag the source node in the 3D view to position it directly.
 
 
@@ -167,6 +168,7 @@ Undo / Redo - Step through parameter change history
 Ctrl+Z / Cmd+Z - Undo
 Ctrl+Shift+Z / Cmd+Y - Redo
 Alt+R - Randomize controls under mouse cursor
+Alt+Click Binaural/ER - Toggle for all linked instances
 WASD + Q/E + Space/Ctrl - Move listener (when WASD enabled))";
 
 class HelpGuideContent : public juce::Component {
@@ -261,21 +263,28 @@ private:
     }
 };
 
+// Standalone window for popped-out guide
 class HelpGuideOverlay : public juce::Component {
 public:
     std::function<void()> onClose;
-
     HelpGuideOverlay() {
         content_.setText(kHelpGuideText);
         viewport_.setViewedComponent(&content_, false);
         viewport_.setScrollBarsShown(true, false);
         viewport_.setColour(juce::ScrollBar::thumbColourId, juce::Colour(0x60D9BE6E));
         addAndMakeVisible(viewport_);
+
+        closeBtn_.setButtonText("X");
+        closeBtn_.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        closeBtn_.setColour(juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.7f));
+        closeBtn_.onClick = [this] { if (onClose) onClose(); };
+        addAndMakeVisible(closeBtn_);
+
     }
 
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xF0101014));
-        auto inner = getLocalBounds().reduced(30, 15);
+        auto inner = getLocalBounds().reduced(75, 15);
         g.setColour(juce::Colour(0xFF1A1A20));
         g.fillRoundedRectangle(inner.toFloat(), 6.0f);
         g.setColour(juce::Colour(0x40D9BE6E));
@@ -283,14 +292,16 @@ public:
     }
 
     void resized() override {
-        auto inner = getLocalBounds().reduced(30, 15).reduced(4);
-        viewport_.setBounds(inner);
-        int cw = juce::jmax(100, inner.getWidth() - viewport_.getScrollBarThickness() - 4);
-        content_.setSize(cw, juce::jmax(inner.getHeight(), content_.getContentHeight()));
+        auto inner = getLocalBounds().reduced(75, 15);
+        closeBtn_.setBounds(inner.getRight() - 30, inner.getY() + 4, 26, 22);
+        auto content = inner.reduced(4).withTrimmedTop(28);
+        viewport_.setBounds(content);
+        int cw = juce::jmax(100, content.getWidth() - viewport_.getScrollBarThickness() - 4);
+        content_.setSize(cw, juce::jmax(content.getHeight(), content_.getContentHeight()));
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
-        auto inner = getLocalBounds().reduced(30, 15);
+        auto inner = getLocalBounds().reduced(75, 15);
         if (!inner.contains(e.getPosition()) && onClose)
             onClose();
     }
@@ -303,6 +314,7 @@ public:
 private:
     juce::Viewport viewport_;
     HelpGuideContent content_;
+    juce::TextButton closeBtn_;
 };
 
 } // anonymous namespace
@@ -620,6 +632,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     binauralToggle_.setButtonText("");
     binauralToggle_.setClickingTogglesState(true);
+    binauralToggle_.onClick = [this] {
+        if (juce::ModifierKeys::currentModifiers.isAltDown())
+            broadcastToggleToLinked(ParamID::BINAURAL_ENABLED, binauralToggle_.getToggleState());
+    };
     addAndMakeVisible(binauralToggle_);
     binauralAtt_ = std::make_unique<BA>(p.apvts, ParamID::BINAURAL_ENABLED, binauralToggle_);
 
@@ -630,6 +646,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     earlyReflToggle_.setButtonText("");
     earlyReflToggle_.setClickingTogglesState(true);
+    earlyReflToggle_.onClick = [this] {
+        if (juce::ModifierKeys::currentModifiers.isAltDown())
+            broadcastToggleToLinked(ParamID::ER_ENABLED, earlyReflToggle_.getToggleState());
+    };
     addAndMakeVisible(earlyReflToggle_);
     earlyReflAtt_ = std::make_unique<BA>(p.apvts, ParamID::ER_ENABLED, earlyReflToggle_);
 
@@ -3581,6 +3601,25 @@ void XYZPanEditor::rebuildInstanceList()
     repaint();
 }
 
+void XYZPanEditor::broadcastToggleToLinked(const juce::String& paramID, bool newValue)
+{
+    auto& hub = proc_.getListenerHub();
+    SharedListenerHub::Listener* instances[xyzpan::kMaxLinkedSources + 1];
+    int count = hub.getLinkedInstances(instances, xyzpan::kMaxLinkedSources + 1);
+
+    auto* currentProc = remoteFocusProc_ ? remoteFocusProc_ : &proc_;
+
+    for (int i = 0; i < count; ++i) {
+        if (!instances[i]->hubAlive_.load(std::memory_order_acquire))
+            continue;
+        auto* proc = dynamic_cast<XYZPanProcessor*>(instances[i]->getProcessor());
+        if (!proc || proc == currentProc)
+            continue;
+        if (auto* p = proc->apvts.getParameter(paramID))
+            p->setValueNotifyingHost(newValue ? 1.0f : 0.0f);
+    }
+}
+
 void XYZPanEditor::setRemoteFocus(int linkedIndex)
 {
     if (linkedIndex < 0) {
@@ -3710,6 +3749,7 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
         auto* target = remoteFocusProc_ != nullptr ? remoteFocusProc_ : &proc_;
         target->resetOrbitLfoPhases.store(true);
     };
+
 }
 
 // ---------------------------------------------------------------------------

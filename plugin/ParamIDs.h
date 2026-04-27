@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <unordered_set>
+
 // APVTS parameter ID strings for XYZPan.
 // Use these constants everywhere parameter IDs are referenced to avoid
 // stringly-typed bugs between registration and lookup.
@@ -256,4 +259,57 @@ namespace ParamID {
     constexpr const char* BYPASS_DOPPLER     = "bypass_doppler";
     constexpr const char* BYPASS_AIR_ABS     = "bypass_air_abs";
     constexpr const char* BYPASS_REVERB      = "bypass_reverb";
+// Params that presets should recall (user-facing knobs).
+// Dev panel / virtualizer tuning params are intentionally excluded so that
+// preset switching never overwrites the user's custom virtualizer config.
+inline const std::unordered_set<std::string>& getExposedParamIDs()
+{
+    static const std::unordered_set<std::string> ids = {
+        // Spatial position
+        X, Y, Z, R,
+        // Reverb
+        VERB_SIZE, VERB_DECAY, VERB_DAMPING, VERB_WET,
+        VERB_PRE_DELAY, VERB_MOD_DEPTH, VERB_DIFFUSION,
+        // LFO X
+        LFO_X_RATE, LFO_X_DEPTH, LFO_X_PHASE, LFO_X_WAVEFORM,
+        LFO_X_SMOOTH, LFO_X_TEMPO_SYNC, LFO_X_BEAT_DIV,
+        // LFO Y
+        LFO_Y_RATE, LFO_Y_DEPTH, LFO_Y_PHASE, LFO_Y_WAVEFORM,
+        LFO_Y_SMOOTH, LFO_Y_TEMPO_SYNC, LFO_Y_BEAT_DIV,
+        // LFO Z
+        LFO_Z_RATE, LFO_Z_DEPTH, LFO_Z_PHASE, LFO_Z_WAVEFORM,
+        LFO_Z_SMOOTH, LFO_Z_TEMPO_SYNC, LFO_Z_BEAT_DIV,
+        LFO_SPEED_MUL,
+        // Stereo
+        STEREO_WIDTH, STEREO_FACE_LISTENER, STEREO_ORBIT_PHASE, STEREO_ORBIT_OFFSET,
+        // Stereo orbit LFOs — XY
+        STEREO_ORBIT_XY_WAVEFORM, STEREO_ORBIT_XY_RATE, STEREO_ORBIT_XY_BEAT_DIV,
+        STEREO_ORBIT_XY_PHASE, STEREO_ORBIT_XY_RESET_PHASE,
+        STEREO_ORBIT_XY_DEPTH, STEREO_ORBIT_XY_SMOOTH, STEREO_ORBIT_XY_TEMPO_SYNC,
+        // Stereo orbit LFOs — XZ
+        STEREO_ORBIT_XZ_WAVEFORM, STEREO_ORBIT_XZ_RATE, STEREO_ORBIT_XZ_BEAT_DIV,
+        STEREO_ORBIT_XZ_PHASE, STEREO_ORBIT_XZ_RESET_PHASE,
+        STEREO_ORBIT_XZ_DEPTH, STEREO_ORBIT_XZ_SMOOTH, STEREO_ORBIT_XZ_TEMPO_SYNC,
+        // Stereo orbit LFOs — YZ
+        STEREO_ORBIT_YZ_WAVEFORM, STEREO_ORBIT_YZ_RATE, STEREO_ORBIT_YZ_BEAT_DIV,
+        STEREO_ORBIT_YZ_PHASE, STEREO_ORBIT_YZ_RESET_PHASE,
+        STEREO_ORBIT_YZ_DEPTH, STEREO_ORBIT_YZ_SMOOTH, STEREO_ORBIT_YZ_TEMPO_SYNC,
+        STEREO_ORBIT_SPEED_MUL,
+        // Early reflections (user-facing)
+        ER_ENABLED, ER_ROOM_SIZE, ER_DAMPING, ER_LEVEL, ER_REVERB_SEND, ER_GAIN_DB,
+        // Distance delay (creative effect)
+        DIST_DELAY_MAX_MS,
+        // Geometry
+        SPHERE_RADIUS,
+        // Listener orientation
+        LISTENER_YAW, LISTENER_PITCH, LISTENER_ROLL,
+        // Walker position
+        WALKER_X, WALKER_Y, WALKER_Z,
+        // User toggles
+        BINAURAL_ENABLED,
+        INPUT_GAIN_DB,
+    };
+    return ids;
+}
+
 } // namespace ParamID

@@ -58,6 +58,6 @@ private:
     static constexpr int kNumFactory = 7;
     static const std::array<EmbeddedPreset, kNumFactory>& getEmbeddedPresets();
 
-    // Load XML string into APVTS
-    bool applyXml(const juce::String& xmlText);
+    // Selectively apply only exposed (non-dev-panel) params from preset XML
+    bool applyPresetXml(const juce::XmlElement& xml);
 };

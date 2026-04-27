@@ -101,7 +101,7 @@ private:
     xyzpan::AlchemyLookAndFeel lookAndFeel_;
     std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
     juce::TextButton tooltipToggle_{"?"};
-    std::unique_ptr<juce::Component> helpGuide_;  // HelpGuideOverlay (defined in .cpp)
+    std::unique_ptr<juce::Component> helpGuide_;       // HelpGuideOverlay (defined in .cpp)
 
     // GL spatial view (fills majority of window)
     xyzpan::XYZPanGLView glView_;
@@ -203,6 +203,7 @@ private:
     bool forceListRebuild_ = false;                // set by setRemoteFocus to refresh highlighting
     int remoteFocusValidationCounter_ = 0;         // throttle spinlock validation to ~6Hz
     int selectorRebuildCounter_ = 0;               // throttle selector rebuild to ~6Hz
+    void broadcastToggleToLinked(const juce::String& paramID, bool newValue);
     void setRemoteFocus(int linkedIndex);
     void rebuildInstanceList();
     void detachAndRebindTo(juce::AudioProcessorValueTreeState& target, XYZPanProcessor* targetProc);
