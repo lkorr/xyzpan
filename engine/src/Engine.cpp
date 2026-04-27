@@ -48,7 +48,7 @@ static inline float computeElevFactor(float x, float y, float z, float earOffset
 // prepare()
 // ============================================================================
 
-void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
+void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize, const EngineParams& initialParams) {
     sampleRate   = inSampleRate;
     maxBlockSize = inMaxBlockSize;
 
@@ -107,7 +107,6 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
     auxGainSmooth_.reset(1.0f);
     auxDelaySmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     auxDelaySmooth_.reset(2.0f);
-
     // Phase 5: LFO
     lfoX_.prepare(inSampleRate);
     lfoY_.prepare(inSampleRate);
@@ -156,15 +155,12 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
         listenerBlkSmA_ = std::exp(-blockPeriod / (kConvergeMs * 0.001f));
     }
 
-    // Angular smoothers for listener yaw/pitch/roll (continuous knobs, 5ms)
-    yawSmCos_ = 1.0f; yawSmSin_ = 0.0f;
-    pitchSmCos_ = 1.0f; pitchSmSin_ = 0.0f;
-    rollSmCos_ = 1.0f; rollSmSin_ = 0.0f;
-
-    // Previous block trig for per-sample interpolation (identity = no rotation)
-    prevCosY_ = 1.f; prevSinY_ = 0.f;
-    prevCosP_ = 1.f; prevSinP_ = 0.f;
-    prevCosR_ = 1.f; prevSinR_ = 0.f;
+    // Initialize listener rotation from supplied params (not identity)
+    // so the engine starts at the correct orientation immediately.
+    currentParams = initialParams;
+    snapListenerRotation(initialParams.listenerYaw,
+                         initialParams.listenerPitch,
+                         initialParams.listenerRoll);
 
     // -------------------------------------------------------------------------
     // Early Reflections (Image Source Method)
@@ -198,6 +194,25 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize) {
 
 void XYZPanEngine::setParams(const EngineParams& params) {
     currentParams = params;
+}
+
+void XYZPanEngine::snapListenerRotation(float yawRad, float pitchRad, float rollRad) {
+    yawSmCos_   = dsp::SineLUT::cosLookupAngle(yawRad);
+    yawSmSin_   = dsp::SineLUT::lookupAngle(yawRad);
+    pitchSmCos_ = dsp::SineLUT::cosLookupAngle(pitchRad);
+    pitchSmSin_ = dsp::SineLUT::lookupAngle(pitchRad);
+    rollSmCos_  = dsp::SineLUT::cosLookupAngle(rollRad);
+    rollSmSin_  = dsp::SineLUT::lookupAngle(rollRad);
+    cachedCosY_ = yawSmCos_;  cachedSinY_ = yawSmSin_;
+    cachedCosP_ = pitchSmCos_; cachedSinP_ = pitchSmSin_;
+    cachedCosR_ = rollSmCos_;  cachedSinR_ = rollSmSin_;
+    prevCosY_ = yawSmCos_;  prevSinY_ = yawSmSin_;
+    prevCosP_ = pitchSmCos_; prevSinP_ = pitchSmSin_;
+    prevCosR_ = rollSmCos_;  prevSinR_ = rollSmSin_;
+    prevListenerYaw_   = yawRad;
+    prevListenerPitch_ = pitchRad;
+    prevListenerRoll_  = rollRad;
+    listenerSettled_ = true;
 }
 
 
@@ -305,21 +320,55 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         }
         return freeHz;
     };
+
+    // Compute LFO phase from host ppqPosition for grid-locked sync.
+    // Sets the accumulator absolutely at block start; intra-block free-runs.
+    // When transport is playing: lock LFO phase to the grid via ppqPosition.
+    // When stopped: let LFOs free-run at synced rate so the user can preview movement.
+    auto syncLfoPhase = [&](dsp::LFO& lfo, float beatDiv, float speedMul,
+                            float userPhaseOffset, bool tempoSync) {
+        if (!tempoSync || !currentParams.hostIsPlaying
+            || currentParams.hostPpqPosition < 0.0) return;
+        const int num = currentParams.hostTimeSigNum > 0 ? currentParams.hostTimeSigNum : 4;
+        const int den = currentParams.hostTimeSigDen > 0 ? currentParams.hostTimeSigDen : 4;
+        const double ppqPerBar = static_cast<double>(num) * (4.0 / static_cast<double>(den));
+        const double barsPos = currentParams.hostPpqPosition / ppqPerBar;
+        const float qSpeed = quantizeSyncSpeed(speedMul);
+        if (qSpeed <= 0.0f) return;
+        const double effDiv = static_cast<double>(beatDiv) / static_cast<double>(qSpeed);
+        if (effDiv <= 0.0) return;
+        const double cycles = barsPos / effDiv;
+        const float phase = static_cast<float>(cycles - std::floor(cycles))
+                          + userPhaseOffset;
+        const int64_t cycleNum = static_cast<int64_t>(std::floor(cycles));
+        lfo.setPhaseFromPosition(phase, cycleNum);
+    };
+
     lfoX_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoXWaveform);
     lfoY_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoYWaveform);
     lfoZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.lfoZWaveform);
-    lfoX_.setRateHz(lfoRate(currentParams.lfoXRate, currentParams.lfoXBeatDiv, currentParams.lfoXTempoSync) * (currentParams.lfoXTempoSync ? 1.0f : currentParams.lfoSpeedMul));
-    lfoY_.setRateHz(lfoRate(currentParams.lfoYRate, currentParams.lfoYBeatDiv, currentParams.lfoYTempoSync) * (currentParams.lfoYTempoSync ? 1.0f : currentParams.lfoSpeedMul));
-    lfoZ_.setRateHz(lfoRate(currentParams.lfoZRate, currentParams.lfoZBeatDiv, currentParams.lfoZTempoSync) * (currentParams.lfoZTempoSync ? 1.0f : currentParams.lfoSpeedMul));
-    lfoX_.setPhaseOffset(currentParams.lfoXPhase);
-    lfoY_.setPhaseOffset(currentParams.lfoYPhase);
-    lfoZ_.setPhaseOffset(currentParams.lfoZPhase);
+    lfoX_.setRateHz(lfoRate(currentParams.lfoXRate, currentParams.lfoXBeatDiv, currentParams.lfoXTempoSync) * (currentParams.lfoXTempoSync ? quantizeSyncSpeed(currentParams.lfoSpeedMul) : currentParams.lfoSpeedMul));
+    lfoY_.setRateHz(lfoRate(currentParams.lfoYRate, currentParams.lfoYBeatDiv, currentParams.lfoYTempoSync) * (currentParams.lfoYTempoSync ? quantizeSyncSpeed(currentParams.lfoSpeedMul) : currentParams.lfoSpeedMul));
+    lfoZ_.setRateHz(lfoRate(currentParams.lfoZRate, currentParams.lfoZBeatDiv, currentParams.lfoZTempoSync) * (currentParams.lfoZTempoSync ? quantizeSyncSpeed(currentParams.lfoSpeedMul) : currentParams.lfoSpeedMul));
+    const bool ppqPlaying = currentParams.hostIsPlaying && currentParams.hostPpqPosition >= 0.0;
+    const bool xGridSync = currentParams.lfoXTempoSync && ppqPlaying;
+    const bool yGridSync = currentParams.lfoYTempoSync && ppqPlaying;
+    const bool zGridSync = currentParams.lfoZTempoSync && ppqPlaying;
+    if (!xGridSync) lfoX_.setPhaseOffset(currentParams.lfoXPhase);
+    if (!yGridSync) lfoY_.setPhaseOffset(currentParams.lfoYPhase);
+    if (!zGridSync) lfoZ_.setPhaseOffset(currentParams.lfoZPhase);
     lfoX_.setSmoothMs(currentParams.lfoXSmooth * 300.0f);  // 0-1 → 0-300ms
     lfoY_.setSmoothMs(currentParams.lfoYSmooth * 300.0f);
     lfoZ_.setSmoothMs(currentParams.lfoZSmooth * 300.0f);
-    if (currentParams.lfoXResetPhase) lfoX_.requestReset();
-    if (currentParams.lfoYResetPhase) lfoY_.requestReset();
-    if (currentParams.lfoZResetPhase) lfoZ_.requestReset();
+    if (currentParams.lfoXResetPhase && !xGridSync) lfoX_.requestReset();
+    if (currentParams.lfoYResetPhase && !yGridSync) lfoY_.requestReset();
+    if (currentParams.lfoZResetPhase && !zGridSync) lfoZ_.requestReset();
+    syncLfoPhase(lfoX_, currentParams.lfoXBeatDiv, currentParams.lfoSpeedMul,
+                 currentParams.lfoXPhase, currentParams.lfoXTempoSync);
+    syncLfoPhase(lfoY_, currentParams.lfoYBeatDiv, currentParams.lfoSpeedMul,
+                 currentParams.lfoYPhase, currentParams.lfoYTempoSync);
+    syncLfoPhase(lfoZ_, currentParams.lfoZBeatDiv, currentParams.lfoSpeedMul,
+                 currentParams.lfoZPhase, currentParams.lfoZTempoSync);
 
     // -------------------------------------------------------------------------
     // Stereo orbit LFOs — per-block setup
@@ -327,18 +376,27 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     orbitLfoXY_.waveform = static_cast<dsp::LFOWaveform>(currentParams.stereoOrbitXYWaveform);
     orbitLfoXZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.stereoOrbitXZWaveform);
     orbitLfoYZ_.waveform = static_cast<dsp::LFOWaveform>(currentParams.stereoOrbitYZWaveform);
-    orbitLfoXY_.setRateHz(lfoRate(currentParams.stereoOrbitXYRate, currentParams.stereoOrbitXYBeatDiv, currentParams.stereoOrbitXYTempoSync) * (currentParams.stereoOrbitXYTempoSync ? 1.0f : currentParams.stereoOrbitSpeedMul));
-    orbitLfoXZ_.setRateHz(lfoRate(currentParams.stereoOrbitXZRate, currentParams.stereoOrbitXZBeatDiv, currentParams.stereoOrbitXZTempoSync) * (currentParams.stereoOrbitXZTempoSync ? 1.0f : currentParams.stereoOrbitSpeedMul));
-    orbitLfoYZ_.setRateHz(lfoRate(currentParams.stereoOrbitYZRate, currentParams.stereoOrbitYZBeatDiv, currentParams.stereoOrbitYZTempoSync) * (currentParams.stereoOrbitYZTempoSync ? 1.0f : currentParams.stereoOrbitSpeedMul));
-    orbitLfoXY_.setPhaseOffset(currentParams.stereoOrbitXYPhase);
-    orbitLfoXZ_.setPhaseOffset(currentParams.stereoOrbitXZPhase);
-    orbitLfoYZ_.setPhaseOffset(currentParams.stereoOrbitYZPhase);
+    orbitLfoXY_.setRateHz(lfoRate(currentParams.stereoOrbitXYRate, currentParams.stereoOrbitXYBeatDiv, currentParams.stereoOrbitXYTempoSync) * (currentParams.stereoOrbitXYTempoSync ? quantizeSyncSpeed(currentParams.stereoOrbitSpeedMul) : currentParams.stereoOrbitSpeedMul));
+    orbitLfoXZ_.setRateHz(lfoRate(currentParams.stereoOrbitXZRate, currentParams.stereoOrbitXZBeatDiv, currentParams.stereoOrbitXZTempoSync) * (currentParams.stereoOrbitXZTempoSync ? quantizeSyncSpeed(currentParams.stereoOrbitSpeedMul) : currentParams.stereoOrbitSpeedMul));
+    orbitLfoYZ_.setRateHz(lfoRate(currentParams.stereoOrbitYZRate, currentParams.stereoOrbitYZBeatDiv, currentParams.stereoOrbitYZTempoSync) * (currentParams.stereoOrbitYZTempoSync ? quantizeSyncSpeed(currentParams.stereoOrbitSpeedMul) : currentParams.stereoOrbitSpeedMul));
+    const bool xyGridSync = currentParams.stereoOrbitXYTempoSync && ppqPlaying;
+    const bool xzGridSync = currentParams.stereoOrbitXZTempoSync && ppqPlaying;
+    const bool yzGridSync = currentParams.stereoOrbitYZTempoSync && ppqPlaying;
+    if (!xyGridSync) orbitLfoXY_.setPhaseOffset(currentParams.stereoOrbitXYPhase);
+    if (!xzGridSync) orbitLfoXZ_.setPhaseOffset(currentParams.stereoOrbitXZPhase);
+    if (!yzGridSync) orbitLfoYZ_.setPhaseOffset(currentParams.stereoOrbitYZPhase);
     orbitLfoXY_.setSmoothMs(currentParams.stereoOrbitXYSmooth * 300.0f);
     orbitLfoXZ_.setSmoothMs(currentParams.stereoOrbitXZSmooth * 300.0f);
     orbitLfoYZ_.setSmoothMs(currentParams.stereoOrbitYZSmooth * 300.0f);
-    if (currentParams.stereoOrbitXYResetPhase) orbitLfoXY_.requestReset();
-    if (currentParams.stereoOrbitXZResetPhase) orbitLfoXZ_.requestReset();
-    if (currentParams.stereoOrbitYZResetPhase) orbitLfoYZ_.requestReset();
+    if (currentParams.stereoOrbitXYResetPhase && !xyGridSync) orbitLfoXY_.requestReset();
+    if (currentParams.stereoOrbitXZResetPhase && !xzGridSync) orbitLfoXZ_.requestReset();
+    if (currentParams.stereoOrbitYZResetPhase && !yzGridSync) orbitLfoYZ_.requestReset();
+    syncLfoPhase(orbitLfoXY_, currentParams.stereoOrbitXYBeatDiv, currentParams.stereoOrbitSpeedMul,
+                 currentParams.stereoOrbitXYPhase, currentParams.stereoOrbitXYTempoSync);
+    syncLfoPhase(orbitLfoXZ_, currentParams.stereoOrbitXZBeatDiv, currentParams.stereoOrbitSpeedMul,
+                 currentParams.stereoOrbitXZPhase, currentParams.stereoOrbitXZTempoSync);
+    syncLfoPhase(orbitLfoYZ_, currentParams.stereoOrbitYZBeatDiv, currentParams.stereoOrbitSpeedMul,
+                 currentParams.stereoOrbitYZPhase, currentParams.stereoOrbitYZTempoSync);
 
     // -------------------------------------------------------------------------
     // Per-block orbit angular smoother update
@@ -386,7 +444,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     // kHardpanMaxDb is constexpr — computed once, not every block
     static const float kHardpanGainLin = std::pow(10.0f, kHardpanMaxDb / 20.0f);
     hardpanGainBase_           = kHardpanGainLin;
-    const float auxMaxBoostLin = std::pow(10.0f, currentParams.auxSendGainMaxDb / 20.0f);
+    const float auxMaxBoostLin   = std::pow(10.0f, currentParams.auxSendGainMaxDb / 20.0f);
+    static const float auxERSendGainLin = std::pow(10.0f, kAuxERSendGainDb / 20.0f);
     blkDistGainMaxDb_          = 20.0f * std::log10(currentParams.distGainMax);
 
     // Per-block chest filter coefficient update (cheap: only recalc when params change)
@@ -1349,8 +1408,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 const float erLevelSm = erLevelSmooth_.process(
                     (currentParams.erEnabled && !currentParams.bypassER) ? currentParams.erLevel : 0.0f);
                 const float erSendSm = erReverbSendSmooth_.process(currentParams.erReverbSend);
+                const bool erNowActive = erLevelSm > 1e-6f;
 
-                if (erLevelSm > 1e-6f) {
+                // Reset per-tap filter state on gate-open to prevent stale delay line clicks
+                if (erNowActive && !erWasActive_) {
+                    er_.reset();
+                    erR_.reset();
+                }
+                erWasActive_ = erNowActive;
+
+                if (erNowActive) {
                     const float roomHalf = currentParams.erRoomSize;
 
                     // Per-node distGainTarget for ER gain scaling (reuse cached distances)
@@ -1463,8 +1530,14 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 const float erLevelSm = erLevelSmooth_.process(
                     (currentParams.erEnabled && !currentParams.bypassER) ? currentParams.erLevel : 0.0f);
                 const float erSendSm = erReverbSendSmooth_.process(currentParams.erReverbSend);
+                const bool erNowActive = erLevelSm > 1e-6f;
 
-                if (erLevelSm > 1e-6f) {
+                if (erNowActive && !erWasActive_) {
+                    er_.reset();
+                }
+                erWasActive_ = erNowActive;
+
+                if (erNowActive) {
                     const float roomHalf = currentParams.erRoomSize;
 
                     const float eCY = interpRotation ? rCosY : cosY;
@@ -1473,8 +1546,6 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float eSP = interpRotation ? rSinP : sinP;
                     const float eCR = interpRotation ? rCosR : cosR;
                     const float eSR = interpRotation ? rSinR : sinR;
-                    // Listener-relative (pre-rotation) node coords — ER applies head rotation
-                    // internally for binaural panning.
                     const float mRelX = worldModX - currentParams.listenerX;
                     const float mRelY = worldModY - currentParams.listenerY;
                     const float mRelZ = worldModZ - currentParams.listenerZ;
@@ -1500,8 +1571,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
         // Aux reverb send — auxMaxBoostLin pre-computed per-block (no std::pow per sample)
         if (auxL != nullptr) {
-            auxPreDelayL_.push(dL);
-            auxPreDelayR_.push(dR);
+            auxPreDelayL_.push(dL + erReverbAccumL * auxERSendGainLin);
+            auxPreDelayR_.push(dR + erReverbAccumR * auxERSendGainLin);
             const float auxDelaySamp = std::max(2.0f, auxDelaySmooth_.process(
                 effectiveDistFrac * verbPreDelayMaxSamp));
             const float auxGainTarget = 1.0f + effectiveDistFrac * (auxMaxBoostLin - 1.0f);
@@ -1584,7 +1655,6 @@ void XYZPanEngine::reset() {
     auxPreDelayR_.reset();
     auxGainSmooth_.reset(1.0f);
     auxDelaySmooth_.reset(2.0f);
-
     // Phase 5: reverb
     reverb_.reset();
     verbWetSmooth_.reset(kVerbDefaultWet);

@@ -84,6 +84,25 @@ float LFO::xorshift32() {
     return static_cast<float>(static_cast<int32_t>(shState_)) / 2147483648.0f;
 }
 
+void LFO::setPhaseFromPosition(float phase, int64_t cycleNumber) {
+    accumulator_ = phase - std::floor(phase);  // wrap to [0, 1)
+
+    if (waveform == LFOWaveform::SampleHold) {
+        // Deterministic seed from cycle number (integer hash / Murmur finalizer)
+        uint32_t seed = static_cast<uint32_t>(cycleNumber & 0xFFFFFFFF);
+        seed ^= static_cast<uint32_t>((cycleNumber >> 32) & 0xFFFFFFFF);
+        seed = (seed ^ 61u) ^ (seed >> 16);
+        seed *= 9u;
+        seed ^= seed >> 4;
+        seed *= 0x27d4eb2du;
+        seed ^= seed >> 15;
+        if (seed == 0u) seed = 1u;  // xorshift32 cannot have zero state
+        shState_ = seed;
+        shHeldValue_ = xorshift32();
+        shPrevPhase_ = accumulator_;
+    }
+}
+
 float LFO::tick() {
     if (resetPending_) {
         accumulator_ = phaseOffset_;

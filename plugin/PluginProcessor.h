@@ -111,6 +111,10 @@ private:
     // Phase 6: R smoother — prevents per-block step clicks during automation (PARAM-03)
     // R multiplies X/Y/Z before engine; raw rParam->load() would cause zipper noise.
     xyzpan::dsp::OnePoleSmooth rSmooth_;
+    // Source position smoothers — 5ms: prevents zipper noise from mouse-drag jitter
+    xyzpan::dsp::OnePoleSmooth xSmooth_;
+    xyzpan::dsp::OnePoleSmooth ySmooth_;
+    xyzpan::dsp::OnePoleSmooth zSmooth_;
 
     // Dev panel: binaural panning tuning (Phase 2)
     std::atomic<float>* itdMaxParam       = nullptr;
@@ -245,6 +249,7 @@ private:
     juce::SharedResourcePointer<SharedListenerHub> listenerHub_;
     std::shared_ptr<std::atomic<bool>> receivingBroadcast_ = std::make_shared<std::atomic<bool>>(false);
     bool restoringState_ = false;  // guard: suppress listener hub side-effects during setStateInformation
+    bool needsListenerSnap_ = true; // snap engine smoothers to saved state on first processBlock
 
     // SharedListenerHub::Listener overrides
     void listenerOrientationChanged(float yaw, float pitch, float roll,
@@ -270,7 +275,7 @@ private:
     std::atomic<float>* earCanalQParam     = nullptr;
     std::atomic<float>* earCanalMaxDbParam = nullptr;
 
-    // Dev panel: Aux send
+    // Aux send
     std::atomic<float>* auxSendGainMaxDbParam = nullptr;
 
     // Dev panel: Pinna P1 fixed peak

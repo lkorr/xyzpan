@@ -50,10 +50,17 @@ public:
     XYZPanEngine& operator=(const XYZPanEngine&) = delete;
 
     // Called before processing begins. Allocates monoBuffer to maxBlockSize.
-    void prepare(double sampleRate, int maxBlockSize);
+    // initialParams supplies the current listener state so the engine starts
+    // at the correct position/orientation rather than hardcoded defaults.
+    void prepare(double sampleRate, int maxBlockSize, const EngineParams& initialParams = EngineParams{});
 
     // Set current parameters (snapshot from APVTS atomics, called once per block).
     void setParams(const EngineParams& params);
+
+    // Snap listener rotation smoothers to the given angles (radians) with no
+    // ramping.  Call once after state restoration so the engine starts at the
+    // correct orientation instead of smoothing from identity.
+    void snapListenerRotation(float yawRad, float pitchRad, float rollRad);
 
     // Process audio.
     //   inputs            — array of input channel pointers (1 or 2 channels)
@@ -168,6 +175,7 @@ private:
     ERPipeline er_;                              // L-channel ER pipeline
     dsp::OnePoleSmooth erLevelSmooth_;
     dsp::OnePoleSmooth erReverbSendSmooth_;
+    bool erWasActive_ = false;                   // gate-open tracker for click-free transitions
 
     // Test tone gain smoother — prevents click when test tone is enabled
     // on fresh prepare/reset (first block goes from silence to full gain).

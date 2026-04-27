@@ -286,6 +286,7 @@ constexpr float kDatModExcursion = 16.0f;  // max excursion in samples at ref ra
 
 // Aux reverb send: default max distance-gain boost (dB)
 constexpr float kAuxSendGainMaxDb     = 6.0f;
+constexpr float kAuxERSendGainDb      = 12.0f;  // dB, ER contribution to aux send (hardcoded)
 
 // ============================================================================
 // Phase 5: LFO (LFO-01 through LFO-05)
@@ -298,6 +299,95 @@ constexpr float kLFOSpeedMulMin     = 0.0f;
 constexpr float kLFOSpeedMulMax     = 5.0f;
 constexpr float kLFOSpeedMulDefault = 1.0f;
 constexpr float kLFOSpeedMulSkew    = 0.431f; // exponential: slider midpoint = 1.0
+
+// Sorted table of musically useful ratios for quantized LFO speed sync.
+// Each entry: { value, numerator, denominator, label }.
+struct SyncSpeedEntry {
+    float value;
+    int   num;
+    int   den;
+    const char* label;
+};
+constexpr int kSyncSpeedCount = 49;
+constexpr SyncSpeedEntry kSyncSpeedTable[kSyncSpeedCount] = {
+    // value    num  den   label          — sorted ascending
+    { 1.0f/100, 1, 100, "1/100" },
+    { 1.0f/80,  1,  80, "1/80"  },
+    { 1.0f/64,  1,  64, "1/64"  },
+    { 1.0f/48,  1,  48, "1/48"  },
+    { 1.0f/32,  1,  32, "1/32"  },
+    { 1.0f/24,  1,  24, "1/24"  },
+    { 1.0f/20,  1,  20, "1/20"  },
+    { 1.0f/16,  1,  16, "1/16"  },
+    { 1.0f/12,  1,  12, "1/12"  },
+    { 1.0f/10,  1,  10, "1/10"  },
+    { 1.0f/8,   1,   8, "1/8"   },
+    { 1.0f/6,   1,   6, "1/6"   },
+    { 1.0f/5,   1,   5, "1/5"   },
+    { 1.0f/4,   1,   4, "1/4"   },
+    { 1.0f/3,   1,   3, "1/3"   },
+    { 3.0f/8,   3,   8, "3/8"   },
+    { 2.0f/5,   2,   5, "2/5"   },
+    { 1.0f/2,   1,   2, "1/2"   },
+    { 3.0f/5,   3,   5, "3/5"   },
+    { 2.0f/3,   2,   3, "2/3"   },
+    { 3.0f/4,   3,   4, "3/4"   },
+    { 4.0f/5,   4,   5, "4/5"   },
+    { 5.0f/6,   5,   6, "5/6"   },
+    { 1.0f,     1,   1, "1"     },
+    { 6.0f/5,   6,   5, "6/5"   },
+    { 5.0f/4,   5,   4, "5/4"   },
+    { 4.0f/3,   4,   3, "4/3"   },
+    { 3.0f/2,   3,   2, "3/2"   },
+    { 5.0f/3,   5,   3, "5/3"   },
+    { 2.0f,     2,   1, "2"     },
+    { 5.0f/2,   5,   2, "5/2"   },
+    { 8.0f/3,   8,   3, "8/3"   },
+    { 3.0f,     3,   1, "3"     },
+    { 10.0f/3, 10,   3, "10/3"  },
+    { 7.0f/2,   7,   2, "7/2"   },
+    { 4.0f,     4,   1, "4"     },
+    { 9.0f/2,   9,   2, "9/2"   },
+    { 5.0f,     5,   1, "5"     },
+    { 11.0f/2, 11,   2, "11/2"  },
+    { 6.0f,     6,   1, "6"     },
+    { 7.0f,     7,   1, "7"     },
+    { 8.0f,     8,   1, "8"     },
+    { 9.0f,     9,   1, "9"     },
+    { 10.0f,   10,   1, "10"    },
+    { 12.0f,   12,   1, "12"    },
+    { 16.0f,   16,   1, "16"    },
+    { 20.0f,   20,   1, "20"    },
+    { 24.0f,   24,   1, "24"    },
+    { 32.0f,   32,   1, "32"    },
+};
+
+// Find the nearest entry in the sync speed table. Returns index.
+// Returns -1 only when speed is exactly 0.
+inline int quantizeSyncSpeedIndex(float speed) noexcept {
+    if (speed <= 0.0f) return -1;  // -1 = stop (only at true zero)
+    int bestIdx = 0;
+    float bestDist = std::abs(speed - kSyncSpeedTable[0].value);
+    for (int i = 1; i < kSyncSpeedCount; ++i) {
+        float dist = std::abs(speed - kSyncSpeedTable[i].value);
+        if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    }
+    return bestIdx;
+}
+
+// Quantize continuous speed (0–5) to clean fractional ratios for synced LFOs.
+inline float quantizeSyncSpeed(float speed) noexcept {
+    int idx = quantizeSyncSpeedIndex(speed);
+    if (idx < 0) return 0.0f;
+    return kSyncSpeedTable[idx].value;
+}
+
+// Return display label for the quantized speed (e.g. "1/4", "3/2", "stop").
+inline const char* quantizeSyncSpeedLabel(float speed) noexcept {
+    int idx = quantizeSyncSpeedIndex(speed);
+    if (idx < 0) return "stop";
+    return kSyncSpeedTable[idx].label;
+}
 
 // Beat division discrete values for tempo-synced LFOs
 // Beat-div values expressed in BARS relative to the host time signature.

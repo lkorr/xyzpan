@@ -870,10 +870,12 @@ void XYZPanGLView::renderOpenGL()
         }
 
         // Listener trail — teal/aqua when walker is active
+        // Fade out as camera zooms in (matches head fade range)
         if (walkerActive) {
             static const glm::vec3 kListenerTrailColor(0.30f, 0.66f, 0.66f); // aqua
+            const float trailZoomAlpha = std::clamp((camera_.dist - 0.05f) / (0.5f - 0.05f), 0.0f, 1.0f);
             drawTrail(trailListener_, vaoTrailListener_, vboTrailListener_,
-                      kListenerTrailColor, 0.5f, now);
+                      kListenerTrailColor, 0.5f * trailZoomAlpha, now);
         }
     }
     glDepthMask(GL_TRUE);
@@ -1205,16 +1207,6 @@ void XYZPanGLView::paint(juce::Graphics& g)
             curY += rh + 2;
         }
 
-        // Placeholder entries when no linked instances
-        if (fp.count == 0) {
-            g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-            for (int i = 0; i < 2; ++i) {
-                g.setColour(kLabelPalette[i].withAlpha(0.3f));
-                g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x97\x8f")) + " Source " + juce::String(i + 1),
-                           listX, curY, listW, rowH, juce::Justification::centredLeft, false);
-                curY += rowH + 2;
-            }
-        }
 
         // Pilot status text (when linked-non-pilot)
         if (!isPilot && pilotStatusText_.isNotEmpty()) {

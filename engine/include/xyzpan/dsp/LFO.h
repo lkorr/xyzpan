@@ -44,6 +44,10 @@ public:
     // Return last S&H held value in [-1, 1] (for accurate UI display).
     float getHeldValue() const noexcept { return shHeldValue_; }
 
+    // Set accumulator absolutely from transport position (for grid-synced LFOs).
+    // cycleNumber seeds S&H deterministically so the same cycle always holds the same value.
+    void setPhaseFromPosition(float phase, int64_t cycleNumber);
+
     // Advance accumulator and return output in [-1, 1].
     float tick();
 

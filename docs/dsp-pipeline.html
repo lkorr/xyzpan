@@ -228,14 +228,16 @@ flowchart LR
     ER_DIR --> COMBINE
     GATE_ER -.->|"NO"| COMBINE
 
-    COMBINE --> AUX_D
+    COMBINE --> AUX_M
+    ER_SND -.->|"erAccum x +12dB"| AUX_M
 
     subgraph AUX["AUX SEND"]
         direction LR
+        AUX_M["Mix\ndry + ER"]:::reverb
         AUX_D["PreDly\ndist"]:::reverb
         AUX_G["Boost\n1-6dB"]:::reverb
         AUX_O["Aux Out"]:::reverb
-        AUX_D --> AUX_G --> AUX_O
+        AUX_M --> AUX_D --> AUX_G --> AUX_O
     end
 
     GATE_REV{{"wet>0?"}}:::gate

@@ -448,7 +448,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     // -------------------------------------------------------------------------
     layout.add(std::make_unique<APF>(PID{ParamID::AUX_SEND_GAIN_MAX_DB, 1}, "Aux Send Max dB",
         NR(0.0f, 24.0f, 0.1f), xyzpan::kAuxSendGainMaxDb));
-
     // -------------------------------------------------------------------------
     // Dev Panel: Pinna P1 fixed peak
     // -------------------------------------------------------------------------

@@ -7,8 +7,9 @@
 
 XYZPanProcessor::XYZPanProcessor()
     : AudioProcessor(BusesProperties()
-                         .withInput("Input",   juce::AudioChannelSet::stereo(), true)
-                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+                         .withInput("Input",     juce::AudioChannelSet::stereo(), true)
+                         .withOutput("Output",   juce::AudioChannelSet::stereo(), true)
+                         .withOutput("Aux Send", juce::AudioChannelSet::stereo(), false)),
       apvts(*this, &undoManager_, "XYZPanState", createParameterLayout()),
       presetManager(apvts) {
     // Spatial position (Phase 1)
@@ -275,7 +276,7 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(earCanalQParam     != nullptr);
     jassert(earCanalMaxDbParam != nullptr);
 
-    // Dev panel: Aux send
+    // Aux send
     auxSendGainMaxDbParam = apvts.getRawParameterValue(ParamID::AUX_SEND_GAIN_MAX_DB);
     jassert(auxSendGainMaxDbParam != nullptr);
 
@@ -473,11 +474,30 @@ void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     jassert(sampleRate > 0.0 && sampleRate <= 192000.0);
     jassert(samplesPerBlock > 0 && samplesPerBlock <= 8192);
     DBG("XYZPan prepareToPlay: sr=" << sampleRate << " block=" << samplesPerBlock);
-    engine.prepare(sampleRate, samplesPerBlock);
+
+    // Build initial EngineParams from current APVTS state so the engine starts
+    // at the correct listener position/orientation immediately.  Params may be
+    // defaults (if called before setStateInformation) or restored values.
+    constexpr float kDeg2Rad = 3.14159265358979323846f / 180.0f;
+    xyzpan::EngineParams initParams;
+    const float r = rParam != nullptr ? rParam->load() : xyzpan::kSphereRadiusDefault;
+    initParams.x = (xParam != nullptr ? xParam->load() : 0.0f) * r;
+    initParams.y = (yParam != nullptr ? yParam->load() : 1.0f) * r;
+    initParams.z = (zParam != nullptr ? zParam->load() : 0.0f) * r;
+    initParams.listenerX = (walkerXParam != nullptr ? walkerXParam->load() : 0.0f) * r;
+    initParams.listenerY = (walkerYParam != nullptr ? walkerYParam->load() : 0.0f) * r;
+    initParams.listenerZ = (walkerZParam != nullptr ? walkerZParam->load() : 0.0f) * r;
+    initParams.listenerYaw   = (listenerYawParam   != nullptr ? listenerYawParam->load()   : 0.0f) * kDeg2Rad;
+    initParams.listenerPitch = (listenerPitchParam != nullptr ? listenerPitchParam->load() : 0.0f) * kDeg2Rad;
+    initParams.listenerRoll  = (listenerRollParam  != nullptr ? listenerRollParam->load()  : 0.0f) * kDeg2Rad;
+    initParams.sphereRadius  = r;
+
+    engine.prepare(sampleRate, samplesPerBlock, initParams);
+    needsListenerSnap_ = true;  // safety net: setStateInformation may update params later
 
     // Phase 6: prepare R smoother — 20ms matches engine's internal position smoothing window
     rSmooth_.prepare(20.0f, static_cast<float>(sampleRate));
-    rSmooth_.reset(rParam != nullptr ? rParam->load() : 1.0f);
+    rSmooth_.reset(r);
 
     // Walker position smoothers — 5ms: just enough to avoid zipper noise
     walkerXSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
@@ -486,6 +506,14 @@ void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     walkerXSmooth_.reset(walkerXParam != nullptr ? walkerXParam->load() : 0.0f);
     walkerYSmooth_.reset(walkerYParam != nullptr ? walkerYParam->load() : 0.0f);
     walkerZSmooth_.reset(walkerZParam != nullptr ? walkerZParam->load() : 0.0f);
+
+    // Source position smoothers — 5ms: prevents zipper noise from mouse-drag jitter
+    xSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
+    ySmooth_.prepare(5.0f, static_cast<float>(sampleRate));
+    zSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
+    xSmooth_.reset(xParam != nullptr ? xParam->load() : 0.0f);
+    ySmooth_.reset(yParam != nullptr ? yParam->load() : 0.0f);
+    zSmooth_.reset(zParam != nullptr ? zParam->load() : 0.0f);
 }
 
 void XYZPanProcessor::releaseResources() {
@@ -498,7 +526,16 @@ bool XYZPanProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     const auto& in = layouts.getMainInputChannelSet();
     if (in != juce::AudioChannelSet::mono() && in != juce::AudioChannelSet::stereo())
         return false;
-    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+
+    // Aux send bus: disabled or stereo
+    if (layouts.outputBuses.size() > 1) {
+        const auto& aux = layouts.outputBuses[1];
+        if (!aux.isDisabled() && aux != juce::AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
 }
 
 void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
@@ -511,10 +548,14 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Converge by full block so the 20ms time constant behaves correctly at block rate.
     rSmooth_.converge(rParam->load(), buffer.getNumSamples());
     const float r = rSmooth_.current();
-    // Spatial position — scaled by smoothed R
-    params.x = xParam->load() * r;
-    params.y = yParam->load() * r;
-    params.z = zParam->load() * r;
+    // Spatial position — 5ms smooth prevents zipper noise from mouse-drag jitter,
+    // transparent to block-rate automation. Scaled by smoothed R.
+    xSmooth_.converge(xParam->load(), buffer.getNumSamples());
+    ySmooth_.converge(yParam->load(), buffer.getNumSamples());
+    zSmooth_.converge(zParam->load(), buffer.getNumSamples());
+    params.x = xSmooth_.current() * r;
+    params.y = ySmooth_.current() * r;
+    params.z = zSmooth_.current() * r;
 
     // Walker listener position — when linked, read from shared hub atomics
     // so all instances use the exact same values (single source of truth).
@@ -669,8 +710,8 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.earCanalQ      = earCanalQParam->load();
     params.earCanalMaxDb  = earCanalMaxDbParam->load();
 
-    // Dev panel: Aux send
-    params.auxSendGainMaxDb = auxSendGainMaxDbParam->load();
+    // Aux send
+    params.auxSendGainMaxDb  = auxSendGainMaxDbParam->load();
 
     // Dev panel: Pinna P1 fixed peak
     params.pinnaP1FreqHz  = pinnaP1FreqHzParam->load();
@@ -779,6 +820,13 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 params.hostTimeSigDen = pos->getTimeSignature()->denominator;
             }
             // else: defaults (4/4) from EngineParams
+
+            // Transport position + play state for LFO grid sync
+            if (pos->getPpqPosition().hasValue())
+                params.hostPpqPosition = *pos->getPpqPosition();
+            else
+                params.hostPpqPosition = -1.0;
+            params.hostIsPlaying = pos->getIsPlaying();
         }
     }
 
@@ -823,8 +871,40 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     float* outL = buffer.getWritePointer(0);
     float* outR = buffer.getWritePointer(1);
 
+    // Aux send bus pointers (bus index 1, nullptr when bus is disabled)
+    float* auxL = nullptr;
+    float* auxR = nullptr;
+    if (getBus(false, 1) != nullptr && getBus(false, 1)->isEnabled()) {
+        auto auxBuf = getBusBuffer(buffer, false, 1);
+        if (auxBuf.getNumChannels() >= 2) {
+            auxL = auxBuf.getWritePointer(0);
+            auxR = auxBuf.getWritePointer(1);
+        }
+    }
+
+    // On first processBlock after state restoration (or plugin load), snap the
+    // engine's listener rotation smoothers and walker position smoothers to the
+    // current parameter values so audio starts at the correct orientation/position
+    // instead of ramping from identity/origin.
+    if (needsListenerSnap_) {
+        needsListenerSnap_ = false;
+        engine.snapListenerRotation(params.listenerYaw, params.listenerPitch, params.listenerRoll);
+        walkerXSmooth_.reset(wx);
+        walkerYSmooth_.reset(wy);
+        walkerZSmooth_.reset(wz);
+        params.listenerX = wx * r;
+        params.listenerY = wy * r;
+        params.listenerZ = wz * r;
+        xSmooth_.reset(xParam->load());
+        ySmooth_.reset(yParam->load());
+        zSmooth_.reset(zParam->load());
+        params.x = xSmooth_.current() * r;
+        params.y = ySmooth_.current() * r;
+        params.z = zSmooth_.current() * r;
+    }
+
     engine.setParams(params);
-    engine.process(inputs, numIn, outL, outR, nullptr, nullptr, buffer.getNumSamples());
+    engine.process(inputs, numIn, outL, outR, auxL, auxR, buffer.getNumSamples());
 
     // Output RMS for UI meter
     {
@@ -1156,6 +1236,7 @@ void XYZPanProcessor::setStateInformation(const void* data, int sizeInBytes) {
         }
 
         restoringState_ = false;
+        needsListenerSnap_ = true;
 
         // Re-apply listener link state now that all params are fully restored.
         // During replaceState the parameterChanged callback was suppressed to

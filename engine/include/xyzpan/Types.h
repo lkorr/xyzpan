@@ -132,6 +132,8 @@ struct EngineParams {
     float hostBpm       = 120.0f;           // passed from processBlock AudioPlayHead
     int   hostTimeSigNum = 4;               // time signature numerator (beats per bar)
     int   hostTimeSigDen = 4;               // time signature denominator (beat unit)
+    double hostPpqPosition = -1.0;          // quarter notes from song start; -1 = unavailable
+    bool   hostIsPlaying   = false;         // true when DAW transport is rolling
     float lfoXBeatDiv   = 1.0f;             float lfoYBeatDiv   = 1.0f;             float lfoZBeatDiv   = 1.0f;
 
     // =========================================================================
@@ -163,7 +165,7 @@ struct EngineParams {
     // =========================================================================
     // Aux reverb send
     // =========================================================================
-    float auxSendGainMaxDb = kAuxSendGainMaxDb;
+    float auxSendGainMaxDb  = kAuxSendGainMaxDb;
 
     // =========================================================================
     // Stereo source node splitting

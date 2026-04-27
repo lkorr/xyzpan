@@ -135,8 +135,8 @@ namespace ParamID {
     constexpr const char* EAR_CANAL_Q       = "ear_canal_q";
     constexpr const char* EAR_CANAL_MAX_DB  = "ear_canal_max_db";
 
-    // Dev panel: Aux reverb send
-    constexpr const char* AUX_SEND_GAIN_MAX_DB = "aux_send_gain_max_db";
+    // Aux reverb send
+    constexpr const char* AUX_SEND_GAIN_MAX_DB   = "aux_send_gain_max_db";
 
     // Dev panel: Pinna P1 fixed peak
     constexpr const char* PINNA_P1_FREQ_HZ = "pinna_p1_freq_hz";

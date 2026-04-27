@@ -5,6 +5,308 @@
 #include <cmath>
 #include <random>
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Help Guide Overlay -- scrollable reference shown when ? is clicked
+// ═══════════════════════════════════════════════════════════════════════════
+namespace {
+
+static const char* kHelpGuideText =
+R"(XYZPAN GUIDE
+
+OVERVIEW
+XYZPan is a 3D spatial audio panner. Place a sound source in 3D space around a virtual listener. Uses a combination of binaural + spectral cues, and room acoustics to imitate the sound of objects moving in 3 dimensions around a listener's head.
+
+
+--- MAIN OPTIONS ---
+
+Input Gain - Boost input signal before processing
+
+Binaural - Enable/disable ITD (interaural time difference) panning. When ITD is enabled, sounds will experience comb filtering and phase cancelation when summed to mono, so be careful and always doublecheck your mixes in mono, especially if binaural panning is applied to a centrally important element. When disabled, extra hard panning is applied to the virtualizer to compensate.
+
+Early Reflections - Enable/disable image-source room reflections. Will sound a bit like reverb and scattered/smeared delay is added to the sound. This effect helps with localizing front/back discrimination.
+
+Doppler - Distance-based delay (0 = off). Adds delay proportional to source distance. This is not latency compensated, so keep in mind when composing that you may have to compensate for added time delay if the doppler amount is high.
+
+
+--- SOURCE POSITION ---
+
+X - Left/right position (-1 = left, +1 = right)
+Y - Front/back depth (-1 = behind, +1 = in front)
+Z - Up/down elevation (-1 = below, +1 = above)
+Sphere Radius - Scales the panning sphere size. Larger sphere = louder object (or a smaller room!)
+You can click drag the source node in the 3D view to position it directly.
+
+
+--- LFO MODULATION (X, Y, Z) ---
+
+Each axis has an independent LFO strip:
+
+Shape - Sine, Triangle, Ramp Up, Ramp Down, Square, Sample & Hold
+Depth - Modulation amount (0 = off, 1 = full axis swing)
+Rate - Speed in Hz (when Sync is off)
+Sync - Lock LFO to DAW tempo. Shows beat division selector (1/16 to 8 bars).
+Beat Div - Musical note length for one LFO cycle (only visible when Sync is on)
+Phase - Starting phase offset (0-360 degrees). Shift the waveform start point.
+Smooth - Output smoothing (lowpass filter on LFO output, 0-300ms)
+
+LFO Speed - Master speed multiplier for all 3 LFOs.
+  Free-running: continuous Hz multiplier (0-5x)
+  When one of your LFOs are set to 'sync', the LFO speed will be quantized to the nearest clean ratios to that number ([1/4], [3/2], etc)
+
+Reset - Reset all XYZ LFO phases to zero
+
+
+--- 3D VIEW ---
+
+Drag empty space - Orbit camera around listener
+Drag source node - Move source position (updates X/Y/Z knobs)
+Mouse wheel - Zoom in/out
+
+
+--- LISTENER ---
+
+Walker knobs position the listener in 3D space:
+Walker X/Y/Z - Listener position (same axes as source)
+
+Head orientation controls how the listener's head is rotated:
+Yaw - Horizontal head rotation (look left/right)
+Pitch - Vertical head rotation (look up/down)
+Roll - Head tilt (lean left/right)
+Roll Lock - Prevents roll changes during Head Follows Camera
+
+WASD Control - Enable keyboard movement:
+  W/S = forward/back, A/D = strafe left/right
+  Space = up, Ctrl = down, Q/E = roll left/right
+  Movement follows head direction.
+
+Head Follows Camera - Camera rotation automatically drives Yaw/Pitch/Roll. Disabled when linked as non-pilot.
+
+
+--- STEREO ORBIT ---
+
+Splits a stereo input into separate L/R source nodes that orbit each other. All orbit controls are disabled when Width = 0.
+
+Width - L/R node separation (0 = mono, 1 = max spread)
+Phase - Phase offset between L and R orbit positions
+Offset - Orbit offset amount
+Face Listener - L/R nodes orient toward listener (vs. toward each other)
+
+It is advised to try using ramp-up and ramp-down saw wave LFOs set to max depth with the stereo orbit controls, as this will create smooth and continuous orbiting patterns.
+
+Three orbit LFO strips (XY, XZ, YZ planes):
+  Each controls orbital motion in one plane
+  XY = horizontal orbit, XZ = vertical front, YZ = vertical side
+  Controls identical to position LFOs (shape, depth, rate/sync, phase, smooth)
+
+Orbit Speed - Master speed multiplier for all 3 orbit LFOs. Same quantized sync behavior as LFO Speed.
+Reset - Reset all orbit LFO phases to zero
+
+
+--- REVERB ---
+
+Dattorro plate reverb applied after spatial processing.
+
+Size - Room size (affects internal delay lengths)
+Decay - Reverb tail length (RT60)
+Damping - High-frequency absorption (higher = darker tail)
+Wet - Reverb mix level (0 = dry, 1 = full reverb)
+
+Reverb is fed gain boosted first reflections in order to assist with localization as well as predelay in order to assist with distance cues.
+
+
+--- CUSTOM REVERB (AUX SEND) ---
+
+XYZPan also allows you to directly output a pre-reverberated signal with distance based pre-delay and early reflections. Using your DAW's auxiliary send features, you can split out a signal intended for your own custom reverb separately from the VST.
+
+To set this up: enable the second output bus ("Aux Send") in your DAW's plugin routing. In most DAWs, this appears as an additional stereo output pair from the plugin. Route this output to a bus/aux track with your own reverb. The Aux Send carries the dry signal processed through XYZPan's distance model and early reflections but without the built-in plate reverb, giving you full control over the reverb character while preserving spatial cues.
+
+
+--- MULTI-INSTANCE LINKING & PILOT ---
+
+Multiple XYZPan instances in the same DAW session can link their listeners together. This lets you control one shared listener position/orientation while each instance has its own source. It also lets you control multiple instances from a single editor window - position different sound objects, adjust their LFOs, reverb, and all other parameters without switching between plugin windows.
+
+How to link:
+1. Open 2+ XYZPan instances on different tracks
+2. Enable "Link Listener" in each instance (checkbox in the top-left corner of the 3D view)
+3. The first instance to link becomes the Pilot automatically
+
+Pilot system:
+  The Pilot controls the shared listener (Walker X/Y/Z + Yaw/Pitch/Roll)
+  Non-pilot instances follow the pilot's listener automatically
+  Non-pilots' listener knobs and WASD/Head Follows are disabled
+  Click "Pilot" checkbox to claim pilot role from another instance
+  If the pilot instance is removed, the next linked instance auto-promotes
+
+Remote Focus:
+  When linked, click an instance name in the 3D view panel to remote-control that instance's source, LFOs, reverb, etc. This means you can position and configure every sound object in your scene from one plugin window.
+  Your editor's knobs rebind to the remote instance's parameters
+  Click "Self" to return to controlling your own instance
+  Double-click your own name to rename your instance
+  Note: while you can fully control other instances via Remote Focus, DAW automation lanes only apply to each instance's own parameters. You cannot automate a remote instance's parameters from another instance's automation lane.
+
+
+--- CUSTOMIZE TAB ---
+
+Switch to the Customize tab (right half of Source column header) to modify the 3D scene appearance:
+
+Environment: Sky type, ground type, ground height/hills. Toggle axis labels and the direction arrow on or off. Change the color theme of the entire plugin.
+Wave: Sound wave visualization (count, opacity, speed, blend mode)
+Avatar: Full avatar customization (body type, head shape/size/color, eyes, ears, nose, hats - each with style, size, and color options)
+
+
+--- PRESETS ---
+
+< / > - Browse presets
+Save - Save current settings as user preset
+Load - Load selected preset
+Undo / Redo - Step through parameter change history
+
+
+--- KEYBOARD SHORTCUTS ---
+
+Ctrl+Z / Cmd+Z - Undo
+Ctrl+Shift+Z / Cmd+Y - Redo
+Alt+R - Randomize controls under mouse cursor
+WASD + Q/E + Space/Ctrl - Move listener (when WASD enabled))";
+
+class HelpGuideContent : public juce::Component {
+public:
+    HelpGuideContent() {}
+
+    void setText(const juce::String& t) { text_ = t; recalcHeight(); }
+
+    void parentSizeChanged() override { recalcHeight(); }
+
+    void paint(juce::Graphics& g) override {
+        const auto gold = juce::Colour(0xFFD9BE6E);
+        const auto dimGold = gold.withAlpha(0.5f);
+        const auto white = juce::Colours::white.withAlpha(0.92f);
+        const float bodySize = 16.0f;
+        const float headSize = 19.0f;
+        const float titleSize = 24.0f;
+
+        auto area = getLocalBounds().reduced(12, 8);
+        float y = (float)area.getY();
+        const float maxW = (float)area.getWidth();
+
+        auto lines = juce::StringArray::fromLines(text_);
+        auto bodyFont = juce::Font(juce::FontOptions(bodySize));
+        auto headFont = juce::Font(juce::FontOptions(headSize, juce::Font::bold));
+        auto titleFont = juce::Font(juce::FontOptions(titleSize, juce::Font::bold));
+
+        for (auto& line : lines) {
+            if (line.startsWith("XYZPAN GUIDE")) {
+                g.setFont(titleFont);
+                g.setColour(gold);
+                g.drawText(line, (int)area.getX(), (int)y, (int)maxW, 32,
+                           juce::Justification::centred);
+                y += 38.0f;
+            } else if (line.startsWith("---") && line.endsWith("---")) {
+                y += 10.0f;
+                g.setColour(dimGold);
+                g.drawLine((float)area.getX(), y, (float)area.getX() + maxW, y, 0.5f);
+                y += 8.0f;
+                auto heading = line.replace("-", "").trim();
+                g.setFont(headFont);
+                g.setColour(gold);
+                g.drawText(heading, (int)area.getX(), (int)y, (int)maxW, 24,
+                           juce::Justification::centredLeft);
+                y += 30.0f;
+            } else if (line.isEmpty()) {
+                y += 10.0f;
+            } else {
+                g.setFont(bodyFont);
+                g.setColour(white);
+                auto textLayout = juce::AttributedString();
+                textLayout.append(line, bodyFont, white);
+                textLayout.setWordWrap(juce::AttributedString::WordWrap::byWord);
+                juce::TextLayout layout;
+                layout.createLayout(textLayout, maxW);
+                float lh = layout.getHeight();
+                layout.draw(g, juce::Rectangle<float>((float)area.getX(), y, maxW, lh));
+                y += lh + 3.0f;
+            }
+        }
+    }
+
+    int getContentHeight() const { return contentHeight_; }
+
+private:
+    juce::String text_;
+    int contentHeight_ = 3000;
+
+    void recalcHeight() {
+        auto lines = juce::StringArray::fromLines(text_);
+        float y = 0;
+        const float maxW = juce::jmax(400.0f, (float)getWidth() - 24.0f);
+        auto bodyFont = juce::Font(juce::FontOptions(16.0f));
+
+        for (auto& line : lines) {
+            if (line.startsWith("XYZPAN GUIDE")) {
+                y += 38.0f;
+            } else if (line.startsWith("---") && line.endsWith("---")) {
+                y += 48.0f;
+            } else if (line.isEmpty()) {
+                y += 10.0f;
+            } else {
+                juce::AttributedString as;
+                as.append(line, bodyFont, juce::Colours::white);
+                as.setWordWrap(juce::AttributedString::WordWrap::byWord);
+                juce::TextLayout layout;
+                layout.createLayout(as, maxW);
+                y += layout.getHeight() + 3.0f;
+            }
+        }
+        contentHeight_ = (int)y + 60;
+    }
+};
+
+class HelpGuideOverlay : public juce::Component {
+public:
+    std::function<void()> onClose;
+
+    HelpGuideOverlay() {
+        content_.setText(kHelpGuideText);
+        viewport_.setViewedComponent(&content_, false);
+        viewport_.setScrollBarsShown(true, false);
+        viewport_.setColour(juce::ScrollBar::thumbColourId, juce::Colour(0x60D9BE6E));
+        addAndMakeVisible(viewport_);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(juce::Colour(0xF0101014));
+        auto inner = getLocalBounds().reduced(30, 15);
+        g.setColour(juce::Colour(0xFF1A1A20));
+        g.fillRoundedRectangle(inner.toFloat(), 6.0f);
+        g.setColour(juce::Colour(0x40D9BE6E));
+        g.drawRoundedRectangle(inner.toFloat(), 6.0f, 1.0f);
+    }
+
+    void resized() override {
+        auto inner = getLocalBounds().reduced(30, 15).reduced(4);
+        viewport_.setBounds(inner);
+        int cw = juce::jmax(100, inner.getWidth() - viewport_.getScrollBarThickness() - 4);
+        content_.setSize(cw, juce::jmax(inner.getHeight(), content_.getContentHeight()));
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        auto inner = getLocalBounds().reduced(30, 15);
+        if (!inner.contains(e.getPosition()) && onClose)
+            onClose();
+    }
+
+    void mouseWheelMove(const juce::MouseEvent& e,
+                        const juce::MouseWheelDetails& w) override {
+        viewport_.mouseWheelMove(e.getEventRelativeTo(&viewport_), w);
+    }
+
+private:
+    juce::Viewport viewport_;
+    HelpGuideContent content_;
+};
+
+} // anonymous namespace
+
 // Palette names/colours matching the GL foreign source palette
 static const char* kPaletteNames[8] = {
     "Purple", "Teal", "Orange", "Blue", "Rose", "Olive", "Amber", "Lavender"
@@ -38,30 +340,46 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Apply alchemy look and feel to this editor; child components inherit via addAndMakeVisible
     setLookAndFeel(&lookAndFeel_);
 
-    // Tooltip window — nullptr parent makes it an independent desktop window
+    // Tooltip window -nullptr parent makes it an independent desktop window
     // so it floats above OpenGL surfaces
     tooltipWindow_ = std::make_unique<juce::TooltipWindow>(nullptr, 600);
 
-    // Tooltip toggle — "?" button, checked by default
-    tooltipToggle_.setClickingTogglesState(true);
-    tooltipToggle_.setToggleState(true, juce::dontSendNotification);
+    // Tooltip toggle -"?" button, checked by default
+    tooltipWindow_ = std::make_unique<juce::TooltipWindow>(nullptr, 600);
     tooltipToggle_.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
-    tooltipToggle_.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0x40FFD700));
     tooltipToggle_.setColour(juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha(0.4f));
     tooltipToggle_.setColour(juce::TextButton::textColourOnId,   juce::Colours::gold);
     tooltipToggle_.onClick = [this] {
-        if (tooltipToggle_.getToggleState())
-            tooltipWindow_ = std::make_unique<juce::TooltipWindow>(nullptr, 600);
-        else
-            tooltipWindow_.reset();
+        if (!helpGuide_) {
+            auto* overlay = new HelpGuideOverlay();
+            overlay->onClose = [this] {
+                helpGuide_.reset();
+                glView_.setVisible(true);
+            };
+            helpGuide_.reset(overlay);
+            addAndMakeVisible(*helpGuide_);
+            helpGuide_->setBounds(getLocalBounds());
+            helpGuide_->toFront(true);
+            glView_.setVisible(false);
+        } else {
+            helpGuide_.reset();
+            glView_.setVisible(true);
+        }
     };
     addAndMakeVisible(tooltipToggle_);
 
-    // ----- GL view — added FIRST so devPanel_ (added later) paints on top of it -----
+    // ----- GL view -added FIRST so devPanel_ (added later) paints on top of it -----
     addAndMakeVisible(glView_);
     glView_.setAccumulator(&listenerAccum_);
 
-    // ----- Position knobs (X / Y / Z) — left column, 2x large -----
+    // Sync accumulator from restored APVTS state so mouse-drag doesn't
+    // overwrite saved rotation with identity on first interaction.
+    listenerAccum_.syncFromRPY(
+        p.apvts.getRawParameterValue(ParamID::LISTENER_YAW)->load(),
+        p.apvts.getRawParameterValue(ParamID::LISTENER_PITCH)->load(),
+        p.apvts.getRawParameterValue(ParamID::LISTENER_ROLL)->load());
+
+    // ----- Position knobs (X / Y / Z) -left column, 2x large -----
     for (auto* knob : {&xKnob_, &yKnob_, &zKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 63, 16);
@@ -100,9 +418,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // ----- XYZ LFO Speed slider (below LFO strips) -----
     lfoSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
-    lfoSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 16);
+    lfoSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
     lfoSpeedMulKnob_.setColour(juce::Slider::rotarySliderFillColourId,
                                juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
+    lfoSpeedMulKnob_.textFromValueFunction = [](double v) {
+        auto label = xyzpan::quantizeSyncSpeedLabel(static_cast<float>(v));
+        return juce::String(v, 2) + " [" + label + "]";
+    };
     addAndMakeVisible(lfoSpeedMulKnob_);
     lfoSpeedMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::LFO_SPEED_MUL, lfoSpeedMulKnob_);
     lfoSpeedMulLabel_.setText("LFO Speed", juce::dontSendNotification);
@@ -117,7 +439,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(resetXYZPhasesBtn_);
 
     // ----- Stereo orbit controls -----
-    // Width / Phase / Offset — horizontal sliders (matching LFO Speed style)
+    // Width / Phase / Offset -horizontal sliders (matching LFO Speed style)
     auto configOrbitSlider = [this](juce::Slider& s, juce::Label& l, const juce::String& name) {
         s.setSliderStyle(juce::Slider::LinearHorizontal);
         s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 16);
@@ -127,7 +449,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         addAndMakeVisible(&s);
         addAndMakeVisible(&l);
     };
-    // Width — hero rotary knob (gateway control for stereo orbit)
+    // Width -hero rotary knob (gateway control for stereo orbit)
     stereoWidthKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     stereoWidthKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 52, 14);
     addAndMakeVisible(&stereoWidthKnob_);
@@ -135,7 +457,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     stereoWidthLabel_.setJustificationType(juce::Justification::centredRight);
     stereoWidthLabel_.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
     addAndMakeVisible(&stereoWidthLabel_);
-    // Phase + Offset — rotary knobs (placed in row with Face Observer)
+    // Phase + Offset -rotary knobs (placed in row with Face Observer)
     for (auto* knob : {&orbitPhaseKnob_, &orbitOffsetKnob_}) {
         knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 14);
@@ -150,9 +472,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     orbitOffsetLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     addAndMakeVisible(orbitOffsetLabel_);
 
-    // Speed — stays as LinearHorizontal (horizontal slot at bottom of orbit LFO section)
+    // Speed -stays as LinearHorizontal (horizontal slot at bottom of orbit LFO section)
     orbitSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
-    orbitSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 16);
+    orbitSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
+    orbitSpeedMulKnob_.textFromValueFunction = [](double v) {
+        auto label = xyzpan::quantizeSyncSpeedLabel(static_cast<float>(v));
+        return juce::String(v, 2) + " [" + label + "]";
+    };
     orbitSpeedMulLabel_.setText("Speed", juce::dontSendNotification);
     orbitSpeedMulLabel_.setJustificationType(juce::Justification::centredLeft);
     orbitSpeedMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -201,11 +527,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     listenerPitchAtt_ = std::make_unique<SA>(p.apvts, ParamID::LISTENER_PITCH, listenerPitchKnob_);
     listenerRollAtt_  = std::make_unique<SA>(p.apvts, ParamID::LISTENER_ROLL,  listenerRollKnob_);
 
-    // Labels hidden — icons above knobs replace text labels
+    // Labels hidden -icons above knobs replace text labels
     for (auto* lbl : {&listenerYawLabel_, &listenerPitchLabel_, &listenerRollLabel_})
         lbl->setVisible(false);
 
-    // Roll lock toggle — prevents mouse movement from changing roll
+    // Roll lock toggle -prevents mouse movement from changing roll
     rollLockBtn_.setButtonText(juce::String::fromUTF8("\xF0\x9F\x94\x93"));  // 🔓 unlock icon
     rollLockBtn_.setClickingTogglesState(true);
     rollLockBtn_.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
@@ -227,22 +553,22 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(headFollowsToggle_);
     headFollowsAtt_ = std::make_unique<BA>(p.apvts, ParamID::HEAD_FOLLOWS_CAMERA, headFollowsToggle_);
 
-    // Link Listener toggle — hidden, kept for ButtonParameterAttachment (APVTS save/restore)
+    // Link Listener toggle -hidden, kept for ButtonParameterAttachment (APVTS save/restore)
     listenerLinkToggle_.setButtonText("Link Listener");
     listenerLinkToggle_.setClickingTogglesState(true);
-    // NOT added to visible hierarchy — GL view renders the toggle
+    // NOT added to visible hierarchy -GL view renders the toggle
     listenerLinkAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_LINK, listenerLinkToggle_);
 
-    // Pilot toggle — hidden, kept for ButtonParameterAttachment
+    // Pilot toggle -hidden, kept for ButtonParameterAttachment
     listenerPilotToggle_.setButtonText("Pilot");
     listenerPilotToggle_.setClickingTogglesState(true);
-    // NOT added to visible hierarchy — GL view renders the toggle
+    // NOT added to visible hierarchy -GL view renders the toggle
     listenerPilotAtt_ = std::make_unique<BA>(p.apvts, ParamID::LISTENER_PILOT, listenerPilotToggle_);
 
-    // Pilot status label — no longer visible, status text rendered in GL panel
+    // Pilot status label -no longer visible, status text rendered in GL panel
     pilotStatusLabel_.setVisible(false);
 
-    // Non-pilot hint label — shown when linked as non-pilot
+    // Non-pilot hint label -shown when linked as non-pilot
     nonPilotHintLabel_.setText("Listener controls require pilot role",
                                juce::dontSendNotification);
     nonPilotHintLabel_.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::italic)));
@@ -252,7 +578,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     nonPilotHintLabel_.setVisible(false);
     addAndMakeVisible(nonPilotHintLabel_);
 
-    // GL view linking panel callback — sync state when user clicks toggles in GL overlay
+    // GL view linking panel callback -sync state when user clicks toggles in GL overlay
     glView_.onLinkingStateChanged = [this] { updateListenerControlsEnabled(); };
 
     // ----- Walker mode knobs (Listener tab in left column) -----
@@ -341,7 +667,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     sphereRadiusLabel_.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
     addAndMakeVisible(sphereRadiusLabel_);
 
-    // ----- Reverb knobs (Size / Decay / Damping / Wet) — bottom row -----
+    // ----- Reverb knobs (Size / Decay / Damping / Wet) -bottom row -----
     auto configVerbKnob = [this](juce::Slider& s, juce::Label& l, const juce::String& name) {
         s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 52, 14);
@@ -354,7 +680,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     configVerbKnob(verbDecay_,   verbDecayL_,   "Decay");
     configVerbKnob(verbDamping_, verbDampingL_, "Damp");
     configVerbKnob(verbWet_,     verbWetL_,     "Wet");
-
     verbSizeAtt_    = std::make_unique<SA>(p.apvts, ParamID::VERB_SIZE,    verbSize_);
     verbDecayAtt_   = std::make_unique<SA>(p.apvts, ParamID::VERB_DECAY,   verbDecay_);
     verbDampingAtt_ = std::make_unique<SA>(p.apvts, ParamID::VERB_DAMPING, verbDamping_);
@@ -387,7 +712,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     inputGainLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(inputGainLabel_);
 
-    // Snap buttons removed — camera is orbit-only
+    // Snap buttons removed -camera is orbit-only
 
 
     // ----- Dev panel toggle (bottom row) -----
@@ -985,7 +1310,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     configAvatarSlider(headSizeSlider_,       headSizeLabel_,       "Head Size",  0.7f, 1.5f, ap.headSize,       1.0f);
     configAvatarSlider(pupilSizeSlider_,     pupilSizeLabel_,     "Pupil Size", 0.0f, 1.0f, ap.pupilSize,      0.35f);
     // Single "Googly" slider drives both gravity (0→1) and spring (1→0) via exponential curves.
-    // Curve: gravity = t^0.322, spring = (1-t)^0.322  — concentrates resolution around 0.8.
+    // Curve: gravity = t^0.322, spring = (1-t)^0.322  -concentrates resolution around 0.8.
     // Invert to find initial slider position from stored gravity: t = gravity^(1/0.322)
     {
         float initT = std::pow(std::clamp(ap.googlyGravity, 0.0f, 1.0f), 1.0f / 0.322f);
@@ -1037,7 +1362,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         const int aw = customizeContent_.getWidth();
         const int hdrH = 22;
 
-        // Sub-tab header row — mirrors parent Source/Customize styling
+        // Sub-tab header row -mirrors parent Source/Customize styling
         {
             auto hdrBg = juce::Rectangle<int>(0, customizeSubTabHeaderY_, aw, hdrH);
             g.setColour(inactiveColor.withAlpha(0.10f));
@@ -1097,7 +1422,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Default to Environment sub-tab; apply visibility so inactive controls stay hidden
     applyCustomizeSubTabVisibility();
 
-    // Remote button removed — instance list now auto-shown when link listener is active
+    // Remote button removed -instance list now auto-shown when link listener is active
 
     // Wire GL view instance list click callback to remote focus
     glView_.onInstanceClicked = [this](int linkedIndex) {
@@ -1121,7 +1446,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         instanceRows_[i].setVisible(false);
     }
 
-    // Instance list now rendered in GL view overlay — keep row labels hidden
+    // Instance list now rendered in GL view overlay -keep row labels hidden
     instanceRowCount_ = 0;
 
     // Remote status label
@@ -1132,7 +1457,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(remoteStatusLabel_);
     remoteStatusLabel_.setVisible(false);
 
-    // Own-instance name editor (kept functional but hidden — remote UI is now in GL overlay)
+    // Own-instance name editor (kept functional but hidden -remote UI is now in GL overlay)
     instanceNameLabel_.setText("Name:", juce::dontSendNotification);
     instanceNameLabel_.setColour(juce::Label::textColourId,
                                  juce::Colour(lookAndFeel_.currentTheme().bronze));
@@ -1171,7 +1496,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     proc_.getListenerHub().addRemovalCallback(this, [this](SharedListenerHub::Listener* removed) {
         if (remoteFocusProc_ != nullptr &&
             static_cast<SharedListenerHub::Listener*>(remoteFocusProc_) == removed) {
-            // Immediately revert to self — detach all remote attachments
+            // Immediately revert to self -detach all remote attachments
             // before the remote processor's destructor continues
             remoteFocusProc_ = nullptr;
             remoteFocusIndex_ = -1;
@@ -1238,7 +1563,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     verbDecay_.setTooltip("Reverb tail length");
     verbDamping_.setTooltip("HF absorption in reverb tail");
     verbWet_.setTooltip("Reverb wet/dry mix");
-
     // Keyboard shortcut listener (captures Alt+R for module randomization, WASD for movement)
     addKeyListener(this);
     startTimerHz(60);  // 60 Hz poll for WASD movement
@@ -1272,7 +1596,7 @@ XYZPanEditor::~XYZPanEditor()
 }
 
 // ---------------------------------------------------------------------------
-// Layout::compute — single source of structural geometry used by paint + resized
+// Layout::compute -single source of structural geometry used by paint + resized
 // ---------------------------------------------------------------------------
 XYZPanEditor::Layout XYZPanEditor::Layout::compute(int totalW, int totalH)
 {
@@ -1368,7 +1692,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(rect.getBottom() - 1, x0, x1);
     };
 
-    // Left column background (including preset bar) — base darkIron fill, then metallic panels overlay
+    // Left column background (including preset bar) -base darkIron fill, then metallic panels overlay
     g.setColour(juce::Colour(ct.darkIron));
     g.fillRect(0, 0, kLeftColW, lo.bottomY);
 
@@ -1390,7 +1714,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
                            0.38f, 0.50f, 0.09f, 0.028f);
     }
 
-    // Bottom row panels — each slightly different shade
+    // Bottom row panels -each slightly different shade
     {
         const int btmY = lo.bottomY;
         const int btmContentY = btmY + kSectionHdrH;
@@ -1456,7 +1780,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(lo.contentY + kSectionHdrH - 1, 0.0f, static_cast<float>(kLeftColW));
     }
 
-    // Remote focus indicator — colored bar below left column header
+    // Remote focus indicator -colored bar below left column header
     if (remoteFocusIndex_ >= 0) {
         const int barH = 3;
         const int barY = lo.contentY + kSectionHdrH;
@@ -1464,7 +1788,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.fillRect(0, barY, kLeftColW, barH);
     }
 
-    // Bottom row headers — Listener | Stereo Orbit | Reverb (all always visible)
+    // Bottom row headers -Listener | Stereo Orbit | Reverb (all always visible)
     {
         const int hdrY = lo.bottomY;
 
@@ -1493,7 +1817,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
         drawHeader(lo.reverbX, hdrY, kReverbSectionW, "REVERB");
     }
 
-    // ===== DIVIDERS — LEFT COLUMN =====
+    // ===== DIVIDERS -LEFT COLUMN =====
     if (activeLeftTab_ == LeftTab::Source) {
         const int subColW = kLeftColW / 3;
         const int lfoSpeedRowH = 32;
@@ -1515,7 +1839,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
     }
 
-    // ===== DIVIDERS — BOTTOM ROW =====
+    // ===== DIVIDERS -BOTTOM ROW =====
     // Listener section: vertical dividers between Walker X|Y|Z columns + HEAD ORIENTATION divider
     {
         const int lx = lo.listenerX;
@@ -1553,7 +1877,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
                 // Pass 3: highlight catch on upper-left edge (light from above-left)
                 g.setColour(juce::Colour(ct.bronze).withAlpha(0.12f));
                 g.drawText(sym, r.translated(-1, -1), juce::Justification::centred, false);
-                // Pass 4: main groove — bronze tinted, well visible against darkIron
+                // Pass 4: main groove -bronze tinted, well visible against darkIron
                 g.setColour(juce::Colour(ct.bronze).withAlpha(0.28f));
                 g.drawText(sym, r, juce::Justification::centred, false);
             };
@@ -1722,6 +2046,9 @@ void XYZPanEditor::resized()
     if (getWidth() < 200 || getHeight() < 200)
         return;
 
+    if (helpGuide_)
+        helpGuide_->setBounds(getLocalBounds());
+
     auto b = getLocalBounds();
 
     // Carve out bottom row first (full width)
@@ -1748,7 +2075,7 @@ void XYZPanEditor::resized()
         presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
     }
 
-    // Output meter strip — spans left column height only (right edge of window)
+    // Output meter strip -spans left column height only (right edge of window)
     auto meterArea = b.removeFromRight(kMeterW);
     meterArea.setHeight(b.getHeight());  // same height as GL area
     outputMeter_.setBounds(meterArea);
@@ -1756,10 +2083,10 @@ void XYZPanEditor::resized()
     // Remainder = GL view area (full height above bottom row, no preset bar)
     auto glArea = b;
 
-    // Shared structural geometry — used by both left column and bottom row blocks
+    // Shared structural geometry -used by both left column and bottom row blocks
     const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Remote instance list is now rendered as GL view overlay — no left column layout needed
+    // Remote instance list is now rendered as GL view overlay -no left column layout needed
 
     // ===== GL VIEW =====
     glView_.setBounds(glArea);
@@ -1783,7 +2110,7 @@ void XYZPanEditor::resized()
         : defaultPanelW;
     devPanel_.setBounds(glW - panelW, 0, panelW, glH);
 
-    // ===== LEFT COLUMN — SOURCE | CUSTOMIZE tabs =====
+    // ===== LEFT COLUMN -SOURCE | CUSTOMIZE tabs =====
     if (activeLeftTab_ == LeftTab::Source) {
         const int posColW = kLeftColW / 3;
         const int knobH   = 108;
@@ -1822,17 +2149,17 @@ void XYZPanEditor::resized()
             inputGainKnob_.setBounds(gKnobX, knobY, knobSz, knobSz);
             inputGainLabel_.setBounds(col2X, knobY + knobSz, knobColW, labelH_b);
 
-            // Checkboxes — vertically centered on the knobs
+            // Checkboxes -vertically centered on the knobs
             const int boxSz = 22;
             const int cbY = knobY + (knobSz - boxSz) / 2;
 
-            // Binaural (column 3) — checkbox centered, label below
+            // Binaural (column 3) -checkbox centered, label below
             int col3X = knobColW * 3;
             int cbCenterX3 = col3X + (cbColW - boxSz) / 2;
             binauralToggle_.setBounds(cbCenterX3, cbY, boxSz, boxSz);
             binauralLabel_.setBounds(col3X, cbY + boxSz + 2, cbColW, labelH_b);
 
-            // Early Reflections (column 4) — checkbox centered, label below
+            // Early Reflections (column 4) -checkbox centered, label below
             int col4X = knobColW * 3 + cbColW;
             int cbCenterX4 = col4X + (cbColW - boxSz) / 2;
             earlyReflToggle_.setBounds(cbCenterX4, cbY, boxSz, boxSz);
@@ -1874,7 +2201,7 @@ void XYZPanEditor::resized()
         resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
                                      resetBtnW, lfoSpeedRowH - 8);
     } else {
-        // --- CUSTOMIZE TAB — scrollable viewport fills entire left column content ---
+        // --- CUSTOMIZE TAB -scrollable viewport fills entire left column content ---
         customizeViewport_.setBounds(0, lo.leftContentTop, kLeftColW, lo.leftContentH);
 
         const int ow = kLeftColW;
@@ -1906,7 +2233,7 @@ void XYZPanEditor::resized()
             cy += sliderH + gap;
         }
 
-        // Checkboxes — 3 across in a single row (same style as binaural/earlyRefl toggles)
+        // Checkboxes -3 across in a single row (same style as binaural/earlyRefl toggles)
         {
             const int boxSz = 18;
             const int cbGap = 4;
@@ -2041,7 +2368,7 @@ void XYZPanEditor::resized()
             const int posPad = 10;
             const int walkerColW = lw / 3;
 
-            // Walker X/Y/Z — top row of 3 big knobs
+            // Walker X/Y/Z -top row of 3 big knobs
             auto layoutWalkerKnob = [&](juce::Slider& knob, juce::Label& label,
                                         int colX, int top) {
                 label.setBounds(lx + colX, top, walkerColW, bigLabelH);
@@ -2057,7 +2384,7 @@ void XYZPanEditor::resized()
             // Divider between walker knobs and YPR knobs (painted in paint())
             const int dividerY = contentTop + bigLabelH + walkerKnobSz + 4;
 
-            // Yaw/Pitch/Roll — vertical stack: label (14) + knob (46) + textBelow (14)
+            // Yaw/Pitch/Roll -vertical stack: label (14) + knob (46) + textBelow (14)
             const int yprLabelH   = 14;
             const int yprKnobSz   = 46;
             const int yprTextH    = 14;
@@ -2077,7 +2404,7 @@ void XYZPanEditor::resized()
             layoutYPRKnob(listenerPitchKnob_, yprColW,        yprTop);
             layoutYPRKnob(listenerRollKnob_,  yprColW * 2,    yprTop);
 
-            // Roll lock button — to the right of "Roll" label text
+            // Roll lock button -to the right of "Roll" label text
             {
                 const int lockSz = 24;
                 const int rollColX = yprColW * 2;
@@ -2099,7 +2426,7 @@ void XYZPanEditor::resized()
             // Non-pilot hint label below toggles
             nonPilotHintLabel_.setBounds(lx, toggleY + bigToggleH + 2, lw, 16);
 
-            // Link / Pilot toggles moved to GL view linking panel — no setBounds here
+            // Link / Pilot toggles moved to GL view linking panel -no setBounds here
         }
 
         // --- STEREO ORBIT SECTION (always visible, right of listener) ---
@@ -2113,7 +2440,7 @@ void XYZPanEditor::resized()
 
             // Top row: [label Width knob] [label Phase knob] [label Offset knob] [Face Observer]
             // Evenly distributed across full panel width.
-            const int heroSz = 54;    // Width knob — slightly larger than siblings
+            const int heroSz = 54;    // Width knob -slightly larger than siblings
             const int knobSz = 50;    // Phase / Offset
             const int topRowH = heroSz;
             const int topCtrlH = topRowH + divGap;
@@ -2147,22 +2474,22 @@ void XYZPanEditor::resized()
 
                 int cx = ox + pad;
 
-                // Width — label left, hero knob right
+                // Width -label left, hero knob right
                 stereoWidthLabel_.setBounds(cx, rowY + (topRowH - 14) / 2, widthLabelW, 14);
                 stereoWidthKnob_.setBounds(cx + widthLabelW, rowY + (topRowH - heroSz) / 2, heroSz, heroSz);
                 cx += widthCellW + gap;
 
-                // Phase — label left, knob right
+                // Phase -label left, knob right
                 orbitPhaseLabel_.setBounds(cx, rowY + (topRowH - 14) / 2, knobLabelW, 14);
                 orbitPhaseKnob_.setBounds(cx + knobLabelW, rowY + (topRowH - knobSz) / 2, knobSz, knobSz);
                 cx += phaseCellW + gap;
 
-                // Offset — label left, knob right
+                // Offset -label left, knob right
                 orbitOffsetLabel_.setBounds(cx, rowY + (topRowH - 14) / 2, knobLabelW, 14);
                 orbitOffsetKnob_.setBounds(cx + knobLabelW, rowY + (topRowH - knobSz) / 2, knobSz, knobSz);
                 cx += offsetCellW + gap;
 
-                // Face Observer — checkbox + label, vertically centered
+                // Face Observer -checkbox + label, vertically centered
                 const int cbCenterY = rowY + (topRowH - boxSz) / 2;
                 faceListenerToggle_.setBounds(cx, cbCenterY, boxSz, boxSz);
                 faceListenerLabel_.setBounds(cx + boxSz + cbGap, cbCenterY - 2, cbLabelW, boxSz + 4);
@@ -2174,7 +2501,7 @@ void XYZPanEditor::resized()
             orbitXZLFO_.setBounds(ox + stripW,     lfoTop, stripW,     lfoH);
             orbitYZLFO_.setBounds(ox + stripW * 2, lfoTop, lastStripW, lfoH);
 
-            // Speed + Reset — just below LFOs (tight)
+            // Speed + Reset -just below LFOs (tight)
             {
                 const int sy = lfoTop + lfoH + 2;
                 const int resetBtnW = 44;
@@ -2206,7 +2533,6 @@ void XYZPanEditor::resized()
             placeVerbKnob(verbDecay_,   verbDecayL_,   1, 0);
             placeVerbKnob(verbDamping_, verbDampingL_, 0, 1);
             placeVerbKnob(verbWet_,     verbWetL_,     1, 1);
-
             // DEV toggle below 2×2 grid
             const int devY = contentTop + 2 * cellH;
             const int devBtnW = 48;
@@ -2217,7 +2543,7 @@ void XYZPanEditor::resized()
 }
 
 // ---------------------------------------------------------------------------
-// updateSnapButtonStates — set toggle state so AlchemyLookAndFeel renders
+// updateSnapButtonStates -set toggle state so AlchemyLookAndFeel renders
 // the active snap button with gold border and inactive ones with bronze.
 // ---------------------------------------------------------------------------
 void XYZPanEditor::updateSnapButtonStates()
@@ -2228,7 +2554,7 @@ void XYZPanEditor::updateSnapButtonStates()
 }
 
 // ---------------------------------------------------------------------------
-// updateOrbitEnabled — grey out orbit controls when Width is 0
+// updateOrbitEnabled -grey out orbit controls when Width is 0
 // ---------------------------------------------------------------------------
 void XYZPanEditor::updateOrbitEnabled()
 {
@@ -2247,7 +2573,7 @@ void XYZPanEditor::updateOrbitEnabled()
 }
 
 // ---------------------------------------------------------------------------
-// applyCurrentTheme — push current theme to LookAndFeel + GL view + repaint
+// applyCurrentTheme -push current theme to LookAndFeel + GL view + repaint
 // ---------------------------------------------------------------------------
 void XYZPanEditor::applyCurrentTheme()
 {
@@ -2272,7 +2598,7 @@ void XYZPanEditor::applyCurrentTheme()
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(theme.lfoAccent));
 
-    // Yaw/Pitch/Roll knobs — per-axis colors (matching source X/Y/Z)
+    // Yaw/Pitch/Roll knobs -per-axis colors (matching source X/Y/Z)
     listenerYawKnob_.setColour(juce::Slider::rotarySliderFillColourId,
                                 juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
     listenerPitchKnob_.setColour(juce::Slider::rotarySliderFillColourId,
@@ -2280,7 +2606,7 @@ void XYZPanEditor::applyCurrentTheme()
     listenerRollKnob_.setColour(juce::Slider::rotarySliderFillColourId,
                                  juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
 
-    // Walker knobs — per-axis colors (matching source X/Y/Z)
+    // Walker knobs -per-axis colors (matching source X/Y/Z)
     walkerXKnob_.setColour(juce::Slider::rotarySliderFillColourId,
                             juce::Colour(xyzpan::AlchemyLookAndFeel::kCinnabar));
     walkerYKnob_.setColour(juce::Slider::rotarySliderFillColourId,
@@ -2310,7 +2636,7 @@ void XYZPanEditor::applyCurrentTheme()
 }
 
 // ---------------------------------------------------------------------------
-// applyPreferencesToUI — reload prefs from disk and sync all customize controls
+// applyPreferencesToUI -reload prefs from disk and sync all customize controls
 // (called when another instance bumps the shared prefs version counter).
 // ---------------------------------------------------------------------------
 void XYZPanEditor::applyPreferencesToUI()
@@ -2339,7 +2665,7 @@ void XYZPanEditor::applyPreferencesToUI()
     clusterCountSlider_.setVisible(isCluster);
     clusterCountLabel_.setVisible(isCluster);
 
-    // Wave sliders are APVTS-bound, so they sync via the hub link mechanism — no
+    // Wave sliders are APVTS-bound, so they sync via the hub link mechanism -no
     // direct set needed here. (They're plugin parameters, not UserPreferences.)
 
     pushAvatarToGL();
@@ -2360,7 +2686,7 @@ void XYZPanEditor::applyPreferencesToUI()
     hatTypeCombo_.setSelectedId(ap.hatType + 1, juce::dontSendNotification);
     hatSizeSlider_.setValue(ap.hatSize, juce::dontSendNotification);
 
-    // Color swatches — theme default when avatar color == 0, otherwise custom
+    // Color swatches -theme default when avatar color == 0, otherwise custom
     const auto& thm = userPrefs_->activeTheme();
     auto swatchCol = [&](uint32_t avCol, const glm::vec3& themeCol) {
         return avCol != 0
@@ -2378,7 +2704,7 @@ void XYZPanEditor::applyPreferencesToUI()
 }
 
 // ---------------------------------------------------------------------------
-// pushAvatarToGL — send current avatar params to GL view
+// pushAvatarToGL -send current avatar params to GL view
 // ---------------------------------------------------------------------------
 void XYZPanEditor::pushAvatarToGL()
 {
@@ -2405,7 +2731,7 @@ void XYZPanEditor::syncEyeSpacingSliderMode(bool isCyclops)
 }
 
 // ---------------------------------------------------------------------------
-// setActiveLeftTab — switch left column between Source and Customize
+// setActiveLeftTab -switch left column between Source and Customize
 // ---------------------------------------------------------------------------
 void XYZPanEditor::setActiveLeftTab(LeftTab tab)
 {
@@ -2509,7 +2835,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     const bool isPilot  = proc_.isLinkedPilot();
     const bool canControl = !linked || isPilot;
 
-    // Pilot toggle only meaningful when linked — disable and uncheck when not linked
+    // Pilot toggle only meaningful when linked -disable and uncheck when not linked
     listenerPilotToggle_.setEnabled(linked);
     if (!linked && listenerPilotToggle_.getToggleState())
         listenerPilotToggle_.setToggleState(false, juce::dontSendNotification);
@@ -2549,7 +2875,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
 // Source|Customize toggled by left column tab; Listener + Orbit always visible in bottom row.
 
 // ---------------------------------------------------------------------------
-// mouseDown — tab header click detection + last-clicked zone tracking
+// mouseDown -tab header click detection + last-clicked zone tracking
 // ---------------------------------------------------------------------------
 void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
 {
@@ -2563,7 +2889,7 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
 
     const auto lo = Layout::compute(getWidth(), getHeight());
 
-    // Hit-test left column tab header — "Source | Customize"
+    // Hit-test left column tab header -"Source | Customize"
     if (pos.y >= lo.contentY && pos.y < lo.contentY + kSectionHdrH && pos.x < kLeftColW) {
         const int halfW = kLeftColW / 2;
         if (pos.x < halfW)
@@ -2579,7 +2905,7 @@ void XYZPanEditor::mouseDown(const juce::MouseEvent& e)
 }
 
 // ---------------------------------------------------------------------------
-// generateNoiseTexture — static 256x256 greyscale procedural noise
+// generateNoiseTexture -static 256x256 greyscale procedural noise
 // ---------------------------------------------------------------------------
 juce::Image XYZPanEditor::generateNoiseTexture(int size)
 {
@@ -2601,7 +2927,7 @@ juce::Image XYZPanEditor::generateNoiseTexture(int size)
 }
 
 // ---------------------------------------------------------------------------
-// keyPressed — WASD movement + Alt+R randomization
+// keyPressed -WASD movement + Alt+R randomization
 // ---------------------------------------------------------------------------
 bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 {
@@ -2659,7 +2985,7 @@ bool XYZPanEditor::keyPressed(const juce::KeyPress& key, juce::Component*)
 }
 
 // ---------------------------------------------------------------------------
-// endWasdGestureIfActive — close automation gesture on walker + roll params
+// endWasdGestureIfActive -close automation gesture on walker + roll params
 // ---------------------------------------------------------------------------
 void XYZPanEditor::endWasdGestureIfActive()
 {
@@ -2672,11 +2998,11 @@ void XYZPanEditor::endWasdGestureIfActive()
 }
 
 // ---------------------------------------------------------------------------
-// timerCallback — WASD movement: move walker in the direction the head is looking
+// timerCallback -WASD movement: move walker in the direction the head is looking
 // ---------------------------------------------------------------------------
 void XYZPanEditor::timerCallback()
 {
-    // Cross-instance preferences sync — reload + refresh UI if another instance
+    // Cross-instance preferences sync -reload + refresh UI if another instance
     // persisted a change since we last checked.
     {
         const uint32_t curVer = proc_.getListenerHub()
@@ -2695,7 +3021,7 @@ void XYZPanEditor::timerCallback()
     glView_.setSphereKnobActive(sphereRadiusKnob_.isMouseOver(true)
                                 || sphereRadiusKnob_.isMouseButtonDown());
 
-    // Validate remote focus — hubAlive_ check is lock-free (every frame),
+    // Validate remote focus -hubAlive_ check is lock-free (every frame),
     // full linked-index check is throttled to ~6Hz to avoid unnecessary spinlock traffic.
     if (remoteFocusProc_ != nullptr) {
         auto* remoteListener = static_cast<SharedListenerHub::Listener*>(remoteFocusProc_);
@@ -2708,7 +3034,7 @@ void XYZPanEditor::timerCallback()
         }
     }
 
-    // Rebuild instance list at ~6Hz (every 10th frame) — linked count
+    // Rebuild instance list at ~6Hz (every 10th frame) -linked count
     // rarely changes and the removal callback handles urgent detach.
     if (++selectorRebuildCounter_ >= 10) {
         selectorRebuildCounter_ = 0;
@@ -2806,7 +3132,7 @@ void XYZPanEditor::timerCallback()
         // Engine coords: X=right, Y=forward, Z=up
         // Yaw around Z, pitch around X, roll around Y (forward axis)
 
-        // Forward (Y-axis column of R — roll doesn't change gaze direction)
+        // Forward (Y-axis column of R -roll doesn't change gaze direction)
         const float fwdX = -sinY * cosP;
         const float fwdY =  cosY * cosP;
         const float fwdZ =  sinP;
@@ -2837,7 +3163,7 @@ void XYZPanEditor::timerCallback()
 }
 
 // ---------------------------------------------------------------------------
-// classifyRandZone — determine which UI module a point falls in
+// classifyRandZone -determine which UI module a point falls in
 // ---------------------------------------------------------------------------
 XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) const
 {
@@ -2862,7 +3188,7 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
             return RandZone::CustHats;
         }
 
-        // Source tab — check individual LFO strips
+        // Source tab -check individual LFO strips
         auto inBounds = [&](const LFOStrip& strip) {
             auto b = strip.getBounds();
             return b.contains(x, y);
@@ -2901,7 +3227,7 @@ XYZPanEditor::RandZone XYZPanEditor::classifyRandZone(juce::Point<int> pos) cons
 }
 
 // ---------------------------------------------------------------------------
-// randomizeAPVTSParam — set a single APVTS parameter to a random value
+// randomizeAPVTSParam -set a single APVTS parameter to a random value
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeAPVTSParam(const char* paramID, float min, float max)
 {
@@ -2918,7 +3244,7 @@ void XYZPanEditor::randomizeAPVTSParam(const char* paramID, float min, float max
 }
 
 // ---------------------------------------------------------------------------
-// randomizeLFOStrip — randomize all params for one LFO strip (rate, depth,
+// randomizeLFOStrip -randomize all params for one LFO strip (rate, depth,
 //                     phase, smooth, waveform, beat_div, tempo_sync)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeLFOStrip(const juce::String& prefix)
@@ -2947,7 +3273,7 @@ void XYZPanEditor::randomizeLFOStrip(const juce::String& prefix)
 }
 
 // ---------------------------------------------------------------------------
-// randomizePosition — X, Y, Z knobs only
+// randomizePosition -X, Y, Z knobs only
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizePosition()
 {
@@ -2957,7 +3283,7 @@ void XYZPanEditor::randomizePosition()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeStereoOrbit — Width, Offset, Phase + Face Listener toggle
+// randomizeStereoOrbit -Width, Offset, Phase + Face Listener toggle
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeStereoOrbit()
 {
@@ -2978,7 +3304,7 @@ void XYZPanEditor::randomizeStereoOrbit()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeReverb — Size, Decay, Damping, Wet
+// randomizeReverb -Size, Decay, Damping, Wet
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeReverb()
 {
@@ -2989,7 +3315,7 @@ void XYZPanEditor::randomizeReverb()
 }
 
 // ---------------------------------------------------------------------------
-// randomizePerspective — Yaw, Pitch, Roll + Walker X, Y, Z
+// randomizePerspective -Yaw, Pitch, Roll + Walker X, Y, Z
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizePerspective()
 {
@@ -3002,7 +3328,7 @@ void XYZPanEditor::randomizePerspective()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeCustColors — Head color + Head Size + Elongation
+// randomizeCustColors -Head color + Head Size + Elongation
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeCustColors()
 {
@@ -3026,7 +3352,7 @@ void XYZPanEditor::randomizeCustColors()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeCustEyes — eyeColor, eyeType, eyeSize, eyeSpacing,
+// randomizeCustEyes -eyeColor, eyeType, eyeSize, eyeSpacing,
 //                     pupilSize, googly
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeCustEyes()
@@ -3066,7 +3392,7 @@ void XYZPanEditor::randomizeCustEyes()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeCustEars — earType, earSize, earRotation
+// randomizeCustEars -earType, earSize, earRotation
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeCustEars()
 {
@@ -3090,7 +3416,7 @@ void XYZPanEditor::randomizeCustEars()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeCustNose — noseColor, noseType, noseSize
+// randomizeCustNose -noseColor, noseType, noseSize
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeCustNose()
 {
@@ -3114,7 +3440,7 @@ void XYZPanEditor::randomizeCustNose()
 }
 
 // ---------------------------------------------------------------------------
-// randomizeCustHats — hatColor, hatType, hatSize
+// randomizeCustHats -hatColor, hatType, hatSize
 // ---------------------------------------------------------------------------
 void XYZPanEditor::randomizeCustHats()
 {
@@ -3138,7 +3464,7 @@ void XYZPanEditor::randomizeCustHats()
 }
 
 // ---------------------------------------------------------------------------
-// Group reset helpers — restore init defaults for a customize panel section
+// Group reset helpers -restore init defaults for a customize panel section
 // ---------------------------------------------------------------------------
 
 static void setApvtsParam(juce::AudioProcessorValueTreeState& apvts, const char* id, float value)
@@ -3214,7 +3540,7 @@ void XYZPanEditor::resetAvatarAll()
 }
 
 // ---------------------------------------------------------------------------
-// Remote instance focus — instance selector + attachment rebinding
+// Remote instance focus -instance selector + attachment rebinding
 // ---------------------------------------------------------------------------
 
 void XYZPanEditor::rebuildInstanceList()
@@ -3387,7 +3713,7 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
 }
 
 // ---------------------------------------------------------------------------
-// rebuildPresetCombo — repopulate from PresetManager (factory + user)
+// rebuildPresetCombo -repopulate from PresetManager (factory + user)
 // ---------------------------------------------------------------------------
 void XYZPanEditor::rebuildPresetCombo()
 {

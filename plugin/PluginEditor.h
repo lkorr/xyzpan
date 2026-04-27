@@ -101,6 +101,7 @@ private:
     xyzpan::AlchemyLookAndFeel lookAndFeel_;
     std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
     juce::TextButton tooltipToggle_{"?"};
+    std::unique_ptr<juce::Component> helpGuide_;  // HelpGuideOverlay (defined in .cpp)
 
     // GL spatial view (fills majority of window)
     xyzpan::XYZPanGLView glView_;

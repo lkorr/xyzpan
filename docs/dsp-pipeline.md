@@ -173,10 +173,11 @@ flowchart TD
     %% ═══════════════════════════════════════
     subgraph AUX["AUX REVERB SEND  optional bus"]
         direction TB
+        AUX_MIX["Input Mix<br/><i>dry signal + ER reverb accum x +12dB</i>"]:::reverb
         AUX_DELAY["Pre-Delay L/R<br/><i>distance-scaled</i><br/><i>max: verbPreDelayMax ms</i>"]:::reverb
         AUX_GAIN["Proximity Gain Boost<br/><i>1.0 to auxMaxBoostLin +6dB</i><br/><i>driven by: distance fraction</i>"]:::reverb
         AUX_OUT["Aux Output L/R<br/><i>clamped +/-2.0</i>"]:::reverb
-        AUX_DELAY --> AUX_GAIN --> AUX_OUT
+        AUX_MIX --> AUX_DELAY --> AUX_GAIN --> AUX_OUT
     end
 
     %% ═══════════════════════════════════════
@@ -209,10 +210,11 @@ flowchart TD
         REV_PRE --> REV_INPUT --> REV_TANK --> REV_TAPS --> REV_DC --> REV_WET
     end
 
-    %% Connect to reverb
+    %% Connect to reverb and aux
     STEREO_COMBINE --> AUX
     STEREO_COMBINE --> REVERB
     ER_SEND -.->|"erReverbAccum<br/>feeds reverb input"| REVERB
+    ER_SEND -.->|"erReverbAccum x +12dB<br/>feeds aux send input"| AUX_MIX
 
     %% ═══════════════════════════════════════
     %% OUTPUT
@@ -266,7 +268,7 @@ flowchart TD
 3. **Chest/Floor are PARALLEL to distance** -- body reflections branch from the binaural output and merge back before distance processing
 4. **ER has a DUAL output** -- direct reflections add to main signal, reverb send feeds the FDN separately
 5. **Stereo nodes are FULLY INDEPENDENT** -- when width > 0, the entire per-node chain (doppler - binaural - body - distance - ER) runs twice with independent positions, then combined at -3dB
-6. **Reverb input = dry signal + ER reverb accumulator** -- the FDN receives both the processed direct signal and the ER reverb send
+6. **Reverb input = dry signal + ER reverb accumulator** -- the FDN receives both the processed direct signal and the ER reverb send. The aux send also receives the ER reverb accumulator at +12 dB
 7. **All per-block transcendentals** (sin, cos, pow, sqrt, tan, exp) computed once per block, not per sample
 8. **binauralEnabled toggles ITD only** — when OFF, ITD delay goes to zero and a hardpan compensation stage adds up to 4dB far-ear attenuation. All other binaural cues (head shadow, ILD, near-field, pinna EQ, combs, rear shadow) remain fully active. Individual bypass toggles control each stage independently
 
