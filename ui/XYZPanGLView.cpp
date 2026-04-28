@@ -789,7 +789,8 @@ void XYZPanGLView::renderOpenGL()
 
             const glm::vec3 fPos(sp.x, sp.z, -sp.y);
             const float fsr = sp.sphereRadius * 0.25f;
-            if (showSphere) {
+            const bool showForeignSphere = fs.showSphere || sphereKnobActive;
+            if (showForeignSphere) {
                 drawSphere(fPos, fsr, color, 0.03f);
                 drawSphereWireframe(fsr, color, 0.02f, fPos);
             }

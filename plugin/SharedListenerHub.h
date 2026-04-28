@@ -36,6 +36,9 @@ public:
         // Returns this instance's source shape enum value (for cross-instance rendering).
         virtual int getSourceShape() const { return 0; }
 
+        // Whether this instance's audible radius sphere should be visible.
+        virtual bool getShowSphere() const { return true; }
+
         // Safety flag — cleared by the instance before destruction begins.
         // The hub checks this under the spinlock before dispatching to skip
         // any instance whose destructor is in progress on another thread.
@@ -285,6 +288,7 @@ public:
             out[count] = buf->read();
             out[count].colorIndex = colorIdx++;
             out[count].sourceShape = l->getSourceShape();
+            out[count].showSphere = l->getShowSphere();
             out[count].isPilot = isPilotFlags[i];
             auto nameStr = l->getInstanceName();
             if (nameStr.isEmpty())

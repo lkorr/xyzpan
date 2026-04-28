@@ -151,6 +151,7 @@ Remote Focus:
 Switch to the Customize tab (right half of Source column header) to modify the 3D scene appearance:
 
 Environment: Sky type, ground type, ground height/hills. Toggle axis labels and the direction arrow on or off. Change the color theme of the entire plugin.
+Show Sphere Radius - Show/hide the audible radius sphere around the source node. Only affects this instance. Alt+click to toggle across all linked instances at once.
 Wave: Sound wave visualization (count, opacity, speed, blend mode)
 Avatar: Full avatar customization (body type, head shape/size/color, eyes, ears, nose, hats - each with style, size, and color options)
 
@@ -168,7 +169,7 @@ Undo / Redo - Step through parameter change history
 Ctrl+Z / Cmd+Z - Undo
 Ctrl+Shift+Z / Cmd+Y - Redo
 Alt+R - Randomize controls under mouse cursor
-Alt+Click Binaural/ER - Toggle for all linked instances
+Alt+Click Binaural/ER/Sphere - Toggle for all linked instances
 WASD + Q/E + Space/Ctrl - Move listener (when WASD enabled))";
 
 class HelpGuideContent : public juce::Component {
@@ -1048,9 +1049,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     showAudibleSphereToggle_.setButtonText("");
     showAudibleSphereToggle_.setClickingTogglesState(true);
+    showAudibleSphereToggle_.onClick = [this] {
+        if (juce::ModifierKeys::currentModifiers.isAltDown())
+            broadcastToggleToLinked(ParamID::SHOW_AUDIBLE_SPHERE, showAudibleSphereToggle_.getToggleState());
+    };
     showAudibleSphereAtt_ = std::make_unique<BA>(p.apvts, ParamID::SHOW_AUDIBLE_SPHERE, showAudibleSphereToggle_);
     customizeContent_.addAndMakeVisible(showAudibleSphereToggle_);
-    setupCbLabel(showAudibleSphereLabel_, "Sphere");
+    setupCbLabel(showAudibleSphereLabel_, "Show Sphere Radius");
 
     // ----- Customize tab: wave count slider (coupled to intensity) -----
     waveCountSlider_.setSliderStyle(juce::Slider::LinearHorizontal);

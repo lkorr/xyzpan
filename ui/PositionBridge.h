@@ -71,6 +71,7 @@ struct ForeignSourceSnapshot {
     int   colorIndex  = 0;
     int   sourceShape = 0;     // SourceShape enum value for visual rendering
     bool  isPilot     = false;  // true if this source's instance is the current pilot
+    bool  showSphere  = true;   // per-instance audible sphere visibility
     char  name[32]    = {};  // null-terminated instance name for GL labels
 };
 

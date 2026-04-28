@@ -239,6 +239,10 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(listenerLinkParam  != nullptr);
     jassert(listenerPilotParam != nullptr);
 
+    // Audible sphere visibility (queried by linked instances)
+    showAudibleSphereParam_ = apvts.getRawParameterValue(ParamID::SHOW_AUDIBLE_SPHERE);
+    jassert(showAudibleSphereParam_ != nullptr);
+
     // Walker — movable listener position (always active)
     walkerXParam     = apvts.getRawParameterValue(ParamID::WALKER_X);
     walkerYParam     = apvts.getRawParameterValue(ParamID::WALKER_Y);

@@ -243,6 +243,9 @@ private:
     // Source shape for cross-instance rendering (set by editor from SceneParams)
     std::atomic<int> sourceShape_{0};
 
+    // Audible sphere visibility (queried by linked instances via getShowSphere)
+    std::atomic<float>* showAudibleSphereParam_ = nullptr;
+
     // Listener link across instances
     std::atomic<float>* listenerLinkParam         = nullptr;
     std::atomic<float>* listenerPilotParam        = nullptr;
@@ -260,6 +263,7 @@ private:
     juce::AudioProcessor* getProcessor() override { return this; }
     juce::String getInstanceName() const override { return instanceName_; }
     int getSourceShape() const override { return sourceShape_.load(std::memory_order_relaxed); }
+    bool getShowSphere() const override { return showAudibleSphereParam_ && showAudibleSphereParam_->load(std::memory_order_relaxed) >= 0.5f; }
 
     // juce::Timer override — collects foreign source positions for GL view
     void timerCallback() override;
