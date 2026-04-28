@@ -85,6 +85,8 @@ namespace ParamID {
     constexpr const char* LFO_Z_TEMPO_SYNC = "lfo_z_tempo_sync";
     // XYZ LFO speed multiplier (shared across all XYZ LFOs)
     constexpr const char* LFO_SPEED_MUL   = "lfo_speed_mul";
+    // XYZ LFO depth multiplier (shared across all XYZ LFOs)
+    constexpr const char* LFO_DEPTH_MUL   = "lfo_depth_mul";
     // Beat division per axis (float multiplier: 0.25=1/4, 0.5=1/2, 1.0=quarter, 2.0=half, 4.0=whole)
     constexpr const char* LFO_X_BEAT_DIV  = "lfo_x_beat_div";
     constexpr const char* LFO_Y_BEAT_DIV  = "lfo_y_beat_div";
@@ -128,6 +130,7 @@ namespace ParamID {
     constexpr const char* STEREO_ORBIT_XZ_TEMPO_SYNC = "stereo_orbit_xz_tempo_sync";
     constexpr const char* STEREO_ORBIT_YZ_TEMPO_SYNC = "stereo_orbit_yz_tempo_sync";
     constexpr const char* STEREO_ORBIT_SPEED_MUL     = "stereo_orbit_speed_mul";
+    constexpr const char* STEREO_ORBIT_DEPTH_MUL     = "stereo_orbit_depth_mul";
 
     // Dev panel: Presence shelf
     constexpr const char* PRESENCE_SHELF_FREQ_HZ = "presence_shelf_freq_hz";
@@ -259,6 +262,8 @@ namespace ParamID {
     constexpr const char* BYPASS_DOPPLER     = "bypass_doppler";
     constexpr const char* BYPASS_AIR_ABS     = "bypass_air_abs";
     constexpr const char* BYPASS_REVERB      = "bypass_reverb";
+
+
 // Params that presets should recall (user-facing knobs).
 // Dev panel / virtualizer tuning params are intentionally excluded so that
 // preset switching never overwrites the user's custom virtualizer config.
@@ -279,7 +284,7 @@ inline const std::unordered_set<std::string>& getExposedParamIDs()
         // LFO Z
         LFO_Z_RATE, LFO_Z_DEPTH, LFO_Z_PHASE, LFO_Z_WAVEFORM,
         LFO_Z_SMOOTH, LFO_Z_TEMPO_SYNC, LFO_Z_BEAT_DIV,
-        LFO_SPEED_MUL,
+        LFO_SPEED_MUL, LFO_DEPTH_MUL,
         // Stereo
         STEREO_WIDTH, STEREO_FACE_LISTENER, STEREO_ORBIT_PHASE, STEREO_ORBIT_OFFSET,
         // Stereo orbit LFOs — XY
@@ -294,7 +299,7 @@ inline const std::unordered_set<std::string>& getExposedParamIDs()
         STEREO_ORBIT_YZ_WAVEFORM, STEREO_ORBIT_YZ_RATE, STEREO_ORBIT_YZ_BEAT_DIV,
         STEREO_ORBIT_YZ_PHASE, STEREO_ORBIT_YZ_RESET_PHASE,
         STEREO_ORBIT_YZ_DEPTH, STEREO_ORBIT_YZ_SMOOTH, STEREO_ORBIT_YZ_TEMPO_SYNC,
-        STEREO_ORBIT_SPEED_MUL,
+        STEREO_ORBIT_SPEED_MUL, STEREO_ORBIT_DEPTH_MUL,
         // Early reflections (user-facing)
         ER_ENABLED, ER_ROOM_SIZE, ER_DAMPING, ER_LEVEL, ER_REVERB_SEND, ER_GAIN_DB,
         // Distance delay (creative effect)

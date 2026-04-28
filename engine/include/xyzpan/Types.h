@@ -140,6 +140,7 @@ struct EngineParams {
     // Phase 5: LFO extensions
     // =========================================================================
     float lfoSpeedMul    = kLFOSpeedMulDefault;
+    float lfoDepthMul    = 1.0f;
     bool  lfoXResetPhase = false;
     bool  lfoYResetPhase = false;
     bool  lfoZResetPhase = false;
@@ -189,6 +190,7 @@ struct EngineParams {
     bool  stereoOrbitXZTempoSync  = false;
     bool  stereoOrbitYZTempoSync  = false;
     float stereoOrbitSpeedMul     = 1.0f;
+    float stereoOrbitDepthMul     = 1.0f;
 
     // =========================================================================
     // Dev tool: Test tone oscillator

@@ -117,6 +117,18 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize, const Engine
     lfoDepthXSmooth_.reset(0.0f);
     lfoDepthYSmooth_.reset(0.0f);
     lfoDepthZSmooth_.reset(0.0f);
+    lfoDepthMulSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    lfoDepthMulSmooth_.reset(1.0f);
+    blkPosXSmooth_.prepare(150.0f, sr);
+    blkPosYSmooth_.prepare(150.0f, sr);
+    blkPosZSmooth_.prepare(150.0f, sr);
+    blkPosXSmooth_.reset(initialParams.x);
+    blkPosYSmooth_.reset(initialParams.y);
+    blkPosZSmooth_.reset(initialParams.z);
+    prevSmoothBaseX_ = initialParams.x;
+    prevSmoothBaseY_ = initialParams.y;
+    prevSmoothBaseZ_ = initialParams.z;
+    firstSetParams_ = true;
 
     // -------------------------------------------------------------------------
     // Stereo source node splitting — R channel pipeline + orbit LFOs
@@ -136,6 +148,8 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize, const Engine
     orbitDepthXYSmooth_.reset(0.0f);
     orbitDepthXZSmooth_.reset(0.0f);
     orbitDepthYZSmooth_.reset(0.0f);
+    orbitDepthMulSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    orbitDepthMulSmooth_.reset(1.0f);
     stereoWidthSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     stereoWidthSmooth_.reset(0.0f);
 
@@ -193,6 +207,17 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize, const Engine
 // ============================================================================
 
 void XYZPanEngine::setParams(const EngineParams& params) {
+    // Snap position smoothers on first call so they don't ramp from prepare()'s
+    // default position to the actual starting position.
+    if (firstSetParams_) {
+        firstSetParams_ = false;
+        blkPosXSmooth_.reset(params.x);
+        blkPosYSmooth_.reset(params.y);
+        blkPosZSmooth_.reset(params.z);
+        prevSmoothBaseX_ = params.x;
+        prevSmoothBaseY_ = params.y;
+        prevSmoothBaseZ_ = params.z;
+    }
     currentParams = params;
 }
 
@@ -469,12 +494,36 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     dist_.setBlockConstants(sr, currentParams.distDelayMaxMs);
     distR_.setBlockConstants(sr, currentParams.distDelayMaxMs);
 
-    // Block-start position: peek LFO at block start (no phase advance) so
+    // Smooth base position (without LFO) — 150ms time constant absorbs mouse-drag
+    // jitter for block-rate EQ targets and per-sample interpolation base.
+    // LFO modulation adds on top per-sample, unaffected by the smoothing.
+    blkPosXSmooth_.converge(currentParams.x, numSamples);
+    blkPosYSmooth_.converge(currentParams.y, numSamples);
+    blkPosZSmooth_.converge(currentParams.z, numSamples);
+    const float smoothBaseX = blkPosXSmooth_.current();
+    const float smoothBaseY = blkPosYSmooth_.current();
+    const float smoothBaseZ = blkPosZSmooth_.current();
+
+    // Per-sample interpolation from previous block's position to current.
+    // When LFOs are inactive, modX/modY/modZ would otherwise be block-constant,
+    // causing staircase stepping in binaural/distance/doppler targets.  Linear
+    // interpolation makes the mouse path produce the same smooth per-sample
+    // position changes that the LFO path naturally produces.
+    const float posInterpInc = 1.0f / static_cast<float>(numSamples);
+    const float posDeltaX = smoothBaseX - prevSmoothBaseX_;
+    const float posDeltaY = smoothBaseY - prevSmoothBaseY_;
+    const float posDeltaZ = smoothBaseZ - prevSmoothBaseZ_;
+    prevSmoothBaseX_ = smoothBaseX;
+    prevSmoothBaseY_ = smoothBaseY;
+    prevSmoothBaseZ_ = smoothBaseZ;
+
+    // Block-start position: smoothed base + LFO peek (no phase advance) so
     // per-block filter coefficients track the modulated position.  LFO delta
     // within one 64-128 sample block is negligible for coefficient purposes.
-    float blkX = currentParams.x + lfoX_.peek() * lfoDepthXSmooth_.current();
-    float blkY = currentParams.y + lfoY_.peek() * lfoDepthYSmooth_.current();
-    float blkZ = currentParams.z + lfoZ_.peek() * lfoDepthZSmooth_.current();
+    const float blkDepthMul = lfoDepthMulSmooth_.current();
+    float blkX = smoothBaseX + lfoX_.peek() * lfoDepthXSmooth_.current() * blkDepthMul;
+    float blkY = smoothBaseY + lfoY_.peek() * lfoDepthYSmooth_.current() * blkDepthMul;
+    float blkZ = smoothBaseZ + lfoZ_.peek() * lfoDepthZSmooth_.current() * blkDepthMul;
 
     // Walker mode: subtract listener position before head rotation so all
     // downstream DSP (pinna, presence, distance, air absorption) operates
@@ -793,9 +842,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const float blkOrbitRawXY = orbitLfoXY_.peek();
         const float blkOrbitRawXZ = orbitLfoXZ_.peek();
         const float blkOrbitRawYZ = orbitLfoYZ_.peek();
-        const float blkOrbitDepXY = orbitDepthXYSmooth_.current();
-        const float blkOrbitDepXZ = orbitDepthXZSmooth_.current();
-        const float blkOrbitDepYZ = orbitDepthYZSmooth_.current();
+        const float blkOrbitDMul  = orbitDepthMulSmooth_.current();
+        const float blkOrbitDepXY = orbitDepthXYSmooth_.current() * blkOrbitDMul;
+        const float blkOrbitDepXZ = orbitDepthXZSmooth_.current() * blkOrbitDMul;
+        const float blkOrbitDepYZ = orbitDepthYZSmooth_.current() * blkOrbitDMul;
 
         const float blkOrbitAngleXY = blkOrbitRawXY * blkOrbitDepXY * kPI;
         const float blkLAngle = blkOrbitAngleXY + blkSmoothedOffset;
@@ -1005,23 +1055,16 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     std::uniform_real_distribution<float> noiseDist(-1.0f, 1.0f);
     const float verbPreDelayMaxSamp = currentParams.verbPreDelayMax * sr / 1000.0f;
 
-    // Pre-compute position-derived values for zero-LFO fast path
-    // Use listener-relative position for distance (walker mode)
-    const float relPosX = currentParams.x - currentParams.listenerX;
-    const float relPosY = currentParams.y - currentParams.listenerY;
-    const float relPosZ = currentParams.z - currentParams.listenerZ;
-    const float blkRawModDist = std::sqrt(relPosX * relPosX
-                                        + relPosY * relPosY
-                                        + relPosZ * relPosZ);
-    // blkRawModDist is reused in the zero-LFO path below
 
     // Pre-converge block-constant smoothers analytically (O(1) instead of O(numSamples))
     lfoDepthXSmooth_.converge(currentParams.lfoXDepth, numSamples);
     lfoDepthYSmooth_.converge(currentParams.lfoYDepth, numSamples);
     lfoDepthZSmooth_.converge(currentParams.lfoZDepth, numSamples);
+    lfoDepthMulSmooth_.converge(currentParams.lfoDepthMul, numSamples);
     orbitDepthXYSmooth_.converge(currentParams.stereoOrbitXYDepth, numSamples);
     orbitDepthXZSmooth_.converge(currentParams.stereoOrbitXZDepth, numSamples);
     orbitDepthYZSmooth_.converge(currentParams.stereoOrbitYZDepth, numSamples);
+    orbitDepthMulSmooth_.converge(currentParams.stereoOrbitDepthMul, numSamples);
     stereoWidthSmooth_.converge(currentParams.stereoWidth, numSamples);
     binauralBlendSmooth_.converge(currentParams.binauralEnabled ? 1.0f : 0.0f, numSamples);
 
@@ -1103,36 +1146,37 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         }
 
         // ----------------------------------------------------------------
-        // Position LFOs
+        // Position LFOs + per-sample base interpolation
         // ----------------------------------------------------------------
-        const float depthX = lfoDepthXSmooth_.current();
-        const float depthY = lfoDepthYSmooth_.current();
-        const float depthZ = lfoDepthZSmooth_.current();
+        const float depthMul = lfoDepthMulSmooth_.current();
+        const float depthX = lfoDepthXSmooth_.current() * depthMul;
+        const float depthY = lfoDepthYSmooth_.current() * depthMul;
+        const float depthZ = lfoDepthZSmooth_.current() * depthMul;
 
-        // Detect if any LFO depth is active -- when all are zero, position is block-constant
-        const bool lfoActive = depthX > 1e-7f || depthY > 1e-7f || depthZ > 1e-7f;
+        // Per-sample interpolated base position (prev→current across block)
+        const float posT = static_cast<float>(i + 1) * posInterpInc;
+        const float interpBaseX = smoothBaseX - posDeltaX * (1.0f - posT);
+        const float interpBaseY = smoothBaseY - posDeltaY * (1.0f - posT);
+        const float interpBaseZ = smoothBaseZ - posDeltaZ * (1.0f - posT);
 
         float modX, modY, modZ;
         float lfoValX, lfoValY, lfoValZ;
-        if (lfoActive) {
-            lfoValX = lfoX_.tick() * depthX;
-            lfoValY = lfoY_.tick() * depthY;
-            lfoValZ = lfoZ_.tick() * depthZ;
-            modX = currentParams.x + lfoValX;
-            modY = currentParams.y + lfoValY;
-            modZ = currentParams.z + lfoValZ;
-        } else {
-            // Still tick LFOs to keep phase accumulation consistent (no jump when depth goes non-zero)
-            lfoX_.tick(); lfoY_.tick(); lfoZ_.tick();
-            lfoValX = 0.f; lfoValY = 0.f; lfoValZ = 0.f;
-            // Use block-start values -- position is constant when LFO depths are all zero
-            modX = currentParams.x;
-            modY = currentParams.y;
-            modZ = currentParams.z;
-        }
+        // Always tick LFOs to keep phase accumulation consistent
+        const float rawLfoX = lfoX_.tick();
+        const float rawLfoY = lfoY_.tick();
+        const float rawLfoZ = lfoZ_.tick();
+        lfoValX = rawLfoX * depthX;
+        lfoValY = rawLfoY * depthY;
+        lfoValZ = rawLfoZ * depthZ;
+        modX = interpBaseX + lfoValX;
+        modY = interpBaseY + lfoValY;
+        modZ = interpBaseZ + lfoValZ;
 
-        // Save world-space position for bridge (source sphere stays at world position)
-        const float worldModX = modX, worldModY = modY, worldModZ = modZ;
+        // Save world-space position for bridge — use unsmoothed position so the GL
+        // source sphere tracks the mouse instantly (audio uses smoothed position).
+        const float worldModX = currentParams.x + lfoValX;
+        const float worldModY = currentParams.y + lfoValY;
+        const float worldModZ = currentParams.z + lfoValZ;
 
         // Walker mode: subtract listener position (listener-relative for DSP)
         modX -= currentParams.listenerX;
@@ -1161,13 +1205,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         }
 
         // Position-dependent targets from listener-relative center position
-        // rawModDist uses listener-relative (rotation-invariant) distance
-        float rawModDist;
-        if (lfoActive) {
-            rawModDist    = dsp::fastSqrt(modX * modX + modY * modY + modZ * modZ);
-        } else {
-            rawModDist    = blkRawModDist;
-        }
+        // Always per-sample now (position interpolates across block)
+        const float rawModDist = dsp::fastSqrt(modX * modX + modY * modY + modZ * modZ);
         const float modDist     = std::max(rawModDist, kMinDistance);
         const float maxRange    = std::max(currentParams.sphereRadius - kMinDistance, 0.001f);
         const float modDistFrac = std::clamp((modDist - kMinDistance) / maxRange, 0.0f, 1.0f);
@@ -1195,9 +1234,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         const bool stereoActive = smoothedWidth > 0.001f && inputR != nullptr;
 
         // Orbit LFO ticks — always tick to keep phase accumulation consistent
-        const float orbitDepXY = orbitDepthXYSmooth_.current();
-        const float orbitDepXZ = orbitDepthXZSmooth_.current();
-        const float orbitDepYZ = orbitDepthYZSmooth_.current();
+        const float orbitDMul  = orbitDepthMulSmooth_.current();
+        const float orbitDepXY = orbitDepthXYSmooth_.current() * orbitDMul;
+        const float orbitDepXZ = orbitDepthXZSmooth_.current() * orbitDMul;
+        const float orbitDepYZ = orbitDepthYZSmooth_.current() * orbitDMul;
         const float orbitRawXY = orbitLfoXY_.tick();
         const float orbitRawXZ = orbitLfoXZ_.tick();
         const float orbitRawYZ = orbitLfoYZ_.tick();
@@ -1215,13 +1255,17 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         float erReverbAccumL = 0.0f, erReverbAccumR = 0.0f;
 
         if (stereoActive) {
-            // Compute L/R node positions in world space, then rotate for DSP
+            // Compute L/R node positions from smoothed base (for DSP) and raw (for GL)
             const float halfSpread = smoothedWidth * kStereoMaxSpreadRadius;
 
-            // Spread direction: perpendicular to listener→source in XY plane (world-relative,
-            // NOT head-rotated — offsets are added to world-space positions)
-            const float relX = worldModX - currentParams.listenerX;
-            const float relY = worldModY - currentParams.listenerY;
+            // Smoothed world-space position (for DSP node placement)
+            const float smoothWorldX = interpBaseX + lfoValX;
+            const float smoothWorldY = interpBaseY + lfoValY;
+            const float smoothWorldZ = interpBaseZ + lfoValZ;
+
+            // Spread direction: perpendicular to listener→source in XY plane
+            const float relX = smoothWorldX - currentParams.listenerX;
+            const float relY = smoothWorldY - currentParams.listenerY;
             const float relHorizMag = dsp::fastSqrt(relX * relX + relY * relY);
             float spreadX, spreadY;
             if (currentParams.stereoFaceListener && relHorizMag > 1e-5f) {
@@ -1296,24 +1340,25 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                 rOffY = tmpY; rOffZ = tmpZ;
             }
 
-            // Final node positions (world space — for bridge and distance)
-            const float lNodeX = worldModX + lOffX;
-            const float lNodeY = worldModY + lOffY;
-            const float lNodeZ = worldModZ + lOffZ;
-            const float rNodeX = worldModX + rOffX;
-            const float rNodeY = worldModY + rOffY;
-            const float rNodeZ = worldModZ + rOffZ;
+            // DSP node positions (smoothed base — for distance, doppler, binaural)
+            const float lDspWorldX = smoothWorldX + lOffX;
+            const float lDspWorldY = smoothWorldY + lOffY;
+            const float lDspWorldZ = smoothWorldZ + lOffZ;
+            const float rDspWorldX = smoothWorldX + rOffX;
+            const float rDspWorldY = smoothWorldY + rOffY;
+            const float rDspWorldZ = smoothWorldZ + rOffZ;
 
-            // Store world-space for position bridge
-            lastStereoNodes_ = { lNodeX, lNodeY, lNodeZ, rNodeX, rNodeY, rNodeZ, smoothedWidth };
+            // GL bridge — unsmoothed positions for visual tracking
+            lastStereoNodes_ = { worldModX + lOffX, worldModY + lOffY, worldModZ + lOffZ,
+                                 worldModX + rOffX, worldModY + rOffY, worldModZ + rOffZ, smoothedWidth };
 
             // Listener-relative node positions for DSP (distance, doppler, ER)
-            const float lRelX = lNodeX - currentParams.listenerX;
-            const float lRelY = lNodeY - currentParams.listenerY;
-            const float lRelZ = lNodeZ - currentParams.listenerZ;
-            const float rRelX = rNodeX - currentParams.listenerX;
-            const float rRelY = rNodeY - currentParams.listenerY;
-            const float rRelZ = rNodeZ - currentParams.listenerZ;
+            const float lRelX = lDspWorldX - currentParams.listenerX;
+            const float lRelY = lDspWorldY - currentParams.listenerY;
+            const float lRelZ = lDspWorldZ - currentParams.listenerZ;
+            const float rRelX = rDspWorldX - currentParams.listenerX;
+            const float rRelY = rDspWorldY - currentParams.listenerY;
+            const float rRelZ = rDspWorldZ - currentParams.listenerZ;
 
             // Rotate listener-relative positions into head frame for binaural DSP
             float dspLX = lRelX, dspLY = lRelY, dspLZ = lRelZ;
@@ -1546,9 +1591,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
                     const float eSP = interpRotation ? rSinP : sinP;
                     const float eCR = interpRotation ? rCosR : cosR;
                     const float eSR = interpRotation ? rSinR : sinR;
-                    const float mRelX = worldModX - currentParams.listenerX;
-                    const float mRelY = worldModY - currentParams.listenerY;
-                    const float mRelZ = worldModZ - currentParams.listenerZ;
+                    // Per-sample interpolated pre-rotation listener-relative (ER does its own rotation)
+                    const float mRelX = (interpBaseX + lfoValX) - currentParams.listenerX;
+                    const float mRelY = (interpBaseY + lfoValY) - currentParams.listenerY;
+                    const float mRelZ = (interpBaseZ + lfoValZ) - currentParams.listenerZ;
                     auto erResult = er_.processSample(dopplerInputMono,
                         mRelX, mRelY, mRelZ,
                         currentParams.listenerX, currentParams.listenerY, currentParams.listenerZ,
@@ -1666,6 +1712,13 @@ void XYZPanEngine::reset() {
     lfoDepthXSmooth_.reset(0.0f);
     lfoDepthYSmooth_.reset(0.0f);
     lfoDepthZSmooth_.reset(0.0f);
+    lfoDepthMulSmooth_.reset(1.0f);
+    blkPosXSmooth_.reset(currentParams.x);
+    blkPosYSmooth_.reset(currentParams.y);
+    blkPosZSmooth_.reset(currentParams.z);
+    prevSmoothBaseX_ = currentParams.x;
+    prevSmoothBaseY_ = currentParams.y;
+    prevSmoothBaseZ_ = currentParams.z;
 
     // Stereo source node splitting
     srcR_.reset();
@@ -1679,6 +1732,7 @@ void XYZPanEngine::reset() {
     orbitDepthXYSmooth_.reset(0.0f);
     orbitDepthXZSmooth_.reset(0.0f);
     orbitDepthYZSmooth_.reset(0.0f);
+    orbitDepthMulSmooth_.reset(1.0f);
     stereoWidthSmooth_.reset(0.0f);
 
     // Angular smoothers for circular phase/offset

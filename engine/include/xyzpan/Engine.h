@@ -144,6 +144,17 @@ private:
     // =========================================================================
     dsp::LFO lfoX_, lfoY_, lfoZ_;
     dsp::OnePoleSmooth lfoDepthXSmooth_, lfoDepthYSmooth_, lfoDepthZSmooth_;
+    dsp::OnePoleSmooth lfoDepthMulSmooth_;
+
+    // Block-position smoothers — 150ms smooth for block-rate EQ targets.
+    dsp::OnePoleSmooth blkPosXSmooth_, blkPosYSmooth_, blkPosZSmooth_;
+
+    // Per-sample position interpolation — previous block's smoothed base position.
+    // When LFOs are inactive, linearly interpolate from prev→current across the
+    // block so per-sample binaural/distance/doppler targets change continuously
+    // instead of stepping at block boundaries.
+    float prevSmoothBaseX_ = 0.0f, prevSmoothBaseY_ = 1.0f, prevSmoothBaseZ_ = 0.0f;
+    bool  firstSetParams_ = true;
 
     // Dev tool: test tone oscillator state — persistent across blocks
     float        sawPhase_ = 0.0f;  // [0, 1)
@@ -168,6 +179,7 @@ private:
     // Stereo orbit LFOs (3 planes) + depth smoothers
     dsp::LFO orbitLfoXY_, orbitLfoXZ_, orbitLfoYZ_;
     dsp::OnePoleSmooth orbitDepthXYSmooth_, orbitDepthXZSmooth_, orbitDepthYZSmooth_;
+    dsp::OnePoleSmooth orbitDepthMulSmooth_;
 
     // =========================================================================
     // Early Reflections (Image Source Method)

@@ -179,6 +179,7 @@ private:
     std::atomic<float>* lfoYBeatDivParam  = nullptr;
     std::atomic<float>* lfoZBeatDivParam  = nullptr;
     std::atomic<float>* lfoSpeedMulParam  = nullptr;
+    std::atomic<float>* lfoDepthMulParam  = nullptr;
 
     // Stereo source node splitting
     std::atomic<float>* stereoWidthParam        = nullptr;
@@ -218,6 +219,7 @@ private:
     std::atomic<float>* orbitXZTempoSyncParam = nullptr;
     std::atomic<float>* orbitYZTempoSyncParam = nullptr;
     std::atomic<float>* orbitSpeedMulParam    = nullptr;
+    std::atomic<float>* orbitDepthMulParam    = nullptr;
 
     // Listener head orientation
     std::atomic<float>* listenerYawParam          = nullptr;

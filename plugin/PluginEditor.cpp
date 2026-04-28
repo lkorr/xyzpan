@@ -13,9 +13,6 @@ namespace {
 static const char* kHelpGuideText =
 R"(XYZPAN GUIDE
 
-OVERVIEW
-XYZPan is a 3D spatial audio panner. Place a sound source in 3D space around a virtual listener. Uses a combination of binaural + spectral cues, and room acoustics to imitate the sound of objects moving in 3 dimensions around a listener's head.
-
 
 --- MAIN OPTIONS ---
 
@@ -53,6 +50,9 @@ Smooth - Output smoothing (lowpass filter on LFO output, 0-300ms)
 LFO Speed - Master speed multiplier for all 3 LFOs.
   Free-running: continuous Hz multiplier (0-5x)
   When one of your LFOs are set to 'sync', the LFO speed will be quantized to the nearest clean ratios to that number ([1/4], [3/2], etc)
+
+LFO Depth - Master depth multiplier for all 3 LFOs. Scales X/Y/Z depths proportionally.
+  0 = silence (all LFO modulation off), 1 = normal, 2 = double depth
 
 Reset - Reset all XYZ LFO phases to zero
 
@@ -100,6 +100,7 @@ Three orbit LFO strips (XY, XZ, YZ planes):
   Controls identical to position LFOs (shape, depth, rate/sync, phase, smooth)
 
 Orbit Speed - Master speed multiplier for all 3 orbit LFOs. Same quantized sync behavior as LFO Speed.
+Orbit Depth - Master depth multiplier for all 3 orbit LFOs. Scales XY/XZ/YZ depths proportionally (0 = off, 1 = normal, 2 = double).
 Reset - Reset all orbit LFO phases to zero
 
 
@@ -136,7 +137,6 @@ Pilot system:
   Non-pilot instances follow the pilot's listener automatically
   Non-pilots' listener knobs and WASD/Head Follows are disabled
   Click "Pilot" checkbox to claim pilot role from another instance
-  If the pilot instance is removed, the next linked instance auto-promotes
 
 Remote Focus:
   When linked, click an instance name in the 3D view panel to remote-control that instance's source, LFOs, reverb, etc. This means you can position and configure every sound object in your scene from one plugin window.
@@ -384,7 +384,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // ----- GL view -added FIRST so devPanel_ (added later) paints on top of it -----
     addAndMakeVisible(glView_);
     glView_.setAccumulator(&listenerAccum_);
-
     // Sync accumulator from restored APVTS state so mouse-drag doesn't
     // overwrite saved rotation with identity on first interaction.
     listenerAccum_.syncFromRPY(
@@ -407,6 +406,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     xAtt_ = std::make_unique<SA>(p.apvts, ParamID::X, xKnob_);
     yAtt_ = std::make_unique<SA>(p.apvts, ParamID::Y, yKnob_);
     zAtt_ = std::make_unique<SA>(p.apvts, ParamID::Z, zKnob_);
+
 
     xLabel_.setText("X", juce::dontSendNotification);
     yLabel_.setText("Y", juce::dontSendNotification);
@@ -444,6 +444,21 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     lfoSpeedMulLabel_.setJustificationType(juce::Justification::centredLeft);
     lfoSpeedMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(lfoSpeedMulLabel_);
+
+    // ----- XYZ LFO Depth multiplier slider (below speed slider) -----
+    lfoDepthMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
+    lfoDepthMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
+    lfoDepthMulKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                               juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
+    lfoDepthMulKnob_.textFromValueFunction = [](double v) {
+        return juce::String(v, 2) + "x";
+    };
+    addAndMakeVisible(lfoDepthMulKnob_);
+    lfoDepthMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::LFO_DEPTH_MUL, lfoDepthMulKnob_);
+    lfoDepthMulLabel_.setText("LFO Depth", juce::dontSendNotification);
+    lfoDepthMulLabel_.setJustificationType(juce::Justification::centredLeft);
+    lfoDepthMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    addAndMakeVisible(lfoDepthMulLabel_);
 
     // ----- Reset XYZ LFO Phases button -----
     resetXYZPhasesBtn_.onClick = [this] {
@@ -503,8 +518,21 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     orbitOffsetAtt_  = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_OFFSET,   orbitOffsetKnob_);
     orbitSpeedMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_SPEED_MUL, orbitSpeedMulKnob_);
 
+    // Orbit depth multiplier slider (below speed)
+    orbitDepthMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
+    orbitDepthMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
+    orbitDepthMulKnob_.textFromValueFunction = [](double v) {
+        return juce::String(v, 2) + "x";
+    };
+    orbitDepthMulLabel_.setText("Depth", juce::dontSendNotification);
+    orbitDepthMulLabel_.setJustificationType(juce::Justification::centredLeft);
+    orbitDepthMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    addAndMakeVisible(&orbitDepthMulKnob_);
+    addAndMakeVisible(&orbitDepthMulLabel_);
+    orbitDepthMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_DEPTH_MUL, orbitDepthMulKnob_);
+
     // Hero styling for all orbit sliders
-    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitOffsetKnob_, &orbitPhaseKnob_})
+    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitDepthMulKnob_, &orbitOffsetKnob_, &orbitPhaseKnob_})
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
 
@@ -742,6 +770,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
     addAndMakeVisible(devToggle_);
 
+
     // Dev panel: child of glView_ (not the editor) so it composites on top of the
     // OpenGL surface. Bounds are set in resized() in glView_-local coordinates.
     glView_.addChildComponent(devPanel_);
@@ -787,8 +816,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(presetSaveBtn_);
     presetSaveBtn_.onClick = [this]() {
         auto userDir = PresetManager::getUserPresetDir();
+        if (!userDir.isDirectory())
+            userDir.createDirectory();
+        auto defaultFile = userDir.getChildFile("My Preset.xml");
         auto chooser = std::make_shared<juce::FileChooser>(
-            "Save Preset", userDir, "*.xml");
+            "Save Preset", defaultFile, "*.xml");
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
             [this, chooser](const juce::FileChooser& fc) {
                 auto file = fc.getResult();
@@ -1566,8 +1598,10 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     stereoWidthKnob_.setTooltip("Split input into orbiting L/R nodes (0 = mono)");
     orbitPhaseKnob_.setTooltip("L/R orbit starting phase");
     orbitSpeedMulKnob_.setTooltip("Orbit LFO speed multiplier");
+    orbitDepthMulKnob_.setTooltip("Master depth multiplier for all orbit LFOs");
     orbitOffsetKnob_.setTooltip("Angular offset between L and R orbits");
     lfoSpeedMulKnob_.setTooltip("Position LFO speed multiplier");
+    lfoDepthMulKnob_.setTooltip("Master depth multiplier for all position LFOs");
     resetXYZPhasesBtn_.setTooltip("Reset position LFO phases");
     resetOrbitPhasesBtn_.setTooltip("Reset orbit LFO phases");
     devToggle_.setTooltip("Advanced DSP tuning panel");
@@ -1845,23 +1879,23 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // ===== DIVIDERS -LEFT COLUMN =====
     if (activeLeftTab_ == LeftTab::Source) {
         const int subColW = kLeftColW / 3;
-        const int lfoSpeedRowH = 32;
+        const int lfoMasterRowsH = 52;  // 26 * 2 — speed + depth rows
 
         // Horizontal separator between Options and Source sections
         // (painted by the metallic panel treatment above, just draw dividers below it)
         const int optionsSepY = lo.leftContentTop + kOptionsH;
 
-        // Vertical dividers between X | Y | Z sub-columns (source section to speed row)
+        // Vertical dividers between X | Y | Z sub-columns (source section to master rows)
         const float divTop = static_cast<float>(optionsSepY);
-        const int lfoSpeedSepY = lo.bottomY - lfoSpeedRowH;
-        const float divBot = static_cast<float>(lfoSpeedSepY);
+        const int lfoMasterSepY = lo.bottomY - lfoMasterRowsH;
+        const float divBot = static_cast<float>(lfoMasterSepY);
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.5f));
         g.drawVerticalLine(subColW,     divTop, divBot);
         g.drawVerticalLine(subColW * 2, divTop, divBot);
 
-        // Thin bronze separator above LFO Speed slider row
+        // Thin bronze separator above LFO Speed/Depth slider rows
         g.setColour(juce::Colour(ct.bronze).withAlpha(0.4f));
-        g.drawHorizontalLine(lfoSpeedSepY, 0.0f, static_cast<float>(kLeftColW));
+        g.drawHorizontalLine(lfoMasterSepY, 0.0f, static_cast<float>(kLeftColW));
     }
 
     // ===== DIVIDERS -BOTTOM ROW =====
@@ -2140,7 +2174,8 @@ void XYZPanEditor::resized()
         const int posColW = kLeftColW / 3;
         const int knobH   = 108;
         const int posPad  = 10;
-        const int lfoSpeedRowH = 32;
+        const int lfoSliderRowH = 26;       // per-row height for speed + depth sliders
+        const int lfoMasterRowsH = lfoSliderRowH * 2;  // total height for both rows
 
         // --- OPTIONS SECTION (top of left column) ---
         // Single horizontal row: 3 knobs + 2 checkboxes
@@ -2193,7 +2228,7 @@ void XYZPanEditor::resized()
 
         // --- SOURCE POSITION SECTION (below options) ---
         const int sourceTop = optTop + kOptionsH;
-        const int posSectionBottom = lo.bottomY - lfoSpeedRowH;
+        const int posSectionBottom = lo.bottomY - lfoMasterRowsH;
 
         const int bigLabelH = 20;
         auto layoutPosCol = [&](juce::Slider& knob, juce::Label& label, LFOStrip& lfo,
@@ -2214,17 +2249,24 @@ void XYZPanEditor::resized()
         layoutPosCol(zKnob_, zLabel_, zLFO_,
                      posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
 
-        // LFO Speed slider row (bottom of source section)
+        // LFO Speed + Depth slider rows (bottom of source section)
         const int speedY = posSectionBottom;
+        const int depthY = speedY + lfoSliderRowH;
         const int speedLabelW = 70;
         const int resetBtnW = 44;
         const int resetBtnGap = 4;
-        lfoSpeedMulLabel_.setBounds(kPadding, speedY + 4, speedLabelW, lfoSpeedRowH - 8);
-        lfoSpeedMulKnob_.setBounds(kPadding + speedLabelW, speedY + 4,
+        const int sliderInset = 2;
+        lfoSpeedMulLabel_.setBounds(kPadding, speedY + sliderInset, speedLabelW, lfoSliderRowH - sliderInset * 2);
+        lfoSpeedMulKnob_.setBounds(kPadding + speedLabelW, speedY + sliderInset,
                                    kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                   lfoSpeedRowH - 8);
-        resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + 4,
-                                     resetBtnW, lfoSpeedRowH - 8);
+                                   lfoSliderRowH - sliderInset * 2);
+        resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + sliderInset,
+                                     resetBtnW, lfoSliderRowH - sliderInset * 2);
+        const int speedSliderW = kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap;
+        lfoDepthMulLabel_.setBounds(kPadding, depthY + sliderInset, speedLabelW, lfoSliderRowH - sliderInset * 2);
+        lfoDepthMulKnob_.setBounds(kPadding + speedLabelW, depthY + sliderInset,
+                                   speedSliderW,
+                                   lfoSliderRowH - sliderInset * 2);
     } else {
         // --- CUSTOMIZE TAB -scrollable viewport fills entire left column content ---
         customizeViewport_.setBounds(0, lo.leftContentTop, kLeftColW, lo.leftContentH);
@@ -2470,8 +2512,9 @@ void XYZPanEditor::resized()
             const int topRowH = heroSz;
             const int topCtrlH = topRowH + divGap;
 
-            const int speedRowH = sliderH + 4;  // speed row just below LFOs
-            const int lfoH = contentH - topCtrlH - divGap - speedRowH;
+            const int masterRowH = sliderH + 2;  // per-row height for speed + depth
+            const int masterRowsH = masterRowH * 2 + 2;  // total for both rows + gap
+            const int lfoH = contentH - topCtrlH - divGap - masterRowsH;
             const int maxStripW = 185;
             const int lfoTotalW = juce::jmin(ow, maxStripW * 3);
             const int stripW = lfoTotalW / 3;
@@ -2526,17 +2569,18 @@ void XYZPanEditor::resized()
             orbitXZLFO_.setBounds(ox + stripW,     lfoTop, stripW,     lfoH);
             orbitYZLFO_.setBounds(ox + stripW * 2, lfoTop, lastStripW, lfoH);
 
-            // Speed + Reset -just below LFOs (tight)
+            // Speed + Depth + Reset rows — just below LFOs (tight)
             {
                 const int sy = lfoTop + lfoH + 2;
+                const int dy = sy + masterRowH;
                 const int resetBtnW = 44;
                 const int resetBtnGap = 4;
+                const int sliderW = ow - pad * 2 - labelW - resetBtnW - resetBtnGap;
                 orbitSpeedMulLabel_.setBounds(ox + pad, sy, labelW, sliderH);
-                orbitSpeedMulKnob_.setBounds(ox + pad + labelW, sy,
-                                              ow - pad * 2 - labelW - resetBtnW - resetBtnGap,
-                                              sliderH);
-                resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, sy,
-                                               resetBtnW, sliderH);
+                orbitSpeedMulKnob_.setBounds(ox + pad + labelW, sy, sliderW, sliderH);
+                resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, sy, resetBtnW, sliderH);
+                orbitDepthMulLabel_.setBounds(ox + pad, dy, labelW, sliderH);
+                orbitDepthMulKnob_.setBounds(ox + pad + labelW, dy, sliderW, sliderH);
             }
 
         }
@@ -2586,6 +2630,7 @@ void XYZPanEditor::updateOrbitEnabled()
     const bool active = stereoWidthKnob_.getValue() > 0.0;
 
     for (auto* c : {(juce::Component*)&orbitSpeedMulKnob_,  (juce::Component*)&orbitSpeedMulLabel_,
+                    (juce::Component*)&orbitDepthMulKnob_,   (juce::Component*)&orbitDepthMulLabel_,
                     (juce::Component*)&orbitOffsetKnob_,     (juce::Component*)&orbitOffsetLabel_,
                     (juce::Component*)&orbitPhaseKnob_,      (juce::Component*)&orbitPhaseLabel_,
                     (juce::Component*)&faceListenerToggle_,  (juce::Component*)&faceListenerLabel_,
@@ -2612,8 +2657,8 @@ void XYZPanEditor::applyCurrentTheme()
     zKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
 
     // Re-apply hero slider styling (brightened LFO accent)
-    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitOffsetKnob_,
-                        &orbitPhaseKnob_, &lfoSpeedMulKnob_})
+    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitDepthMulKnob_, &orbitOffsetKnob_,
+                        &orbitPhaseKnob_, &lfoSpeedMulKnob_, &lfoDepthMulKnob_})
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(theme.lfoAccentBright));
 
@@ -2776,6 +2821,8 @@ void XYZPanEditor::setActiveLeftTab(LeftTab tab)
     zLFO_.setVisible(source);
     lfoSpeedMulKnob_.setVisible(source);
     lfoSpeedMulLabel_.setVisible(source);
+    lfoDepthMulKnob_.setVisible(source);
+    lfoDepthMulLabel_.setVisible(source);
     resetXYZPhasesBtn_.setVisible(source);
 
     // Options controls (part of source tab)
@@ -3710,7 +3757,9 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
     orbitPhaseAtt_    = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_PHASE, orbitPhaseKnob_);
     orbitOffsetAtt_   = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_OFFSET, orbitOffsetKnob_);
     orbitSpeedMulAtt_ = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_SPEED_MUL, orbitSpeedMulKnob_);
+    orbitDepthMulAtt_ = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_DEPTH_MUL, orbitDepthMulKnob_);
     lfoSpeedMulAtt_   = std::make_unique<SA>(target, ParamID::LFO_SPEED_MUL, lfoSpeedMulKnob_);
+    lfoDepthMulAtt_   = std::make_unique<SA>(target, ParamID::LFO_DEPTH_MUL, lfoDepthMulKnob_);
     sphereRadiusAtt_  = std::make_unique<SA>(target, ParamID::SPHERE_RADIUS, sphereRadiusKnob_);
     verbSizeAtt_      = std::make_unique<SA>(target, ParamID::VERB_SIZE, verbSize_);
     verbDecayAtt_     = std::make_unique<SA>(target, ParamID::VERB_DECAY, verbDecay_);

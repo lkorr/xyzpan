@@ -329,6 +329,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_SPEED_MUL, 1}, "LFO Speed Mul",
         NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f, xyzpan::kLFOSpeedMulSkew), xyzpan::kLFOSpeedMulDefault));
 
+    // XYZ LFO depth multiplier (shared across all XYZ LFOs)
+    // Range 0-2: 0=silence, 1=normal, 2=double. Skew midpoint at 1.0.
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_DEPTH_MUL, 1}, "LFO Depth Mul",
+        NR(0.0f, 2.0f, 0.001f, 0.585f), 1.0f));
+
     // -------------------------------------------------------------------------
     // Stereo source node splitting
     // -------------------------------------------------------------------------
@@ -424,6 +429,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         juce::ParameterID{ParamID::STEREO_ORBIT_YZ_TEMPO_SYNC, 1}, "Orbit YZ Tempo Sync", false));
     layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_SPEED_MUL, 1}, "Orbit Speed Mul",
         NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f, xyzpan::kLFOSpeedMulSkew), xyzpan::kLFOSpeedMulDefault));
+
+    // Stereo orbit depth multiplier (shared across all orbit LFOs)
+    layout.add(std::make_unique<APF>(PID{ParamID::STEREO_ORBIT_DEPTH_MUL, 1}, "Orbit Depth Mul",
+        NR(0.0f, 2.0f, 0.001f, 0.585f), 1.0f));
 
     // -------------------------------------------------------------------------
     // Dev Panel: Presence shelf tuning

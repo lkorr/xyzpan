@@ -153,13 +153,18 @@ private:
     juce::Label  lfoSpeedMulLabel_;
     std::unique_ptr<SA> lfoSpeedMulAtt_;
 
+    // XYZ LFO depth multiplier slider (below speed slider)
+    juce::Slider lfoDepthMulKnob_;
+    juce::Label  lfoDepthMulLabel_;
+    std::unique_ptr<SA> lfoDepthMulAtt_;
+
     // Reset All LFO Phases button (position section, next to LFO Speed)
     juce::TextButton resetXYZPhasesBtn_{"Reset"};
 
     // Stereo orbit controls
-    juce::Slider stereoWidthKnob_, orbitPhaseKnob_, orbitOffsetKnob_, orbitSpeedMulKnob_;
-    juce::Label  stereoWidthLabel_, orbitPhaseLabel_, orbitOffsetLabel_, orbitSpeedMulLabel_;
-    std::unique_ptr<SA> stereoWidthAtt_, orbitPhaseAtt_, orbitOffsetAtt_, orbitSpeedMulAtt_;
+    juce::Slider stereoWidthKnob_, orbitPhaseKnob_, orbitOffsetKnob_, orbitSpeedMulKnob_, orbitDepthMulKnob_;
+    juce::Label  stereoWidthLabel_, orbitPhaseLabel_, orbitOffsetLabel_, orbitSpeedMulLabel_, orbitDepthMulLabel_;
+    std::unique_ptr<SA> stereoWidthAtt_, orbitPhaseAtt_, orbitOffsetAtt_, orbitSpeedMulAtt_, orbitDepthMulAtt_;
 
     // Reset All Orbit LFO Phases button (orbit section)
     juce::TextButton resetOrbitPhasesBtn_{"Reset"};
@@ -279,6 +284,8 @@ private:
     // Dev panel toggle (bottom row) + overlay panel
     juce::TextButton devToggle_{"DEV"};
     DevPanelComponent devPanel_;
+
+
 
     // Preset controls -- top bar
     juce::ComboBox presetCombo_;

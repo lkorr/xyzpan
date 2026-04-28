@@ -228,6 +228,7 @@ public:
     // Set the quaternion accumulator for head-follows mode (owned by PluginEditor).
     void setAccumulator(xyzpan::ListenerQuatAccumulator* a) { accumulator_ = a; }
 
+
     // Callback when user clicks an instance in the overlay list.
     // Parameter: linked index (-1 = self, 0+ = foreign source index)
     std::function<void(int)> onInstanceClicked;

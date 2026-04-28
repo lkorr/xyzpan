@@ -149,6 +149,8 @@ XYZPanProcessor::XYZPanProcessor()
 
     lfoSpeedMulParam = apvts.getRawParameterValue(ParamID::LFO_SPEED_MUL);
     jassert(lfoSpeedMulParam != nullptr);
+    lfoDepthMulParam = apvts.getRawParameterValue(ParamID::LFO_DEPTH_MUL);
+    jassert(lfoDepthMulParam != nullptr);
 
     // Stereo source node splitting
     stereoWidthParam        = apvts.getRawParameterValue(ParamID::STEREO_WIDTH);
@@ -217,11 +219,13 @@ XYZPanProcessor::XYZPanProcessor()
     orbitXZTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_XZ_TEMPO_SYNC);
     orbitYZTempoSyncParam = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_YZ_TEMPO_SYNC);
     orbitSpeedMulParam    = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_SPEED_MUL);
+    orbitDepthMulParam    = apvts.getRawParameterValue(ParamID::STEREO_ORBIT_DEPTH_MUL);
 
     jassert(orbitXYTempoSyncParam != nullptr);
     jassert(orbitXZTempoSyncParam != nullptr);
     jassert(orbitYZTempoSyncParam != nullptr);
     jassert(orbitSpeedMulParam    != nullptr);
+    jassert(orbitDepthMulParam    != nullptr);
 
     // Listener head orientation
     listenerYawParam        = apvts.getRawParameterValue(ParamID::LISTENER_YAW);
@@ -511,7 +515,8 @@ void XYZPanProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     walkerYSmooth_.reset(walkerYParam != nullptr ? walkerYParam->load() : 0.0f);
     walkerZSmooth_.reset(walkerZParam != nullptr ? walkerZParam->load() : 0.0f);
 
-    // Source position smoothers — 5ms: prevents zipper noise from mouse-drag jitter
+    // Source position smoothers — initial 5ms, dynamically adjusted in processBlock
+    // based on whether a mouse gesture is active (longer for jitter suppression).
     xSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
     ySmooth_.prepare(5.0f, static_cast<float>(sampleRate));
     zSmooth_.prepare(5.0f, static_cast<float>(sampleRate));
@@ -552,8 +557,8 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Converge by full block so the 20ms time constant behaves correctly at block rate.
     rSmooth_.converge(rParam->load(), buffer.getNumSamples());
     const float r = rSmooth_.current();
-    // Spatial position — 5ms smooth prevents zipper noise from mouse-drag jitter,
-    // transparent to block-rate automation. Scaled by smoothed R.
+    // Spatial position — 5ms smooth prevents zipper noise from block-rate parameter
+    // updates.  Engine-internal per-sample interpolation handles the rest.
     xSmooth_.converge(xParam->load(), buffer.getNumSamples());
     ySmooth_.converge(yParam->load(), buffer.getNumSamples());
     zSmooth_.converge(zParam->load(), buffer.getNumSamples());
@@ -651,6 +656,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.lfoYBeatDiv   = beatDivFromChoice(lfoYBeatDivParam->load());
     params.lfoZBeatDiv   = beatDivFromChoice(lfoZBeatDivParam->load());
     params.lfoSpeedMul   = lfoSpeedMulParam->load();
+    params.lfoDepthMul   = lfoDepthMulParam->load();
 
     // Momentary phase resets from UI buttons
     if (resetXYZLfoPhases.exchange(false)) {
@@ -697,6 +703,7 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.stereoOrbitXZTempoSync = orbitXZTempoSyncParam->load() >= 0.5f;
     params.stereoOrbitYZTempoSync = orbitYZTempoSyncParam->load() >= 0.5f;
     params.stereoOrbitSpeedMul    = orbitSpeedMulParam->load();
+    params.stereoOrbitDepthMul    = orbitDepthMulParam->load();
 
     // Momentary orbit phase reset from UI button
     if (resetOrbitLfoPhases.exchange(false)) {
