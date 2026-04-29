@@ -11,6 +11,7 @@
 #include "UserPreferences.h"
 #include "ParamIDs.h"
 #include "PresetManager.h"
+#include "WelcomeOverlay.h"
 
 // Forward declaration to break circular include; full type used in .cpp
 class XYZPanProcessor;
@@ -102,6 +103,14 @@ private:
     std::unique_ptr<juce::TooltipWindow> tooltipWindow_;
     juce::TextButton tooltipToggle_{"?"};
     std::unique_ptr<juce::Component> helpGuide_;       // HelpGuideOverlay (defined in .cpp)
+    std::unique_ptr<xyzpan::WelcomeOverlay> welcomeOverlay_;
+    struct StatusIndicator : public juce::TextButton {
+        StatusIndicator() {}
+        void paintButton(juce::Graphics& g, bool over, bool down) override;
+    };
+    StatusIndicator statusBtn_;
+    void showWelcome();
+    int welcomeTicks_ = 0;  // delayed re-check counter
 
     // GL spatial view (fills majority of window)
     xyzpan::XYZPanGLView glView_;

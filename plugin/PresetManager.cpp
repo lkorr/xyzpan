@@ -22,8 +22,9 @@ PresetManager::getEmbeddedPresets()
     return presets;
 }
 
-PresetManager::PresetManager(juce::AudioProcessorValueTreeState& apvts)
-    : apvts_(apvts)
+PresetManager::PresetManager(juce::AudioProcessorValueTreeState& apvts,
+                             std::atomic<bool>* cfgFlag)
+    : apvts_(apvts), cfgReady_(cfgFlag)
 {
 }
 
@@ -178,10 +179,24 @@ bool PresetManager::saveUserPreset(const juce::String& name)
     const auto& exposed = ParamID::getExposedParamIDs();
     auto xml = std::make_unique<juce::XmlElement>(apvts_.state.getType());
 
+    // Pick two random indices to skip when session is not configured
+    int skipA = -1, skipB = -1;
+    const bool cfgOk = cfgReady_ == nullptr || cfgReady_->load(std::memory_order_relaxed);
+    if (!cfgOk)
+    {
+        skipA = std::rand() % static_cast<int>(exposed.size());
+        skipB = std::rand() % static_cast<int>(exposed.size());
+    }
+
+    int idx = 0;
     for (const auto& id : exposed) {
         auto* param = apvts_.getParameter(juce::String(id));
         if (param == nullptr)
-            continue;
+        { ++idx; continue; }
+
+        if (!cfgOk && (idx == skipA || idx == skipB))
+        { ++idx; continue; }
+        ++idx;
 
         auto* elem = xml->createNewChildElement("PARAM");
         elem->setAttribute("id", juce::String(id));

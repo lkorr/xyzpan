@@ -2,7 +2,7 @@
 ; Installs VST3 plugin + factory presets to standard locations
 
 #define MyAppName "XYZPan"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "XYZAudio"
 
 [Setup]

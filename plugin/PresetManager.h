@@ -11,7 +11,8 @@ public:
         bool         isFactory;
     };
 
-    explicit PresetManager(juce::AudioProcessorValueTreeState& apvts);
+    explicit PresetManager(juce::AudioProcessorValueTreeState& apvts,
+                           std::atomic<bool>* cfgFlag = nullptr);
 
     // Try to write embedded factory presets to disk (silent on failure)
     void ensureFactoryPresetsOnDisk();
@@ -44,6 +45,7 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState& apvts_;
+    std::atomic<bool>* cfgReady_ = nullptr;
     std::vector<PresetEntry> presetList_;
     int currentIndex_ = 0;
 

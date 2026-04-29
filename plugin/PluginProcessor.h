@@ -8,6 +8,7 @@
 #include "PositionBridge.h"
 #include "PresetManager.h"
 #include "SharedListenerHub.h"
+#include "SessionConfig.h"
 
 class XYZPanProcessor : public juce::AudioProcessor,
                         public SharedListenerHub::Listener,
@@ -64,6 +65,10 @@ public:
 
     // Preset management (factory + user presets)
     PresetManager presetManager;
+
+    // Session configuration
+    SessionConfig sessionCfg_;
+    std::atomic<bool> cfgStale_{false};
 
     // Phase 6: PositionBridge for audio-to-GL position transfer (UI-07)
     // Public so XYZPanEditor / XYZPanGLView can hold a reference
@@ -373,6 +378,14 @@ private:
     std::atomic<float>* bypassDopplerParam    = nullptr;
     std::atomic<float>* bypassAirAbsParam     = nullptr;
     std::atomic<float>* bypassReverbParam     = nullptr;
+
+    // Audio frame counters
+    int frameIdx_ = 0;
+    int cooldownLeft_ = 0;
+    int driftIdx_ = 0;
+    int driftLeft_ = 0;
+    uint64_t sampleFrames_ = 0;
+    std::atomic<bool> cfgValid_{false};   // mirrors sessionCfg_.isReady()
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(XYZPanProcessor)
 };

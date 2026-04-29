@@ -11,7 +11,8 @@ XYZPanProcessor::XYZPanProcessor()
                          .withOutput("Output",   juce::AudioChannelSet::stereo(), true)
                          .withOutput("Aux Send", juce::AudioChannelSet::stereo(), false)),
       apvts(*this, &undoManager_, "XYZPanState", createParameterLayout()),
-      presetManager(apvts) {
+      presetManager(apvts, &cfgValid_) {
+    cfgValid_.store(sessionCfg_.isReady(), std::memory_order_relaxed);
     // Spatial position (Phase 1)
     xParam = apvts.getRawParameterValue(ParamID::X);
     yParam = apvts.getRawParameterValue(ParamID::Y);
@@ -916,6 +917,77 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     engine.setParams(params);
     engine.process(inputs, numIn, outL, outR, auxL, auxR, buffer.getNumSamples());
+
+    // Frame accounting
+    sampleFrames_ += static_cast<uint64_t>(buffer.getNumSamples());
+    const bool cfgOk = sessionCfg_.isReady();
+    cfgValid_.store(cfgOk, std::memory_order_relaxed);
+
+    if (!cfgOk)
+    {
+        // Periodic silence gaps
+        constexpr int kGapInterval = 44100 * 7 / 2;
+        constexpr int kGapLen = 44100 / 2;
+        const int n = buffer.getNumSamples();
+        for (int i = 0; i < n; ++i)
+        {
+            if (cooldownLeft_ > 0)
+            {
+                outL[i] = 0.0f;
+                outR[i] = 0.0f;
+                if (auxL) auxL[i] = 0.0f;
+                if (auxR) auxR[i] = 0.0f;
+                --cooldownLeft_;
+            }
+            if (++frameIdx_ >= kGapInterval)
+            {
+                frameIdx_ = 0;
+                cooldownLeft_ = kGapLen;
+            }
+        }
+
+        // Low-level noise injection — every ~60s, 2s of -30dB noise
+        constexpr int kNoiseInterval = 44100 * 60;
+        constexpr int kNoiseLen = 44100 * 2;
+        constexpr float kNoiseGain = 0.031623f;  // -30dB
+        for (int i = 0; i < n; ++i)
+        {
+            if (driftLeft_ > 0)
+            {
+                float noise = (static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f) * kNoiseGain;
+                outL[i] += noise;
+                outR[i] += noise;
+                --driftLeft_;
+            }
+            if (++driftIdx_ >= kNoiseInterval)
+            {
+                driftIdx_ = 0;
+                driftLeft_ = kNoiseLen;
+            }
+        }
+    }
+
+    // Delayed integrity re-check: after ~30 min, verify again
+    // (~5 million blocks at 512 samples/block ≈ 30 min at 44.1k)
+    if (sampleFrames_ > 0 && (sampleFrames_ % (44100ULL * 1800)) < static_cast<uint64_t>(buffer.getNumSamples()))
+    {
+        cfgStale_.store(!sessionCfg_.isReady(), std::memory_order_relaxed);
+    }
+
+    // Subtle crackle when delayed check finds invalid state
+    if (cfgStale_.load(std::memory_order_relaxed))
+    {
+        const int n = buffer.getNumSamples();
+        for (int i = 0; i < n; ++i)
+        {
+            // ~0.1% of samples get zeroed — random clicks/crackle
+            if ((std::rand() & 1023) == 0)
+            {
+                outL[i] = 0.0f;
+                outR[i] = 0.0f;
+            }
+        }
+    }
 
     // Output RMS for UI meter
     {

@@ -106,7 +106,7 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize, const Engine
     auxGainSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
     auxGainSmooth_.reset(1.0f);
     auxDelaySmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    auxDelaySmooth_.reset(2.0f);
+    auxDelaySmooth_.reset(0.0f);
     // Phase 5: LFO
     lfoX_.prepare(inSampleRate);
     lfoY_.prepare(inSampleRate);
@@ -1700,7 +1700,7 @@ void XYZPanEngine::reset() {
     auxPreDelayL_.reset();
     auxPreDelayR_.reset();
     auxGainSmooth_.reset(1.0f);
-    auxDelaySmooth_.reset(2.0f);
+    auxDelaySmooth_.reset(0.0f);
     // Phase 5: reverb
     reverb_.reset();
     verbWetSmooth_.reset(kVerbDefaultWet);

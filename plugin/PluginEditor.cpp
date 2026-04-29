@@ -2,8 +2,22 @@
 #include "PluginProcessor.h"
 #include "xyzpan/Constants.h"
 #include "xyzpan/dsp/SineLUT.h"
+#include "xyzpan/obfuscate.h"
 #include <cmath>
 #include <random>
+
+// StatusIndicator paint — defined here so obfuscated string stays in .cpp
+void XYZPanEditor::StatusIndicator::paintButton(juce::Graphics& g, bool over, bool down) {
+    auto b = getLocalBounds().toFloat().reduced(0.5f);
+    auto fill = juce::Colour(0xFFB85A3A);
+    if (down) fill = fill.brighter(0.2f);
+    else if (over) fill = fill.brighter(0.1f);
+    g.setColour(fill);
+    g.fillRoundedRectangle(b, 3.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.drawText(static_cast<const char*>(AY_OBFUSCATE("DEMO")), getLocalBounds(), juce::Justification::centred);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Help Guide Overlay -- scrollable reference shown when ? is clicked
@@ -445,18 +459,19 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     lfoSpeedMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(lfoSpeedMulLabel_);
 
-    // ----- XYZ LFO Depth multiplier slider (below speed slider) -----
-    lfoDepthMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
-    lfoDepthMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
+    // ----- XYZ LFO Depth multiplier knob (rotary, left of speed slider) -----
+    lfoDepthMulKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    lfoDepthMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 14);
     lfoDepthMulKnob_.setColour(juce::Slider::rotarySliderFillColourId,
                                juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
     lfoDepthMulKnob_.textFromValueFunction = [](double v) {
         return juce::String(v, 2) + "x";
     };
+    lfoDepthMulKnob_.setTooltip("LFO depth multiplier");
     addAndMakeVisible(lfoDepthMulKnob_);
     lfoDepthMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::LFO_DEPTH_MUL, lfoDepthMulKnob_);
-    lfoDepthMulLabel_.setText("LFO Depth", juce::dontSendNotification);
-    lfoDepthMulLabel_.setJustificationType(juce::Justification::centredLeft);
+    lfoDepthMulLabel_.setText("Depth", juce::dontSendNotification);
+    lfoDepthMulLabel_.setJustificationType(juce::Justification::centredRight);
     lfoDepthMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(lfoDepthMulLabel_);
 
@@ -518,21 +533,15 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     orbitOffsetAtt_  = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_OFFSET,   orbitOffsetKnob_);
     orbitSpeedMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_SPEED_MUL, orbitSpeedMulKnob_);
 
-    // Orbit depth multiplier slider (below speed)
+    // Orbit depth multiplier — parameter kept for preset compat, UI hidden
     orbitDepthMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
     orbitDepthMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
-    orbitDepthMulKnob_.textFromValueFunction = [](double v) {
-        return juce::String(v, 2) + "x";
-    };
-    orbitDepthMulLabel_.setText("Depth", juce::dontSendNotification);
-    orbitDepthMulLabel_.setJustificationType(juce::Justification::centredLeft);
-    orbitDepthMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
-    addAndMakeVisible(&orbitDepthMulKnob_);
-    addAndMakeVisible(&orbitDepthMulLabel_);
+    addChildComponent(&orbitDepthMulKnob_);   // hidden
+    addChildComponent(&orbitDepthMulLabel_);   // hidden
     orbitDepthMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::STEREO_ORBIT_DEPTH_MUL, orbitDepthMulKnob_);
 
     // Hero styling for all orbit sliders
-    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitDepthMulKnob_, &orbitOffsetKnob_, &orbitPhaseKnob_})
+    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitOffsetKnob_, &orbitPhaseKnob_})
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
 
@@ -1629,6 +1638,15 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Listen to mouse clicks on all child components for last-clicked zone tracking
     addMouseListener(this, true);
 
+    // Demo mode indicator — visible in preset bar when unlicensed
+    statusBtn_.onClick = [this] { showWelcome(); };
+    addChildComponent(statusBtn_);  // added hidden; only shown if not ready
+    statusBtn_.setVisible(!proc_.sessionCfg_.isReady());
+
+    // License activation overlay — shown on top of everything when unlicensed
+    if (!proc_.sessionCfg_.isReady())
+        showWelcome();
+
     // Window sizing
     setResizable(true, true);
     setResizeLimits(kMinW, kMinH, kMaxW, kMaxH);
@@ -1652,6 +1670,44 @@ XYZPanEditor::~XYZPanEditor()
     removeMouseListener(this);
     removeKeyListener(this);
     setLookAndFeel(nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// showWelcome — creates and shows the welcome overlay
+// ---------------------------------------------------------------------------
+void XYZPanEditor::showWelcome()
+{
+    if (welcomeOverlay_) return;  // already showing
+
+    welcomeOverlay_ = std::make_unique<xyzpan::WelcomeOverlay>();
+    welcomeOverlay_->onSubmit = [this](const juce::String& key) {
+        welcomeOverlay_->setLoading(true);
+        proc_.sessionCfg_.syncAsync(key, [this](bool success, const juce::String& msg) {
+            if (success)
+            {
+                welcomeOverlay_->showSuccess(msg);
+                juce::Timer::callAfterDelay(1200, [this] {
+                    welcomeOverlay_.reset();
+                    statusBtn_.setVisible(false);
+                    glView_.setVisible(true);
+                    resized();
+                    repaint();
+                });
+            }
+            else
+            {
+                welcomeOverlay_->showError(msg);
+            }
+        });
+    };
+    welcomeOverlay_->onSkip = [this] {
+        welcomeOverlay_.reset();
+        glView_.setVisible(true);
+    };
+    addAndMakeVisible(*welcomeOverlay_);
+    welcomeOverlay_->setBounds(getLocalBounds());
+    welcomeOverlay_->toFront(true);
+    glView_.setVisible(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -1879,7 +1935,7 @@ void XYZPanEditor::paint(juce::Graphics& g)
     // ===== DIVIDERS -LEFT COLUMN =====
     if (activeLeftTab_ == LeftTab::Source) {
         const int subColW = kLeftColW / 3;
-        const int lfoMasterRowsH = 52;  // 26 * 2 — speed + depth rows
+        const int lfoMasterRowsH = 36;  // single row: depth knob + speed slider
 
         // Horizontal separator between Options and Source sections
         // (painted by the metallic panel treatment above, just draw dividers below it)
@@ -2107,6 +2163,11 @@ void XYZPanEditor::resized()
 
     if (helpGuide_)
         helpGuide_->setBounds(getLocalBounds());
+    if (welcomeOverlay_)
+    {
+        welcomeOverlay_->setBounds(getLocalBounds());
+        welcomeOverlay_->toFront(true);
+    }
 
     auto b = getLocalBounds();
 
@@ -2125,6 +2186,11 @@ void XYZPanEditor::resized()
         auto prevBtnArea  = presetBar.removeFromRight(24);
         auto tooltipBtnArea = presetBar.removeFromLeft(28);
         tooltipToggle_.setBounds(tooltipBtnArea.reduced(2));
+        if (statusBtn_.isVisible())
+        {
+            auto demoBtnArea = presetBar.removeFromRight(50);
+            statusBtn_.setBounds(demoBtnArea.reduced(2));
+        }
         presetPrevBtn_.setBounds(prevBtnArea.reduced(1, 2));
         presetNextBtn_.setBounds(nextBtnArea.reduced(1, 2));
         presetCombo_.setBounds(presetBar.reduced(kPadding, 2));
@@ -2174,8 +2240,7 @@ void XYZPanEditor::resized()
         const int posColW = kLeftColW / 3;
         const int knobH   = 108;
         const int posPad  = 10;
-        const int lfoSliderRowH = 26;       // per-row height for speed + depth sliders
-        const int lfoMasterRowsH = lfoSliderRowH * 2;  // total height for both rows
+        const int lfoMasterRowsH = 36;  // single row: depth knob + speed slider
 
         // --- OPTIONS SECTION (top of left column) ---
         // Single horizontal row: 3 knobs + 2 checkboxes
@@ -2249,24 +2314,35 @@ void XYZPanEditor::resized()
         layoutPosCol(zKnob_, zLabel_, zLFO_,
                      posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
 
-        // LFO Speed + Depth slider rows (bottom of source section)
-        const int speedY = posSectionBottom;
-        const int depthY = speedY + lfoSliderRowH;
-        const int speedLabelW = 70;
-        const int resetBtnW = 44;
-        const int resetBtnGap = 4;
-        const int sliderInset = 2;
-        lfoSpeedMulLabel_.setBounds(kPadding, speedY + sliderInset, speedLabelW, lfoSliderRowH - sliderInset * 2);
-        lfoSpeedMulKnob_.setBounds(kPadding + speedLabelW, speedY + sliderInset,
-                                   kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap,
-                                   lfoSliderRowH - sliderInset * 2);
-        resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, speedY + sliderInset,
-                                     resetBtnW, lfoSliderRowH - sliderInset * 2);
-        const int speedSliderW = kLeftColW - kPadding * 2 - speedLabelW - resetBtnW - resetBtnGap;
-        lfoDepthMulLabel_.setBounds(kPadding, depthY + sliderInset, speedLabelW, lfoSliderRowH - sliderInset * 2);
-        lfoDepthMulKnob_.setBounds(kPadding + speedLabelW, depthY + sliderInset,
-                                   speedSliderW,
-                                   lfoSliderRowH - sliderInset * 2);
+        // LFO Depth knob (rotary, left) + Speed slider (right) — single row
+        {
+            const int rowY = posSectionBottom;
+            const int rowH = lfoMasterRowsH;         // 32px
+
+            // "Depth" label + rotary knob + value text on the left
+            const int depthKnobSz  = 32;
+            const int depthTextW   = 42;  // TextBoxRight width (set in constructor)
+            const int depthLabelW  = 34;
+            const int depthKnobX   = kPadding + depthLabelW;
+            const int depthKnobY   = rowY + (rowH - depthKnobSz) / 2;
+            lfoDepthMulLabel_.setBounds(kPadding, rowY + (rowH - 14) / 2, depthLabelW, 14);
+            lfoDepthMulKnob_.setBounds(depthKnobX, depthKnobY, depthKnobSz + depthTextW, depthKnobSz);
+            const int depthCellW = depthLabelW + depthKnobSz + depthTextW;
+
+            // Speed slider + label + reset button — right of depth knob
+            const int speedLeft   = kPadding + depthCellW + 2;
+            const int resetBtnW   = 44;
+            const int resetBtnGap = 4;
+            const int speedLabelW = 70;
+            const int sliderH     = 22;
+            const int sliderY     = rowY + (rowH - sliderH) / 2;
+
+            lfoSpeedMulLabel_.setBounds(speedLeft, sliderY, speedLabelW, sliderH);
+            const int sliderX = speedLeft + speedLabelW;
+            const int sliderW = kLeftColW - sliderX - kPadding - resetBtnW - resetBtnGap;
+            lfoSpeedMulKnob_.setBounds(sliderX, sliderY, sliderW, sliderH);
+            resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, sliderY, resetBtnW, sliderH);
+        }
     } else {
         // --- CUSTOMIZE TAB -scrollable viewport fills entire left column content ---
         customizeViewport_.setBounds(0, lo.leftContentTop, kLeftColW, lo.leftContentH);
@@ -2480,11 +2556,12 @@ void XYZPanEditor::resized()
                 rollLockBtn_.setBounds(lockX, lockY, lockSz, lockSz);
             }
 
-            // Toggles below YPR knobs
-            const int toggleY = yprTop + yprTotalH + 4;
+            // Toggles — anchored near bottom of listener section
             const int bigToggleH = 20;
             const int togglePad = 10;
             const int toggleW = lw - togglePad * 2;
+            const int sectionBottom = lo.bottomY + kBottomH;
+            const int toggleY = sectionBottom - bigToggleH - 18;
 
             const int halfW = (toggleW - togglePad) / 2;
             wasdToggle_.setBounds(lx + togglePad, toggleY, halfW, bigToggleH);
@@ -2512,8 +2589,8 @@ void XYZPanEditor::resized()
             const int topRowH = heroSz;
             const int topCtrlH = topRowH + divGap;
 
-            const int masterRowH = sliderH + 2;  // per-row height for speed + depth
-            const int masterRowsH = masterRowH * 2 + 2;  // total for both rows + gap
+            const int masterRowH = sliderH + 2;  // speed row only (depth hidden)
+            const int masterRowsH = masterRowH + 2;
             const int lfoH = contentH - topCtrlH - divGap - masterRowsH;
             const int maxStripW = 185;
             const int lfoTotalW = juce::jmin(ow, maxStripW * 3);
@@ -2569,18 +2646,15 @@ void XYZPanEditor::resized()
             orbitXZLFO_.setBounds(ox + stripW,     lfoTop, stripW,     lfoH);
             orbitYZLFO_.setBounds(ox + stripW * 2, lfoTop, lastStripW, lfoH);
 
-            // Speed + Depth + Reset rows — just below LFOs (tight)
+            // Speed + Reset row — just below LFOs (depth hidden)
             {
                 const int sy = lfoTop + lfoH + 2;
-                const int dy = sy + masterRowH;
                 const int resetBtnW = 44;
                 const int resetBtnGap = 4;
                 const int sliderW = ow - pad * 2 - labelW - resetBtnW - resetBtnGap;
                 orbitSpeedMulLabel_.setBounds(ox + pad, sy, labelW, sliderH);
                 orbitSpeedMulKnob_.setBounds(ox + pad + labelW, sy, sliderW, sliderH);
                 resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, sy, resetBtnW, sliderH);
-                orbitDepthMulLabel_.setBounds(ox + pad, dy, labelW, sliderH);
-                orbitDepthMulKnob_.setBounds(ox + pad + labelW, dy, sliderW, sliderH);
             }
 
         }
@@ -2630,7 +2704,6 @@ void XYZPanEditor::updateOrbitEnabled()
     const bool active = stereoWidthKnob_.getValue() > 0.0;
 
     for (auto* c : {(juce::Component*)&orbitSpeedMulKnob_,  (juce::Component*)&orbitSpeedMulLabel_,
-                    (juce::Component*)&orbitDepthMulKnob_,   (juce::Component*)&orbitDepthMulLabel_,
                     (juce::Component*)&orbitOffsetKnob_,     (juce::Component*)&orbitOffsetLabel_,
                     (juce::Component*)&orbitPhaseKnob_,      (juce::Component*)&orbitPhaseLabel_,
                     (juce::Component*)&faceListenerToggle_,  (juce::Component*)&faceListenerLabel_,
@@ -2657,7 +2730,7 @@ void XYZPanEditor::applyCurrentTheme()
     zKnob_.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
 
     // Re-apply hero slider styling (brightened LFO accent)
-    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitDepthMulKnob_, &orbitOffsetKnob_,
+    for (auto* knob : {&stereoWidthKnob_, &orbitSpeedMulKnob_, &orbitOffsetKnob_,
                         &orbitPhaseKnob_, &lfoSpeedMulKnob_, &lfoDepthMulKnob_})
         knob->setColour(juce::Slider::rotarySliderFillColourId,
                          juce::Colour(theme.lfoAccentBright));
@@ -3088,6 +3161,10 @@ void XYZPanEditor::timerCallback()
     // Update undo/redo button enabled state
     undoBtn_.setEnabled(proc_.getUndoManager().canUndo());
     redoBtn_.setEnabled(proc_.getUndoManager().canRedo());
+
+    // Periodic session re-validation (~30 min at 60Hz timer)
+    if (++welcomeTicks_ == 108000)
+        proc_.cfgStale_.store(!proc_.sessionCfg_.isReady(), std::memory_order_relaxed);
 
     // Show audible sphere while sphere knob is hovered or being dragged
     glView_.setSphereKnobActive(sphereRadiusKnob_.isMouseOver(true)

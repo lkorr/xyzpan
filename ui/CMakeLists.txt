@@ -13,6 +13,7 @@ add_library(xyzpan_ui STATIC
     LFOStrip.cpp            # Phase 6-03
     DevPanelComponent.cpp   # Phase 6-03
     OutputMeter.cpp
+    WelcomeOverlay.cpp
 )
 
 target_include_directories(xyzpan_ui

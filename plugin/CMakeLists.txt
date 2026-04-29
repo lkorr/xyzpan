@@ -39,6 +39,7 @@ target_sources(XYZPan
         PluginEditor.cpp
         ParamLayout.cpp
         PresetManager.cpp
+        SessionConfig.cpp
 )
 
 target_include_directories(XYZPan
