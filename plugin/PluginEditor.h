@@ -255,6 +255,9 @@ private:
     juce::ToggleButton wasdToggle_;
     std::unique_ptr<BA> wasdAtt_;
     bool wasdGestureActive_ = false;
+
+    // Brand label
+    juce::Label brandLabel_;
     xyzpan::ListenerQuatAccumulator listenerAccum_;
 
     // Cached APVTS parameter pointers for timerCallback (avoid per-frame string lookup)
@@ -318,6 +321,10 @@ private:
     juce::Label       groundHeightLabel_;
     juce::Slider      groundHillsSlider_;
     juce::Label       groundHillsLabel_;
+    juce::Slider      groundRippleSlider_;
+    juce::Label       groundRippleLabel_;
+    juce::Slider      groundFogSlider_;
+    juce::Label       groundFogLabel_;
     juce::ToggleButton showLabelsToggle_;
     juce::Label        showLabelsLabel_;
     juce::ToggleButton showArrowToggle_;

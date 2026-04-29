@@ -1,78 +1,78 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <XYZPanState>
-  <PARAM id="verb_wet" value="0.25"/>
+  <PARAM id="verb_wet" value="0.2999999821186066"/>
   <PARAM id="stereo_orbit_xy_smooth" value="0.0"/>
-  <PARAM id="x" value="0.0"/>
+  <PARAM id="x" value="0.0559999942779541"/>
   <PARAM id="verb_size" value="0.5"/>
-  <PARAM id="y" value="0.3000000715255737"/>
-  <PARAM id="lfo_x_depth" value="0.9000000357627869"/>
+  <PARAM id="y" value="0.252000093460083"/>
+  <PARAM id="lfo_x_depth" value="1.0"/>
   <PARAM id="verb_damping" value="0.5"/>
   <PARAM id="verb_decay" value="0.5"/>
   <PARAM id="lfo_z_waveform" value="0.0"/>
   <PARAM id="r" value="1.0"/>
   <PARAM id="z" value="0.0"/>
   <PARAM id="stereo_orbit_depth_mul" value="1.0"/>
-  <PARAM id="lfo_z_phase" value="0.6600000262260437"/>
-  <PARAM id="stereo_orbit_yz_beat_div" value="10.0"/>
-  <PARAM id="lfo_y_beat_div" value="8.0"/>
-  <PARAM id="stereo_width" value="0.3560000061988831"/>
+  <PARAM id="lfo_z_phase" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_beat_div" value="6.0"/>
+  <PARAM id="lfo_y_beat_div" value="6.0"/>
+  <PARAM id="stereo_width" value="0.2000000029802322"/>
   <PARAM id="verb_pre_delay" value="50.0"/>
   <PARAM id="verb_mod_depth" value="0.5"/>
   <PARAM id="verb_diffusion" value="0.699999988079071"/>
   <PARAM id="stereo_orbit_yz_reset_phase" value="0.0"/>
-  <PARAM id="lfo_x_rate" value="0.07000000029802322"/>
-  <PARAM id="lfo_depth_mul" value="0.5120000243186951"/>
+  <PARAM id="lfo_x_rate" value="0.5"/>
+  <PARAM id="lfo_depth_mul" value="1.0"/>
   <PARAM id="lfo_x_phase" value="0.0"/>
   <PARAM id="lfo_x_waveform" value="0.0"/>
   <PARAM id="stereo_orbit_phase" value="0.0"/>
   <PARAM id="lfo_x_smooth" value="0.0"/>
   <PARAM id="lfo_x_tempo_sync" value="0.0"/>
-  <PARAM id="lfo_z_rate" value="0.1000000014901161"/>
-  <PARAM id="lfo_x_beat_div" value="7.0"/>
-  <PARAM id="stereo_orbit_yz_rate" value="0.300000011920929"/>
-  <PARAM id="lfo_y_rate" value="0.1100000068545341"/>
-  <PARAM id="lfo_z_beat_div" value="9.0"/>
+  <PARAM id="lfo_z_rate" value="0.5"/>
+  <PARAM id="lfo_x_beat_div" value="6.0"/>
+  <PARAM id="stereo_orbit_yz_rate" value="10.0"/>
+  <PARAM id="lfo_y_rate" value="0.5"/>
+  <PARAM id="lfo_z_beat_div" value="6.0"/>
   <PARAM id="stereo_orbit_yz_depth" value="1.0"/>
-  <PARAM id="lfo_y_depth" value="0.9000000357627869"/>
+  <PARAM id="lfo_y_depth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_phase" value="0.0"/>
-  <PARAM id="lfo_y_phase" value="0.3300000131130219"/>
-  <PARAM id="stereo_orbit_yz_waveform" value="3.0"/>
+  <PARAM id="lfo_y_phase" value="0.0"/>
+  <PARAM id="stereo_orbit_yz_waveform" value="2.0"/>
   <PARAM id="lfo_y_waveform" value="0.0"/>
   <PARAM id="stereo_orbit_yz_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_xz_depth" value="1.0"/>
+  <PARAM id="stereo_orbit_xz_depth" value="0.0"/>
   <PARAM id="lfo_y_smooth" value="0.0"/>
   <PARAM id="stereo_orbit_yz_tempo_sync" value="0.0"/>
   <PARAM id="lfo_y_tempo_sync" value="0.0"/>
-  <PARAM id="stereo_orbit_xy_rate" value="0.1700000017881393"/>
-  <PARAM id="lfo_z_depth" value="0.5"/>
+  <PARAM id="stereo_orbit_xy_rate" value="0.5"/>
+  <PARAM id="lfo_z_depth" value="0.0"/>
   <PARAM id="lfo_z_smooth" value="0.0"/>
-  <PARAM id="stereo_orbit_xy_beat_div" value="8.0"/>
+  <PARAM id="stereo_orbit_xy_beat_div" value="6.0"/>
   <PARAM id="lfo_z_tempo_sync" value="0.0"/>
-  <PARAM id="lfo_speed_mul" value="0.6820000410079956"/>
+  <PARAM id="lfo_speed_mul" value="0.2000000029802322"/>
   <PARAM id="listener_pitch" value="0.0"/>
   <PARAM id="stereo_face_listener" value="0.0"/>
-  <PARAM id="stereo_orbit_offset" value="0.0"/>
+  <PARAM id="stereo_orbit_offset" value="0.25"/>
   <PARAM id="stereo_orbit_xy_waveform" value="2.0"/>
-  <PARAM id="stereo_orbit_xz_rate" value="0.1400000005960464"/>
+  <PARAM id="stereo_orbit_xz_rate" value="0.5"/>
   <PARAM id="stereo_orbit_xy_phase" value="0.0"/>
   <PARAM id="stereo_orbit_xy_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_xy_tempo_sync" value="0.0"/>
-  <PARAM id="stereo_orbit_xy_depth" value="1.0"/>
-  <PARAM id="stereo_orbit_xz_waveform" value="2.0"/>
-  <PARAM id="stereo_orbit_xz_beat_div" value="9.0"/>
+  <PARAM id="stereo_orbit_xy_depth" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_waveform" value="0.0"/>
+  <PARAM id="stereo_orbit_xz_beat_div" value="6.0"/>
   <PARAM id="stereo_orbit_xz_phase" value="0.0"/>
   <PARAM id="stereo_orbit_xz_reset_phase" value="0.0"/>
   <PARAM id="stereo_orbit_xz_smooth" value="0.0"/>
   <PARAM id="stereo_orbit_xz_tempo_sync" value="0.0"/>
-  <PARAM id="stereo_orbit_speed_mul" value="0.8440000414848328"/>
+  <PARAM id="stereo_orbit_speed_mul" value="1.0"/>
   <PARAM id="er_enabled" value="1.0"/>
   <PARAM id="er_room_size" value="5.0"/>
   <PARAM id="er_damping" value="0.8999999761581421"/>
   <PARAM id="er_level" value="0.5"/>
   <PARAM id="er_reverb_send" value="0.699999988079071"/>
   <PARAM id="er_gain_db" value="0.0"/>
-  <PARAM id="dist_delay_max_ms" value="500.0"/>
+  <PARAM id="dist_delay_max_ms" value="200.0"/>
   <PARAM id="sphere_radius" value="5.0"/>
   <PARAM id="listener_yaw" value="0.0"/>
   <PARAM id="listener_roll" value="0.0"/>

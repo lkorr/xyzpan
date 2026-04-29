@@ -11,20 +11,26 @@ PresetManager::getEmbeddedPresets()
 {
     // JUCE binary data naming: file "Default.xml" → Default_xml, size Default_xmlSize
     static const std::array<EmbeddedPreset, kNumFactory> presets = {{
-        { "Default",      "Default_xml",      FactoryPresetData::Default_xml,      FactoryPresetData::Default_xmlSize },
-        { "Orbit XY",     "Orbit_XY_xml",     FactoryPresetData::Orbit_XY_xml,     FactoryPresetData::Orbit_XY_xmlSize },
-        { "Slow Drift",   "Slow_Drift_xml",   FactoryPresetData::Slow_Drift_xml,   FactoryPresetData::Slow_Drift_xmlSize },
-        { "Behind You",   "Behind_You_xml",   FactoryPresetData::Behind_You_xml,   FactoryPresetData::Behind_You_xmlSize },
-        { "Fly Around",   "Fly_Around_xml",   FactoryPresetData::Fly_Around_xml,   FactoryPresetData::Fly_Around_xmlSize },
-        { "Overhead",     "Overhead_xml",     FactoryPresetData::Overhead_xml,     FactoryPresetData::Overhead_xmlSize },
-        { "Near Whisper", "Near_Whisper_xml", FactoryPresetData::Near_Whisper_xml, FactoryPresetData::Near_Whisper_xmlSize },
+        { "Default",                "Default_xml",                FactoryPresetData::Default_xml,                FactoryPresetData::Default_xmlSize },
+        { "Corkscrew",              "Corkscrew_xml",              FactoryPresetData::Corkscrew_xml,              FactoryPresetData::Corkscrew_xmlSize },
+        { "Diagonal Orbits",        "Diagonal_Orbits_xml",        FactoryPresetData::Diagonal_Orbits_xml,        FactoryPresetData::Diagonal_Orbits_xmlSize },
+        { "Elevators",              "Elevators_xml",              FactoryPresetData::Elevators_xml,              FactoryPresetData::Elevators_xmlSize },
+        { "Fly Around",             "Fly_Around_xml",             FactoryPresetData::Fly_Around_xml,             FactoryPresetData::Fly_Around_xmlSize },
+        { "R-L Parabola",           "RL_parabola_xml",            FactoryPresetData::RL_parabola_xml,            FactoryPresetData::RL_parabola_xmlSize },
+        { "Spinning Drive By",      "Spinning_Drive_By_xml",      FactoryPresetData::Spinning_Drive_By_xml,      FactoryPresetData::Spinning_Drive_By_xmlSize },
+        { "Vertical Whispers",      "Vertical_Whispers_xml",      FactoryPresetData::Vertical_Whispers_xml,      FactoryPresetData::Vertical_Whispers_xmlSize },
+        { "Verticality Modulation", "Verticality_Modulation_xml", FactoryPresetData::Verticality_Modulation_xml, FactoryPresetData::Verticality_Modulation_xmlSize },
+        { "XY Orbit",               "XY_Orbit_xml",               FactoryPresetData::XY_Orbit_xml,               FactoryPresetData::XY_Orbit_xmlSize },
     }};
     return presets;
 }
 
 PresetManager::PresetManager(juce::AudioProcessorValueTreeState& apvts,
-                             std::atomic<bool>* cfgFlag)
-    : apvts_(apvts), cfgReady_(cfgFlag)
+                             std::atomic<bool>* cfgFlag,
+                             std::atomic<bool>* resetXYZ,
+                             std::atomic<bool>* resetOrbit)
+    : apvts_(apvts), cfgReady_(cfgFlag),
+      resetXYZPhases_(resetXYZ), resetOrbitPhases_(resetOrbit)
 {
 }
 
@@ -33,34 +39,15 @@ PresetManager::PresetManager(juce::AudioProcessorValueTreeState& apvts,
 // ---------------------------------------------------------------------------
 juce::File PresetManager::getFactoryPresetDir()
 {
-#if JUCE_WINDOWS
-    // C:\ProgramData\VST3 Presets\XYZAudio\XYZPan
-    return juce::File::getSpecialLocation(juce::File::commonApplicationDataDirectory)
-               .getChildFile("VST3 Presets")
-               .getChildFile("XYZAudio")
-               .getChildFile("XYZPan");
-#elif JUCE_MAC
-    return juce::File("/Library/Audio/Presets/XYZAudio/XYZPan");
-#else
-    return juce::File::getSpecialLocation(juce::File::commonApplicationDataDirectory)
-               .getChildFile("VST3 Presets/XYZAudio/XYZPan");
-#endif
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+               .getChildFile("XYZPan")
+               .getChildFile("Factory");
 }
 
 juce::File PresetManager::getUserPresetDir()
 {
-#if JUCE_WINDOWS
-    // C:\Users\<user>\Documents\VST3 Presets\XYZAudio\XYZPan
     return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-               .getChildFile("VST3 Presets")
-               .getChildFile("XYZAudio")
                .getChildFile("XYZPan");
-#elif JUCE_MAC
-    return juce::File("~/Library/Audio/Presets/XYZAudio/XYZPan");
-#else
-    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-               .getChildFile("VST3 Presets/XYZAudio/XYZPan");
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -135,12 +122,18 @@ bool PresetManager::loadPreset(int index)
 
     auto& entry = presetList_[static_cast<size_t>(index)];
 
+    auto applyAndReset = [&](const juce::XmlElement& xml) {
+        applyPresetXml(xml);
+        currentIndex_ = index;
+        if (resetXYZPhases_)   resetXYZPhases_->store(true);
+        if (resetOrbitPhases_) resetOrbitPhases_->store(true);
+    };
+
     // Try on-disk file first
     if (entry.file.existsAsFile()) {
         auto xml = juce::parseXML(entry.file);
         if (xml != nullptr && xml->hasTagName(apvts_.state.getType())) {
-            applyPresetXml(*xml);
-            currentIndex_ = index;
+            applyAndReset(*xml);
             return true;
         }
     }
@@ -150,8 +143,7 @@ bool PresetManager::loadPreset(int index)
         auto& ep = getEmbeddedPresets()[static_cast<size_t>(index)];
         auto xml = juce::parseXML(juce::String::fromUTF8(ep.data, ep.size));
         if (xml != nullptr && xml->hasTagName(apvts_.state.getType())) {
-            applyPresetXml(*xml);
-            currentIndex_ = index;
+            applyAndReset(*xml);
             return true;
         }
     }

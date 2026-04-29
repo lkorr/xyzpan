@@ -5,8 +5,8 @@ else()
 endif()
 
 juce_add_plugin(XYZPan
-    COMPANY_NAME "XYZAudio"
-    PLUGIN_MANUFACTURER_CODE Xyza
+    COMPANY_NAME "pailiaq"
+    PLUGIN_MANUFACTURER_CODE Paaq
     PLUGIN_CODE Xzpn
     FORMATS ${XYZPAN_FORMATS}
     PRODUCT_NAME "XYZPan"
@@ -25,12 +25,15 @@ juce_add_binary_data(XYZPanPresets
     NAMESPACE FactoryPresetData
     SOURCES
         ${CMAKE_SOURCE_DIR}/presets/factory/Default.xml
-        ${CMAKE_SOURCE_DIR}/presets/factory/Orbit_XY.xml
-        ${CMAKE_SOURCE_DIR}/presets/factory/Slow_Drift.xml
-        ${CMAKE_SOURCE_DIR}/presets/factory/Behind_You.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Corkscrew.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Diagonal_Orbits.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Elevators.xml
         ${CMAKE_SOURCE_DIR}/presets/factory/Fly_Around.xml
-        ${CMAKE_SOURCE_DIR}/presets/factory/Overhead.xml
-        ${CMAKE_SOURCE_DIR}/presets/factory/Near_Whisper.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/R-L_parabola.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Spinning_Drive_By.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Vertical_Whispers.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/Verticality_Modulation.xml
+        ${CMAKE_SOURCE_DIR}/presets/factory/XY_Orbit.xml
 )
 
 target_sources(XYZPan

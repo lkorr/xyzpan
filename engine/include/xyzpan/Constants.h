@@ -40,7 +40,7 @@ constexpr float kMaxITDUpperBound_ms   = 5.0f;    // dev panel upper limit (allo
 // gives g ≈ 2.25 — safe, stable, and still inaudible to the human ear (most adults
 // cannot hear above 16-18 kHz).
 constexpr float kHeadShadowFullOpenHz  = 16000.0f;  // LPF wide open (inaudible, safe SVF range)
-constexpr float kHeadShadowMinHz       = 1200.0f;   // LPF at full azimuth (~12dB cut by 4kHz)
+constexpr float kHeadShadowMinHz       = 2250.0f;   // LPF at full azimuth
 
 // ILD (Interaural Level Difference) — ipsilateral (near) ear boost
 // At close range + full azimuth: maximum boost on near ear (hard panning feel).

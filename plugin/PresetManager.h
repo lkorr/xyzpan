@@ -12,7 +12,9 @@ public:
     };
 
     explicit PresetManager(juce::AudioProcessorValueTreeState& apvts,
-                           std::atomic<bool>* cfgFlag = nullptr);
+                           std::atomic<bool>* cfgFlag = nullptr,
+                           std::atomic<bool>* resetXYZ = nullptr,
+                           std::atomic<bool>* resetOrbit = nullptr);
 
     // Try to write embedded factory presets to disk (silent on failure)
     void ensureFactoryPresetsOnDisk();
@@ -46,6 +48,8 @@ public:
 private:
     juce::AudioProcessorValueTreeState& apvts_;
     std::atomic<bool>* cfgReady_ = nullptr;
+    std::atomic<bool>* resetXYZPhases_ = nullptr;
+    std::atomic<bool>* resetOrbitPhases_ = nullptr;
     std::vector<PresetEntry> presetList_;
     int currentIndex_ = 0;
 
@@ -57,7 +61,7 @@ private:
         int         size;
     };
 
-    static constexpr int kNumFactory = 7;
+    static constexpr int kNumFactory = 10;
     static const std::array<EmbeddedPreset, kNumFactory>& getEmbeddedPresets();
 
     // Selectively apply only exposed (non-dev-panel) params from preset XML

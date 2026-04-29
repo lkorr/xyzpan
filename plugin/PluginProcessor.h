@@ -63,6 +63,10 @@ public:
     // APVTS — public so editor and parameter attachments can access it
     juce::AudioProcessorValueTreeState apvts;
 
+    // Momentary reset flags — set by UI or preset load, consumed (cleared) by processBlock
+    std::atomic<bool> resetXYZLfoPhases{false};
+    std::atomic<bool> resetOrbitLfoPhases{false};
+
     // Preset management (factory + user presets)
     PresetManager presetManager;
 
@@ -89,10 +93,6 @@ public:
 
     // Access to the shared listener hub (for remote instance control)
     SharedListenerHub& getListenerHub() { return *listenerHub_; }
-
-    // Momentary reset flags — set by UI, consumed (cleared) by processBlock
-    std::atomic<bool> resetXYZLfoPhases{false};
-    std::atomic<bool> resetOrbitLfoPhases{false};
 
     // LFO output values (tick*depth) — written by audio thread, read by UI displays
     std::atomic<float> lfoOutputX{0.f}, lfoOutputY{0.f}, lfoOutputZ{0.f};

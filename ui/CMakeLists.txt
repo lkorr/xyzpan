@@ -16,6 +16,13 @@ add_library(xyzpan_ui STATIC
     WelcomeOverlay.cpp
 )
 
+juce_add_binary_data(XYZPanAssets
+    HEADER_NAME "AssetData.h"
+    NAMESPACE AssetData
+    SOURCES
+        ${CMAKE_SOURCE_DIR}/assets/pailiaq.png
+)
+
 target_include_directories(xyzpan_ui
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../engine/include
@@ -27,6 +34,8 @@ target_link_libraries(xyzpan_ui
         juce::juce_audio_processors
         juce::juce_gui_basics
         glm::glm
+    PRIVATE
+        XYZPanAssets
 )
 
 target_compile_definitions(xyzpan_ui PUBLIC ${XYZPAN_JUCE_DEFS})

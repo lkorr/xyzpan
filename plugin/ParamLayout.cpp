@@ -58,7 +58,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         PID{ ParamID::HEAD_SHADOW_HZ, 1 },
         "Head Shadow Min Hz",
         NR(200.0f, 20000.0f, 1.0f, 0.3f),  // Skew 0.3 for log-like feel in generic editor
-        1200.0f
+        2250.0f
     ));
 
     // Dev Panel: ILD max — maximum interaural level difference in dB
@@ -330,9 +330,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         NR(xyzpan::kLFOSpeedMulMin, xyzpan::kLFOSpeedMulMax, 0.001f, xyzpan::kLFOSpeedMulSkew), xyzpan::kLFOSpeedMulDefault));
 
     // XYZ LFO depth multiplier (shared across all XYZ LFOs)
-    // Range 0-2: 0=silence, 1=normal, 2=double. Skew midpoint at 1.0.
+    // Range 0-2: 0=silence, 1=normal, 2=double. Linear (1.0 at center).
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_DEPTH_MUL, 1}, "LFO Depth Mul",
-        NR(0.0f, 2.0f, 0.001f, 0.585f), 1.0f));
+        NR(0.0f, 2.0f, 0.001f, 1.0f), 1.0f));
 
     // -------------------------------------------------------------------------
     // Stereo source node splitting

@@ -2,6 +2,7 @@
 #include "Shaders.h"
 #include "Mesh.h"
 #include "PositionBridge.h"
+#include "AssetData.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -186,7 +187,7 @@ void XYZPanGLView::newOpenGLContextCreated()
     // Ground plane — subdivided grid for hills displacement
     {
         const float groundY = -4.5f;
-        const float halfExt = 150.0f;
+        const float halfExt = 450.0f;
         const int gridN = 128;  // 128x128 grid = 16384 vertices
         const int vertCount = (gridN + 1) * (gridN + 1);
         std::vector<float> verts(vertCount * 3);
@@ -433,11 +434,22 @@ void XYZPanGLView::renderOpenGL()
         groundShader_->setUniform("groundType", scene.groundType);
         groundShader_->setUniform("iTime", static_cast<float>(std::fmod(now, 1000.0)));
         groundShader_->setUniform("fogColor", theme.glBackground.x, theme.glBackground.y, theme.glBackground.z);
-        groundShader_->setUniform("groundYOffset", -4.5f * scene.groundHeight);
+        groundShader_->setUniform("groundYOffset", -40.5f * scene.groundHeight);
         groundShader_->setUniform("groundHills", scene.groundHills);
+        groundShader_->setUniform("groundRipple", scene.groundRipple);
+        groundShader_->setUniform("groundFog", scene.groundFog);
+        groundShader_->setUniform("iTimeVtx", static_cast<float>(std::fmod(now, 1000.0)));
+        if (scene.groundType == kGroundPailiaq && groundPailiaqTex_) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, groundPailiaqTex_);
+            groundShader_->setUniform("groundTexture", 0);
+        }
         glBindVertexArray(vaoGround_);
         glDrawElements(GL_TRIANGLES, groundIndexCount_, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
+        if (scene.groundType == kGroundPailiaq) {
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
         glDisable(GL_POLYGON_OFFSET_FILL);
     }
 
@@ -1006,6 +1018,7 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoGround_) { glDeleteVertexArrays(1, &vaoGround_); vaoGround_ = 0; }
     if (vboGround_) { glDeleteBuffers(1, &vboGround_); vboGround_ = 0; }
     if (iboGround_) { glDeleteBuffers(1, &iboGround_); iboGround_ = 0; }
+    if (groundPailiaqTex_) { glDeleteTextures(1, &groundPailiaqTex_); groundPailiaqTex_ = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1566,6 +1579,27 @@ void XYZPanGLView::compileShaders()
         !groundShader_->link()) {
         groundShader_.reset();
         jassertfalse;
+    }
+
+    // Pailiaq ground texture
+    {
+        auto img = juce::ImageFileFormat::loadFrom(AssetData::pailiaq_png,
+                                                   AssetData::pailiaq_pngSize);
+        if (img.isValid()) {
+            img = img.convertedToFormat(juce::Image::ARGB);
+            const int tw = img.getWidth();
+            const int th = img.getHeight();
+            juce::Image::BitmapData bmp(img, juce::Image::BitmapData::readOnly);
+            glGenTextures(1, &groundPailiaqTex_);
+            glBindTexture(GL_TEXTURE_2D, groundPailiaqTex_);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0,
+                         GL_BGRA, GL_UNSIGNED_BYTE, bmp.data);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
     }
 }
 

@@ -27,9 +27,10 @@ enum GroundType : int {
     kGroundContourMap = 7,
     kGroundVoronoi    = 8,
     kGroundTerraces       = 9,
-    kGroundCartesianGrid  = 10
+    kGroundCartesianGrid  = 10,
+    kGroundPailiaq        = 11
 };
-inline constexpr int kNumGroundTypes = 11;
+inline constexpr int kNumGroundTypes = 12;
 
 // Source node visual shape (selectable in Customize tab).
 enum SourceShape : int {
@@ -76,8 +77,10 @@ inline constexpr int kNumWaveBlendModes = 16;
 struct SceneParams {
     int   skyType      = kSkyNone;
     int   groundType   = kGroundNone;
-    float groundHeight = 0.0f;   // 0.0 = default (-4.5), 1.0 = 2x lower (-9.0)
+    float groundHeight = 0.0f;   // 0.0 = default (-4.5), 1.0 = 10x lower (-45.0)
     float groundHills  = 0.0f;   // 0.0 = flat, 1.0 = maximum terrain displacement
+    float groundRipple = 0.0f;  // 0.0 = static hills, 1.0 = max animation speed
+    float groundFog    = 1.0f;  // 0.0 = no fog, 1.0 = full fog
     bool  showLabels   = true;   // show billboard object name labels in GL view
     bool  showArrow    = true;   // show direction arrow emanating from observer head
     int   sourceShape    = kShapeSphere;  // visual shape for source nodes

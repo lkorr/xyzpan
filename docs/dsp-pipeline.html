@@ -91,16 +91,17 @@ flowchart LR
 
     subgraph POS["POSITION MOD"]
         direction TB
-        LFO_MOD["LFOs X,Y,Z\n6 waveforms\ntempo sync"]:::position
+        POS_INTERP["Base Interp\n150ms smooth\nper-sample lerp"]:::position
+        LFO_MOD["LFOs X,Y,Z\n6 waveforms\ntempo sync\nquantized speed\ndepth mul"]:::position
         LISTENER_SUB["Listener Sub\nworld to relative"]:::position
         HEAD_ROT["Head Rotation\nYaw/Pitch/Roll\nper-sample interp"]:::position
-        LFO_MOD --> LISTENER_SUB --> HEAD_ROT
+        POS_INTERP --> LFO_MOD --> LISTENER_SUB --> HEAD_ROT
     end
     MONO_SUM --> POS
 
     subgraph STEREO_SPLIT["STEREO NODE SPLIT  when width > 0"]
         direction TB
-        ORBIT_LFO["Orbit LFOs\nXY/XZ/YZ"]:::stereo
+        ORBIT_LFO["Orbit LFOs\nXY/XZ/YZ\ndepth mul"]:::stereo
         SPREAD_DIR["Spread Dir"]:::stereo
         NODE_OFFSET["L/R Offset\npi phase diff"]:::stereo
         NODE_POS["Per-Node\nPos+Rot"]:::stereo
@@ -432,12 +433,20 @@ flowchart LR
     DOP_DELAY: `<h3>Doppler Delay Line <span class="badge badge-dist">DIST</span></h3>
       <p>Fractional delay with cubic Hermite (Catmull-Rom) interpolation. Delay = distance &times; speed of sound. Moving sources create pitch shift (Doppler effect).</p>
       <p>Hermite interpolation acts as a natural reconstruction filter &mdash; no separate anti-aliasing LPF needed. The delay-change rate limiter (distDelaySmooth) prevents extreme pitch jumps.</p>
-      <p class="condition">Driven by rawNodeDistFrac. Applied FIRST so pitch modulation propagates through all downstream processing. When bypassed, reads at fixed 2-sample delay.</p>
+      <p class="condition">Driven by rawNodeDistFrac (always per-sample, including mouse/automation via base position interpolation). Applied FIRST so pitch modulation propagates through all downstream processing. When bypassed, reads at fixed 2-sample delay.</p>
       <p class="condition">Ref: Neuhoff 2001 (auditory looming bias); Oechslin+ 2008 (Doppler as direction-of-motion cue).</p>`,
+
+    POS_INTERP: `<h3>Per-Sample Base Position Interpolation</h3>
+      <p>Base position (from mouse drag or automation) is smoothed with a 150 ms time constant, then linearly interpolated across each audio block. This eliminates staircase stepping in binaural/distance/doppler targets when LFOs are inactive.</p>
+      <p>LFO modulation adds on top of the interpolated base, unaffected by the smoothing. The GL source sphere uses the unsmoothed position for instant visual tracking.</p>
+      <p class="condition">Always active. Block-rate EQ coefficients (pinna, air absorption, near-field) also use the 150 ms smoothed base via OnePoleSmooth converge.</p>`,
 
     LFO_MOD: `<h3>Position LFOs</h3>
       <p>Three independent LFOs (X, Y, Z) that modulate source position. 6 waveforms (sine, triangle, saw, square, S&H, noise). Each has rate, depth, phase, and speed multiplier.</p>
-      <p class="condition">Supports tempo sync (bars/beats). Per-sample phase accumulation.</p>`,
+      <p><b>Depth multiplier:</b> Master slider that scales all three axis depths together (beta tester request). Matches the existing speed multiplier pattern.</p>
+      <p><b>Quantized sync speed:</b> When tempo-synced, the speed slider snaps to a 49-entry ratio table (1/100 through 32x) for musically useful subdivisions. Stop only at exactly 0.00.</p>
+      <p><b>Transport grid lock:</b> Synced LFOs lock phase to DAW ppqPosition when playing, producing deterministic output at any musical position. S&H waveform seeded per cycle number. Free-runs at synced rate when transport stopped.</p>
+      <p class="condition">Per-sample phase accumulation. LFOs always tick even at zero depth to keep phase consistent.</p>`,
 
     LISTENER_SUB: `<h3>Listener Position Subtraction</h3>
       <p>Converts world-space source coordinates to listener-relative coordinates. In walker mode, the listener moves through the scene and the source position is recalculated relative to the listener's current position.</p>`,
@@ -448,11 +457,13 @@ flowchart LR
 
     ORBIT_LFO: `<h3>Stereo Orbit LFOs</h3>
       <p>3 independent LFOs modulating stereo node separation in XY, XZ, and YZ planes. Creates orbital motion where L and R nodes rotate around the center position.</p>
+      <p><b>Depth multiplier:</b> Master slider that scales all three plane depths together.</p>
       <p class="condition">Angular smoothers handle phase wrapping. Pi phase difference between L and R nodes.</p>`,
 
     ERD: `<h3>Early Reflections &mdash; Wall Geometry</h3>
       <p>6 virtual walls (&plusmn;X, &plusmn;Y, &plusmn;Z) using image source method. Each wall creates a mirror-image source whose position determines delay and spatial cues.</p>
-      <p class="condition">Room size: 1&ndash;30m. Listener-relative wall positions.</p>
+      <p>Wall planes are expressed in listener-relative coordinates so delays stay correct as the listener moves off origin. Ratio penalty uses normalized path length (pathMeters / roomHalf) to keep reflection level perceptually balanced with direct sound.</p>
+      <p class="condition">Room size: 1&ndash;30m. Delay clamped to kERMaxDelayMs cap.</p>
       <p class="condition">Ref: Allen &amp; Berkley 1979 (foundational ISM paper); Barron &amp; Marshall 1981 (early lateral reflections determine apparent source width).</p>`,
 
     ERW: `<h3>ER Wall Absorption</h3>

@@ -11,7 +11,7 @@ XYZPanProcessor::XYZPanProcessor()
                          .withOutput("Output",   juce::AudioChannelSet::stereo(), true)
                          .withOutput("Aux Send", juce::AudioChannelSet::stereo(), false)),
       apvts(*this, &undoManager_, "XYZPanState", createParameterLayout()),
-      presetManager(apvts, &cfgValid_) {
+      presetManager(apvts, &cfgValid_, &resetXYZLfoPhases, &resetOrbitLfoPhases) {
     cfgValid_.store(sessionCfg_.isReady(), std::memory_order_relaxed);
     // Spatial position (Phase 1)
     xParam = apvts.getRawParameterValue(ParamID::X);

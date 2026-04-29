@@ -18,4 +18,4 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo Installer built: installer\output\XYZPan-0.1.0-Setup.exe
+echo Installer built: installer\output\XYZPan-1.0.0-Setup.exe

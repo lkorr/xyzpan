@@ -296,6 +296,22 @@ vec3 hsv2rgb(vec3 c) {
     return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
 }
 
+// Seamless spherical fbm — blends two atan2 projections offset by PI
+// to eliminate the discontinuity at the ±PI seam.
+float fbmSphere(vec3 rd, float scale, vec2 offset) {
+    float phi = asin(clamp(rd.y, -1.0, 1.0));
+    float theta1 = atan(rd.z, rd.x);
+    float theta2 = atan(-rd.z, -rd.x);  // offset by PI
+    vec2 uv1 = vec2(theta1, phi) * scale + offset;
+    vec2 uv2 = vec2(theta2, phi) * scale + offset;
+    float f1 = fbm(uv1);
+    float f2 = fbm(uv2);
+    // Blend weight: smooth crossfade near the ±PI seam of theta1
+    // theta1 seam is at ±PI; theta2 seam is at 0 — they never overlap
+    float w = smoothstep(2.8, 3.14159, abs(theta1));
+    return mix(f1, f2, w);
+}
+
 void main()
 {
     // Reconstruct world-space ray direction from NDC
@@ -336,19 +352,26 @@ void main()
         vec3 darkSky = vec3(0.02, 0.02, 0.06);
         vec3 horizonGlow = vec3(0.04, 0.03, 0.09);
         col = mix(horizonGlow, darkSky, smoothstep(-0.3, 0.5, h));
-        vec2 starUV = vec2(sTheta, sPhi) * 80.0;
-        vec2 starCell = floor(starUV);
-        float starHash = hash21(starCell);
-        if (starHash > 0.92) {
-            vec2 starCenter = starCell + vec2(hash21(starCell + 1.0), hash21(starCell + 2.0));
-            float d = length(starUV - starCenter);
-            float twinkle = 0.7 + 0.3 * sin(iTime * (2.0 + starHash * 5.0) + starHash * 100.0);
-            float brightness = smoothstep(0.09, 0.0, d) * twinkle;
-            vec3 starCol = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.9, 0.7), starHash * 3.0 - 2.5);
-            col += starCol * brightness * 0.8;
+        {
+            float seamW_ = smoothstep(2.8, 3.14159, abs(sTheta));
+            vec3 stars1 = vec3(0.0), stars2 = vec3(0.0);
+            float th1_ = sTheta, th2_ = atan(-rayDir.z, -rayDir.x);
+            for (int sp = 0; sp < 2; sp++) {
+                vec2 sUV = vec2(sp == 0 ? th1_ : th2_, sPhi) * 80.0;
+                vec2 sCell = floor(sUV);
+                float sH = hash21(sCell);
+                if (sH > 0.92) {
+                    vec2 sCtr = sCell + vec2(hash21(sCell + 1.0), hash21(sCell + 2.0));
+                    float sd = length(sUV - sCtr);
+                    float tw = 0.7 + 0.3 * sin(iTime * (2.0 + sH * 5.0) + sH * 100.0);
+                    float br = smoothstep(0.09, 0.0, sd) * tw;
+                    vec3 sc = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.9, 0.7), sH * 3.0 - 2.5);
+                    if (sp == 0) stars1 = sc * br * 0.8; else stars2 = sc * br * 0.8;
+                }
+            }
+            col += mix(stars1, stars2, seamW_);
         }
-        vec2 nebUV = vec2(sTheta, sPhi) * 1.5;
-        float neb = fbm(nebUV + vec2(iTime * 0.005));
+        float neb = fbmSphere(rayDir, 1.5, vec2(iTime * 0.005));
         col += vec3(0.1, 0.02, 0.15) * smoothstep(0.4, 0.7, neb) * 0.3;
         vec3 moonDir = normalize(vec3(-0.3, 0.55, 0.5));
         float moonDot = dot(rayDir, moonDir);
@@ -384,10 +407,9 @@ void main()
         vec3 light = vec3(0.58, 0.60, 0.62);
         float absH = abs(h);
         col = mix(light, base, smoothstep(0.0, 0.3, absH));
-        vec2 cuv = vec2(sTheta, sPhi) * 3.0;
         float t = iTime * 0.008;
-        float c1 = fbm(cuv + vec2(t, t * 0.4));
-        float c2 = fbm(cuv * 2.5 + vec2(-t * 0.3, t));
+        float c1 = fbmSphere(rayDir, 3.0, vec2(t, t * 0.4));
+        float c2 = fbmSphere(rayDir, 7.5, vec2(-t * 0.3, t));
         float cloudPattern = c1 * 0.6 + c2 * 0.4;
         col = mix(col, dark, smoothstep(0.35, 0.55, cloudPattern) * 0.5);
         col = mix(col, light, smoothstep(0.6, 0.8, cloudPattern) * 0.3);
@@ -398,19 +420,28 @@ void main()
         vec3 darkSky = vec3(0.01, 0.02, 0.05);
         vec3 horizGlow = vec3(0.03, 0.03, 0.08);
         col = mix(horizGlow, darkSky, smoothstep(-0.3, 0.5, h));
-        vec2 starUV = vec2(sTheta, sPhi) * 80.0;
-        vec2 starCell = floor(starUV);
-        float starHash = hash21(starCell);
-        if (starHash > 0.95) {
-            vec2 starCenter = starCell + vec2(hash21(starCell + 1.0), hash21(starCell + 2.0));
-            float d = length(starUV - starCenter);
-            float twinkle = 0.8 + 0.2 * sin(iTime * 3.0 + starHash * 80.0);
-            col += vec3(0.85, 0.9, 1.0) * smoothstep(0.08, 0.0, d) * twinkle * 0.6;
+        {
+            float seamW_ = smoothstep(2.8, 3.14159, abs(sTheta));
+            vec3 stars1 = vec3(0.0), stars2 = vec3(0.0);
+            float th1_ = sTheta, th2_ = atan(-rayDir.z, -rayDir.x);
+            for (int sp = 0; sp < 2; sp++) {
+                vec2 sUV = vec2(sp == 0 ? th1_ : th2_, sPhi) * 80.0;
+                vec2 sCell = floor(sUV);
+                float sH = hash21(sCell);
+                if (sH > 0.95) {
+                    vec2 sCtr = sCell + vec2(hash21(sCell + 1.0), hash21(sCell + 2.0));
+                    float sd = length(sUV - sCtr);
+                    float tw = 0.8 + 0.2 * sin(iTime * 3.0 + sH * 80.0);
+                    if (sp == 0) stars1 = vec3(0.85, 0.9, 1.0) * smoothstep(0.08, 0.0, sd) * tw * 0.6;
+                    else         stars2 = vec3(0.85, 0.9, 1.0) * smoothstep(0.08, 0.0, sd) * tw * 0.6;
+                }
+            }
+            col += mix(stars1, stars2, seamW_);
         }
         float t = iTime * 0.15;
         float band1 = sin(sTheta * 3.0 + t) * 0.5 + 0.5;
         float band2 = sin(sTheta * 5.0 - t * 1.3 + 1.0) * 0.5 + 0.5;
-        float ripple = fbm(vec2(sTheta * 4.0 + t * 0.3, sPhi * 8.0 - t * 0.5));
+        float ripple = fbmSphere(rayDir, 4.0, vec2(t * 0.3, -t * 0.5));
         float aurora = (band1 * 0.6 + band2 * 0.4) * ripple;
         float elevMask = smoothstep(-0.1, 0.15, h) * smoothstep(0.7, 0.3, h);
         aurora *= elevMask;
@@ -427,7 +458,7 @@ void main()
         float lonLine = abs(fract(sTheta * lonFreq / 6.28318) - 0.5) * 2.0;
         float meridian = 1.0 - smoothstep(0.02, 0.05, lonLine);
         vec3 bg = mix(vec3(0.02, 0.04, 0.03), vec3(0.05, 0.08, 0.06), smoothstep(-1.0, 1.0, h));
-        float disp = fbm(vec2(sTheta * 3.0, sPhi * 3.0)) * 0.3;
+        float disp = fbmSphere(rayDir, 3.0, vec2(0.0)) * 0.3;
         float noisyElev = abs(fract((sPhi + disp) * elevFreq / 3.14159) - 0.5) * 2.0;
         float noisyContour = 1.0 - smoothstep(0.02, 0.05, noisyElev);
         float indexLine = abs(fract((sPhi + disp) * elevFreq / 3.14159 * 0.2) - 0.5) * 2.0;
@@ -438,31 +469,40 @@ void main()
         col = mix(col, vec3(0.35, 0.6, 0.4), indexContour * 0.7);
     }
     else if (skyType == 7) {
-        // --- Voronoi ---
+        // --- Voronoi (seamless dual-projection blend) ---
         float t = iTime * 0.06;
-        vec2 uv = vec2(sTheta, sPhi) * 4.0;
-        vec2 cell = floor(uv);
-        float minDist = 10.0;
-        float minDist2 = 10.0;
-        vec2 nearestCell = cell;
-        for (int y = -1; y <= 1; y++) {
-            for (int x = -1; x <= 1; x++) {
-                vec2 neighbor = cell + vec2(float(x), float(y));
-                vec2 point = neighbor + vec2(hash21(neighbor + 0.1), hash21(neighbor + 7.3));
-                point += 0.3 * vec2(sin(t + hash21(neighbor) * 6.28), cos(t * 0.7 + hash21(neighbor + 3.0) * 6.28));
-                float d = length(uv - point);
-                if (d < minDist) { minDist2 = minDist; minDist = d; nearestCell = neighbor; }
-                else if (d < minDist2) { minDist2 = d; }
+        float theta1 = sTheta;
+        float theta2 = atan(-rayDir.z, -rayDir.x);
+        float seamW = smoothstep(2.8, 3.14159, abs(theta1));
+        vec3 col1, col2;
+        for (int proj = 0; proj < 2; proj++) {
+            float th = proj == 0 ? theta1 : theta2;
+            vec2 uv = vec2(th, sPhi) * 4.0;
+            vec2 cell_ = floor(uv);
+            float minDist_ = 10.0;
+            float minDist2_ = 10.0;
+            vec2 nearestCell_ = cell_;
+            for (int y = -1; y <= 1; y++) {
+                for (int x = -1; x <= 1; x++) {
+                    vec2 neighbor = cell_ + vec2(float(x), float(y));
+                    vec2 point = neighbor + vec2(hash21(neighbor + 0.1), hash21(neighbor + 7.3));
+                    point += 0.3 * vec2(sin(t + hash21(neighbor) * 6.28), cos(t * 0.7 + hash21(neighbor + 3.0) * 6.28));
+                    float d = length(uv - point);
+                    if (d < minDist_) { minDist2_ = minDist_; minDist_ = d; nearestCell_ = neighbor; }
+                    else if (d < minDist2_) { minDist2_ = d; }
+                }
             }
+            float edgeDist = minDist2_ - minDist_;
+            float edge = 1.0 - smoothstep(0.02, 0.06, edgeDist);
+            float cellHash = hash21(nearestCell_);
+            vec3 bg = vec3(0.03, 0.03, 0.05);
+            vec3 cellCol = hsv2rgb(vec3(cellHash * 0.3 + 0.55, 0.4, 0.08 + 0.04 * cellHash));
+            vec3 edgeCol = mix(vec3(0.2, 0.4, 0.6), vec3(0.5, 0.3, 0.6), cellHash);
+            vec3 c = mix(cellCol, bg, smoothstep(0.0, 0.8, minDist_));
+            c = mix(c, edgeCol, edge * 0.7);
+            if (proj == 0) col1 = c; else col2 = c;
         }
-        float edgeDist = minDist2 - minDist;
-        float edge = 1.0 - smoothstep(0.02, 0.06, edgeDist);
-        float cellHash = hash21(nearestCell);
-        vec3 bg = vec3(0.03, 0.03, 0.05);
-        vec3 cellCol = hsv2rgb(vec3(cellHash * 0.3 + 0.55, 0.4, 0.08 + 0.04 * cellHash));
-        vec3 edgeCol = mix(vec3(0.2, 0.4, 0.6), vec3(0.5, 0.3, 0.6), cellHash);
-        col = mix(cellCol, bg, smoothstep(0.0, 0.8, minDist));
-        col = mix(col, edgeCol, edge * 0.7);
+        col = mix(col1, col2, seamW);
     }
     else if (skyType == 8) {
         // --- Wireframe ---
@@ -483,10 +523,9 @@ void main()
     else if (skyType == 9) {
         // --- Noise ---
         float t = iTime * 0.05;
-        vec2 uv = vec2(sTheta, sPhi) * 2.5;
-        float n1 = fbm(uv + vec2(t, t * 0.7));
-        float n2 = fbm(uv * 1.7 + vec2(-t * 0.6, t * 0.4) + 3.7);
-        float warp = fbm(uv + vec2(n1, n2) * 1.5);
+        float n1 = fbmSphere(rayDir, 2.5, vec2(t, t * 0.7));
+        float n2 = fbmSphere(rayDir, 4.25, vec2(-t * 0.6, t * 0.4) + 3.7);
+        float warp = fbmSphere(rayDir, 2.5, vec2(n1, n2) * 1.5);
         col = vec3(0.03, 0.03, 0.05);
         col = mix(col, vec3(0.15, 0.1, 0.35), smoothstep(0.3, 0.5, warp));
         col = mix(col, vec3(0.05, 0.25, 0.3), smoothstep(0.5, 0.7, n1));
@@ -514,6 +553,8 @@ uniform mat4  projection;
 uniform mat4  view;
 uniform float groundYOffset;
 uniform float groundHills;
+uniform float groundRipple;
+uniform float iTimeVtx;
 
 out vec2  vWorldXZ;
 out float vDist;
@@ -549,7 +590,10 @@ float gfbm(vec2 p) {
 }
 
 float terrainHeight(vec2 xz) {
-    return gfbm(xz * 0.4) * 2.0 - 1.0;
+    // Animate with time offset scaled by ripple amount
+    vec2 animated = xz + vec2(iTimeVtx * groundRipple * 0.05,
+                              iTimeVtx * groundRipple * 0.03125);
+    return gfbm(animated * 6.4) * 2.0 - 1.0;
 }
 
 void main()
@@ -560,14 +604,14 @@ void main()
 
     // Hills displacement
     if (groundHills > 0.0) {
-        float h = terrainHeight(pos.xz) * groundHills * 3.0;
+        float h = terrainHeight(pos.xz) * groundHills * 3.75;
         pos.y += h;
         vHeight = h;
 
         // Approximate normal via finite differences
         float eps = 0.1;
-        float hx = terrainHeight(pos.xz + vec2(eps, 0.0)) * groundHills * 3.0;
-        float hz = terrainHeight(pos.xz + vec2(0.0, eps)) * groundHills * 3.0;
+        float hx = terrainHeight(pos.xz + vec2(eps, 0.0)) * groundHills * 3.75;
+        float hz = terrainHeight(pos.xz + vec2(0.0, eps)) * groundHills * 3.75;
         vNormal = normalize(vec3(h - hx, eps, h - hz));
     } else {
         vHeight = 0.0;
@@ -592,6 +636,8 @@ uniform int   groundType;
 uniform float iTime;
 uniform vec3  fogColor;
 uniform float groundHills;
+uniform float groundFog;
+uniform sampler2D groundTexture;
 
 out vec4 outColor;
 
@@ -801,16 +847,24 @@ void main()
         col = mix(col, vec3(0.35, 0.55, 0.65), axis * 0.8);
     }
 
+    else if (groundType == 11) {
+        // --- Pailiaq ---
+        // Single image spanning the entire ground plane (±150 world units).
+        vec2 texUV = uv / 300.0 + 0.5;
+        col = texture(groundTexture, texUV).rgb;
+    }
+
     // Hill shading — simple diffuse from a fixed light direction
     if (groundHills > 0.0) {
         vec3 lightDir = normalize(vec3(0.6, 1.0, 0.8));
         float diff = max(dot(vNormal, lightDir), 0.0);
-        float hillShade = 0.5 + 0.5 * diff;
+        float hillShade = 0.8 + 0.2 * diff;
         col *= hillShade;
     }
 
     // Distance fog
-    float fog = smoothstep(10.0, 120.0, vDist);
+    float fogRaw = smoothstep(10.0, 120.0, vDist);
+    float fog = min(fogRaw * groundFog * 10.0, 1.0);
     col = mix(col, fogColor, fog);
 
     outColor = vec4(col, 1.0 - fog * 0.3);

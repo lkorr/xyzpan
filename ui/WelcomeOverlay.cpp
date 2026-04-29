@@ -76,7 +76,7 @@ void WelcomeOverlay::paint(juce::Graphics& g)
     g.fillAll(juce::Colour(0xF0101014));
 
     auto panelW = juce::jmin(440, getWidth() - 60);
-    auto panelH = 260;
+    auto panelH = 280;
     auto panel = juce::Rectangle<int>(0, 0, panelW, panelH)
                      .withCentre(getLocalBounds().getCentre());
 
@@ -88,17 +88,22 @@ void WelcomeOverlay::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xFFE8D49A));
     g.setFont(juce::Font(20.0f, juce::Font::bold));
     g.drawText(OBF("XYZPan Activation"), panel.removeFromTop(50), juce::Justification::centred);
+
+    g.setColour(juce::Colour(0x99C8B88A));
+    g.setFont(juce::Font(13.0f));
+    g.drawText(OBF("Enter the license key from your Gumroad purchase"),
+               panel.removeFromTop(22), juce::Justification::centred);
 }
 
 void WelcomeOverlay::resized()
 {
     auto panelW = juce::jmin(440, getWidth() - 60);
-    auto panelH = 260;
+    auto panelH = 280;
     auto panel = juce::Rectangle<int>(0, 0, panelW, panelH)
                      .withCentre(getLocalBounds().getCentre());
 
     auto inner = panel.reduced(30, 0);
-    inner.removeFromTop(60);
+    inner.removeFromTop(82);
 
     keyInput_.setBounds(inner.removeFromTop(30));
     inner.removeFromTop(10);

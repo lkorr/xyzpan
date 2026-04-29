@@ -425,10 +425,8 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
     // -------------------------------------------------------------------------
     // Per-block orbit angular smoother update
-    // The phase/offset knobs are per-block parameters — their IIR smoother
-    // only needs one tick per block. Advancing once every 64-128 samples
-    // (1.45ms) is valid: the 5ms smoothing constant is longer than the block.
-    // This saves 4 cos/sin + 2 atan2 per sample when stereo is active.
+    // Analytically converge sin/cos IIR over the full block (pow),
+    // matching the OnePoleSmooth::converge() behaviour used for listener XYZ.
     // -------------------------------------------------------------------------
     constexpr float kPI_early = 3.14159265358979323846f;
     constexpr float kTwoPI_early = 2.0f * kPI_early;
@@ -436,16 +434,17 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
     {
         const float smoothedWidth_peek = stereoWidthSmooth_.current();
         if (smoothedWidth_peek > 0.001f && inputR != nullptr) {
-            const float b = 1.0f - angularSmA_;
+            const float aN = std::pow(angularSmA_, static_cast<float>(numSamples));
+            const float bN = 1.0f - aN;
             {
                 const float phaseRad = currentParams.stereoOrbitPhase * kTwoPI_early;
-                phaseSmCos_ = std::cos(phaseRad) * b + phaseSmCos_ * angularSmA_;
-                phaseSmSin_ = std::sin(phaseRad) * b + phaseSmSin_ * angularSmA_;
+                phaseSmCos_ = std::cos(phaseRad) * bN + phaseSmCos_ * aN;
+                phaseSmSin_ = std::sin(phaseRad) * bN + phaseSmSin_ * aN;
             }
             {
                 const float offsetRad = currentParams.stereoOrbitOffset * kTwoPI_early;
-                offsetSmCos_ = std::cos(offsetRad) * b + offsetSmCos_ * angularSmA_;
-                offsetSmSin_ = std::sin(offsetRad) * b + offsetSmSin_ * angularSmA_;
+                offsetSmCos_ = std::cos(offsetRad) * bN + offsetSmCos_ * aN;
+                offsetSmSin_ = std::sin(offsetRad) * bN + offsetSmSin_ * aN;
             }
             blkSmoothedPhase  = std::atan2(phaseSmSin_,  phaseSmCos_);
             blkSmoothedOffset = std::atan2(offsetSmSin_, offsetSmCos_);

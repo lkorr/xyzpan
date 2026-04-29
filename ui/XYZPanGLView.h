@@ -403,6 +403,7 @@ private:
     GLuint vaoSkybox_ = 0, vboSkybox_ = 0;
     GLuint vaoGround_ = 0, vboGround_ = 0, iboGround_ = 0;
     int    groundIndexCount_ = 0;
+    GLuint groundPailiaqTex_ = 0;
 
     int roomVertexCount_   = 0;
     int gridVertexCount_   = 0;

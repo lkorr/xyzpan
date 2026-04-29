@@ -15,7 +15,7 @@ void XYZPanEditor::StatusIndicator::paintButton(juce::Graphics& g, bool over, bo
     g.setColour(fill);
     g.fillRoundedRectangle(b, 3.0f);
     g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
     g.drawText(static_cast<const char*>(AY_OBFUSCATE("DEMO")), getLocalBounds(), juce::Justification::centred);
 }
 
@@ -664,6 +664,13 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(wasdToggle_);
     wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
 
+    // Brand label
+    brandLabel_.setText("pailiaq 2026", juce::dontSendNotification);
+    brandLabel_.setJustificationType(juce::Justification::centred);
+    brandLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    brandLabel_.setAlpha(0.2f);
+    addAndMakeVisible(brandLabel_);
+
     // Left column starts on Source tab; listener + orbit always visible in bottom row
     setActiveLeftTab(LeftTab::Source);
     updateListenerControlsEnabled();
@@ -679,7 +686,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     binauralLabel_.setText("Binaural", juce::dontSendNotification);
     binauralLabel_.setJustificationType(juce::Justification::centred);
-    binauralLabel_.setFont(juce::Font(juce::FontOptions(8.0f)));
+    binauralLabel_.setFont(juce::Font(juce::FontOptions(9.0f)));
     addAndMakeVisible(binauralLabel_);
 
     earlyReflToggle_.setButtonText("");
@@ -691,9 +698,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(earlyReflToggle_);
     earlyReflAtt_ = std::make_unique<BA>(p.apvts, ParamID::ER_ENABLED, earlyReflToggle_);
 
-    earlyReflLabel_.setText("Early Reflections", juce::dontSendNotification);
+    earlyReflLabel_.setText("Early Refl.", juce::dontSendNotification);
     earlyReflLabel_.setJustificationType(juce::Justification::centred);
-    earlyReflLabel_.setFont(juce::Font(juce::FontOptions(8.0f)));
+    earlyReflLabel_.setFont(juce::Font(juce::FontOptions(9.0f)));
     addAndMakeVisible(earlyReflLabel_);
 
     // ----- Reset Orbit LFO Phases button -----
@@ -955,6 +962,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     groundCombo_.addItem("Voronoi",      9);
     groundCombo_.addItem("Terraces",        10);
     groundCombo_.addItem("Cartesian Grid", 11);
+    groundCombo_.addItem("Pailiaq",        12);
     groundCombo_.setSelectedId(userPrefs_->sceneParams().groundType + 1, juce::dontSendNotification);
     groundCombo_.onChange = [this] {
         int idx = groundCombo_.getSelectedId() - 1;
@@ -970,7 +978,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // ----- Customize tab: ground height slider -----
     groundHeightSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
     groundHeightSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 16);
-    groundHeightSlider_.setRange(0.0, 1.0, 0.01);
+    groundHeightSlider_.setRange(0.0, 1.0, 0.001);
+    groundHeightSlider_.setSkewFactorFromMidPoint(0.1);
     groundHeightSlider_.setValue(static_cast<double>(userPrefs_->sceneParams().groundHeight), juce::dontSendNotification);
     groundHeightSlider_.onValueChange = [this] {
         auto sp = userPrefs_->sceneParams();
@@ -1000,6 +1009,41 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     groundHillsLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
     customizeContent_.addAndMakeVisible(groundHillsSlider_);
     customizeContent_.addAndMakeVisible(groundHillsLabel_);
+
+    // ----- Customize tab: ground ripple slider -----
+    groundRippleSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    groundRippleSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 16);
+    groundRippleSlider_.setRange(0.0, 1.0, 0.01);
+    groundRippleSlider_.setValue(static_cast<double>(userPrefs_->sceneParams().groundRipple), juce::dontSendNotification);
+    groundRippleSlider_.onValueChange = [this] {
+        auto sp = userPrefs_->sceneParams();
+        sp.groundRipple = static_cast<float>(groundRippleSlider_.getValue());
+        userPrefs_->setSceneParams(sp);
+        glView_.setSceneParams(sp);
+    };
+    groundRippleLabel_.setText("Ripple", juce::dontSendNotification);
+    groundRippleLabel_.setJustificationType(juce::Justification::centredLeft);
+    groundRippleLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(groundRippleSlider_);
+    customizeContent_.addAndMakeVisible(groundRippleLabel_);
+
+    // ----- Customize tab: ground fog slider -----
+    groundFogSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    groundFogSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 16);
+    groundFogSlider_.setRange(0.0, 1.0, 0.001);
+    groundFogSlider_.setSkewFactorFromMidPoint(0.1);
+    groundFogSlider_.setValue(static_cast<double>(userPrefs_->sceneParams().groundFog), juce::dontSendNotification);
+    groundFogSlider_.onValueChange = [this] {
+        auto sp = userPrefs_->sceneParams();
+        sp.groundFog = static_cast<float>(groundFogSlider_.getValue());
+        userPrefs_->setSceneParams(sp);
+        glView_.setSceneParams(sp);
+    };
+    groundFogLabel_.setText("Fog", juce::dontSendNotification);
+    groundFogLabel_.setJustificationType(juce::Justification::centredLeft);
+    groundFogLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
+    customizeContent_.addAndMakeVisible(groundFogSlider_);
+    customizeContent_.addAndMakeVisible(groundFogLabel_);
 
     auto setupCbLabel = [this](juce::Label& lbl, const juce::String& text) {
         lbl.setText(text, juce::dontSendNotification);
@@ -2429,6 +2473,8 @@ void XYZPanEditor::resized()
 
             placeSlider(groundHeightSlider_, groundHeightLabel_);
             placeSlider(groundHillsSlider_,  groundHillsLabel_);
+            placeSlider(groundRippleSlider_, groundRippleLabel_);
+            placeSlider(groundFogSlider_,    groundFogLabel_);
         }
         else if (activeCustomizeSubTab_ == CustomizeSubTab::Wave) {
             resetWavesBtn_.setBounds(ow - pad - resetBtnW, resetRowY, resetBtnW, resetBtnH);
@@ -2531,7 +2577,6 @@ void XYZPanEditor::resized()
             const int yprLabelH   = 14;
             const int yprKnobSz   = 46;
             const int yprTextH    = 14;
-            const int yprTotalH   = yprLabelH + yprKnobSz + yprTextH; // 74
             const int yprTop = dividerY + 6;  // small gap after divider line
 
             auto layoutYPRKnob = [&](juce::Slider& knob, int colX, int top) {
@@ -2561,7 +2606,7 @@ void XYZPanEditor::resized()
             const int togglePad = 10;
             const int toggleW = lw - togglePad * 2;
             const int sectionBottom = lo.bottomY + kBottomH;
-            const int toggleY = sectionBottom - bigToggleH - 18;
+            const int toggleY = sectionBottom - bigToggleH - 30;
 
             const int halfW = (toggleW - togglePad) / 2;
             wasdToggle_.setBounds(lx + togglePad, toggleY, halfW, bigToggleH);
@@ -2569,6 +2614,9 @@ void XYZPanEditor::resized()
 
             // Non-pilot hint label below toggles
             nonPilotHintLabel_.setBounds(lx, toggleY + bigToggleH + 2, lw, 16);
+
+            // Brand label at bottom
+            brandLabel_.setBounds(lx, sectionBottom - 26, lw, 20);
 
             // Link / Pilot toggles moved to GL view linking panel -no setBounds here
         }
@@ -2634,10 +2682,11 @@ void XYZPanEditor::resized()
                 orbitOffsetKnob_.setBounds(cx + knobLabelW, rowY + (topRowH - knobSz) / 2, knobSz, knobSz);
                 cx += offsetCellW + gap;
 
-                // Face Observer -checkbox + label, vertically centered
+                // Face Observer -checkbox + label, vertically centered, flush to right edge
                 const int cbCenterY = rowY + (topRowH - boxSz) / 2;
-                faceListenerToggle_.setBounds(cx, cbCenterY, boxSz, boxSz);
-                faceListenerLabel_.setBounds(cx + boxSz + cbGap, cbCenterY - 2, cbLabelW, boxSz + 4);
+                const int faceX = cx - 8;  // shift left to give label room
+                faceListenerToggle_.setBounds(faceX, cbCenterY, boxSz, boxSz);
+                faceListenerLabel_.setBounds(faceX + boxSz + cbGap, cbCenterY - 2, ox + ow - pad - (faceX + boxSz + cbGap), boxSz + 4);
             }
 
             // LFO strips below top controls (after divider gap)
@@ -2646,15 +2695,17 @@ void XYZPanEditor::resized()
             orbitXZLFO_.setBounds(ox + stripW,     lfoTop, stripW,     lfoH);
             orbitYZLFO_.setBounds(ox + stripW * 2, lfoTop, lastStripW, lfoH);
 
-            // Speed + Reset row — just below LFOs (depth hidden)
+            // Speed + Reset row — centered between bottom divider and section bottom
             {
-                const int sy = lfoTop + lfoH + 2;
+                const int sectionBottom = lo.bottomY + kBottomH;
+                const int dividerY = lfoTop + lfoH + divGap / 2;
+                const int cy = dividerY + (sectionBottom - dividerY - sliderH) / 2;
                 const int resetBtnW = 44;
                 const int resetBtnGap = 4;
                 const int sliderW = ow - pad * 2 - labelW - resetBtnW - resetBtnGap;
-                orbitSpeedMulLabel_.setBounds(ox + pad, sy, labelW, sliderH);
-                orbitSpeedMulKnob_.setBounds(ox + pad + labelW, sy, sliderW, sliderH);
-                resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, sy, resetBtnW, sliderH);
+                orbitSpeedMulLabel_.setBounds(ox + pad, cy, labelW, sliderH);
+                orbitSpeedMulKnob_.setBounds(ox + pad + labelW, cy, sliderW, sliderH);
+                resetOrbitPhasesBtn_.setBounds(ox + ow - pad - resetBtnW, cy, resetBtnW, sliderH);
             }
 
         }
@@ -2799,6 +2850,8 @@ void XYZPanEditor::applyPreferencesToUI()
     groundCombo_.setSelectedId(sp.groundType + 1, juce::dontSendNotification);
     groundHeightSlider_.setValue(sp.groundHeight, juce::dontSendNotification);
     groundHillsSlider_.setValue(sp.groundHills, juce::dontSendNotification);
+    groundRippleSlider_.setValue(sp.groundRipple, juce::dontSendNotification);
+    groundFogSlider_.setValue(sp.groundFog, juce::dontSendNotification);
     showLabelsToggle_.setToggleState(sp.showLabels, juce::dontSendNotification);
     showArrowToggle_.setToggleState(sp.showArrow, juce::dontSendNotification);
 
@@ -2945,6 +2998,8 @@ void XYZPanEditor::applyCustomizeSubTabVisibility()
     groundLabel_.setVisible(env);        groundCombo_.setVisible(env);
     groundHeightLabel_.setVisible(env);  groundHeightSlider_.setVisible(env);
     groundHillsLabel_.setVisible(env);   groundHillsSlider_.setVisible(env);
+    groundRippleLabel_.setVisible(env);  groundRippleSlider_.setVisible(env);
+    groundFogLabel_.setVisible(env);     groundFogSlider_.setVisible(env);
 
     // Wave sub-tab
     resetWavesBtn_.setVisible(wave);
@@ -3633,6 +3688,8 @@ void XYZPanEditor::resetEnvironment()
     sp.groundType   = def.groundType;
     sp.groundHeight = def.groundHeight;
     sp.groundHills  = def.groundHills;
+    sp.groundRipple = def.groundRipple;
+    sp.groundFog    = def.groundFog;
     userPrefs_->setSceneParams(sp);
     glView_.setSceneParams(sp);
 
@@ -3640,6 +3697,8 @@ void XYZPanEditor::resetEnvironment()
     groundCombo_.setSelectedId(sp.groundType + 1, juce::dontSendNotification);
     groundHeightSlider_.setValue(sp.groundHeight, juce::dontSendNotification);
     groundHillsSlider_.setValue(sp.groundHills, juce::dontSendNotification);
+    groundRippleSlider_.setValue(sp.groundRipple, juce::dontSendNotification);
+    groundFogSlider_.setValue(sp.groundFog, juce::dontSendNotification);
     resized();
     repaint();
 }

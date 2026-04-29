@@ -24,10 +24,11 @@ flowchart TD
     %% ═══════════════════════════════════════
     subgraph POS["POSITION MODULATION  per-sample"]
         direction TB
-        LFO_MOD["Position LFOs X, Y, Z<br/><i>6 waveforms - rate - depth - phase</i><br/><i>tempo sync - speed multiplier</i>"]:::position
+        POS_INTERP["Per-Sample Base Interpolation<br/><i>150ms smoothed base position (mouse/automation)</i><br/><i>linearly interpolated across block</i><br/><i>LFO modulation adds on top, unaffected by smoothing</i>"]:::position
+        LFO_MOD["Position LFOs X, Y, Z<br/><i>6 waveforms - rate - depth - phase</i><br/><i>tempo sync - quantized speed ratio (49 entries, 1/100 to 32x)</i><br/><i>speed multiplier - depth multiplier (master)</i><br/><i>transport grid lock: phase locks to DAW ppqPosition</i>"]:::position
         LISTENER_SUB["Listener Position Subtraction<br/><i>walker mode: world to listener-relative</i>"]:::position
         HEAD_ROT["Listener Head Rotation<br/><i>Yaw then Pitch then Roll inverse</i><br/><i>per-sample trig interpolation</i><br/><i>driven by: listenerYaw/Pitch/Roll</i>"]:::position
-        LFO_MOD --> LISTENER_SUB --> HEAD_ROT
+        POS_INTERP --> LFO_MOD --> LISTENER_SUB --> HEAD_ROT
     end
     MONO_SUM --> POS
 
@@ -36,7 +37,7 @@ flowchart TD
     %% ═══════════════════════════════════════
     subgraph STEREO_SPLIT["STEREO SOURCE NODE SPLITTING  when width > 0"]
         direction TB
-        ORBIT_LFO["Orbit LFOs XY, XZ, YZ planes<br/><i>3 independent LFOs per plane</i><br/><i>angular smoothers for phase wrap</i>"]:::stereo
+        ORBIT_LFO["Orbit LFOs XY, XZ, YZ planes<br/><i>3 independent LFOs per plane</i><br/><i>angular smoothers for phase wrap</i><br/><i>depth multiplier (master)</i>"]:::stereo
         SPREAD_DIR["Spread Direction<br/><i>faceListener: perpendicular to listener-source</i><br/><i>standard: along X axis</i>"]:::stereo
         NODE_OFFSET["L/R Node Offset Computation<br/><i>XY orbit then XZ orbit then YZ orbit</i><br/><i>pi phase difference between L and R</i>"]:::stereo
         NODE_POS["Per-Node Distance and Rotation<br/><i>independent listener-relative coords</i><br/><i>independent head rotation per node</i>"]:::stereo
@@ -232,7 +233,8 @@ flowchart TD
 
 | Stage | Axis | Primary Driver | Range | Condition | Sources |
 |-------|------|---------------|-------|-----------|---------|
-| Position LFOs | — | Rate/depth/phase params | Per-axis modulation | Always | — |
+| Base Position Interp | — | Mouse/automation position | 150ms smoothed, linearly interpolated per-sample | Always | — |
+| Position LFOs | — | Rate/depth/phase/speed/depth-mul params | Per-axis modulation, quantized sync speed (49 ratios), transport grid lock | Always | — |
 | Head Rotation | — | Yaw/pitch/roll params | Full rotation | Linked instances | — |
 | Stereo Split | — | stereoWidth param | 0 (mono) to 1 (full split) | width > 0 | — |
 | Doppler Delay | **DIST** | rawNodeDistFrac | 0 to distDelayMaxMs | Bypassable | Neuhoff 2001; Oechslin+ 2008 |
@@ -269,7 +271,7 @@ flowchart TD
 4. **ER has a DUAL output** -- direct reflections add to main signal, reverb send feeds the FDN separately
 5. **Stereo nodes are FULLY INDEPENDENT** -- when width > 0, the entire per-node chain (doppler - binaural - body - distance - ER) runs twice with independent positions, then combined at -3dB
 6. **Reverb input = dry signal + ER reverb accumulator** -- the FDN receives both the processed direct signal and the ER reverb send. The aux send also receives the ER reverb accumulator at +12 dB
-7. **All per-block transcendentals** (sin, cos, pow, sqrt, tan, exp) computed once per block, not per sample
+7. **Most transcendentals per-block** (sin, cos, pow, tan, exp for EQ coefficients) computed once per block. Exceptions: `fastSqrt` for `rawModDist` runs per-sample (position interpolates across block), and base position is linearly interpolated per-sample with a 150ms smoother
 8. **binauralEnabled toggles ITD only** — when OFF, ITD delay goes to zero and a hardpan compensation stage adds up to 4dB far-ear attenuation. All other binaural cues (head shadow, ILD, near-field, pinna EQ, combs, rear shadow) remain fully active. Individual bypass toggles control each stage independently
 
 ## Research Sources
