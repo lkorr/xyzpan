@@ -615,7 +615,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_SPEED, 1}, "Wave Speed",
         NR(0.05f, 2.0f, 0.01f), 0.8f));
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_COUNT, 1}, "Wave Count",
-        NR(3.0f, 30.0f, 1.0f), 3.0f));
+        NR(3.0f, 30.0f, 1.0f), 3.0f,
+        juce::AudioParameterFloatAttributes().withMeta(true)));
     layout.add(std::make_unique<APF>(PID{ParamID::WAVE_BLEND_MODE, 1}, "Wave Blend Mode",
         NR(0.0f, 15.0f, 1.0f), 6.0f));
     layout.add(std::make_unique<juce::AudioParameterBool>(
