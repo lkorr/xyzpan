@@ -135,6 +135,15 @@ void LFOStrip::setOutputSource(std::atomic<float>* src)
     waveformDisplay_.setOutputSource(src);
 }
 
+void LFOStrip::setDepthMulSource(std::atomic<float>* src)
+{
+    if (src) {
+        waveformDisplay_.setTotalDepthSource([this, src]() {
+            return static_cast<float>(depthKnob_.getValue()) * src->load(std::memory_order_relaxed);
+        });
+    }
+}
+
 void LFOStrip::resized()
 {
     // Compact 4-row layout:

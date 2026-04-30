@@ -2,7 +2,6 @@
 #include "Shaders.h"
 #include "Mesh.h"
 #include "PositionBridge.h"
-#include "AssetData.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -343,7 +342,7 @@ void XYZPanGLView::renderOpenGL()
     // Update matrices — camera follows walker listener position
     viewMatrix_ = camera_.getViewMatrix(listenerPos);
     const float aspect = static_cast<float>(w) / static_cast<float>(h);
-    const float nearPlane = std::max(0.001f, camera_.dist * 0.1f);
+    const float nearPlane = std::max(0.001f, camera_.dist * 0.05f);
     projMatrix_ = glm::perspective(glm::radians(45.0f), aspect, nearPlane, 100.0f);
 
     // Coordinate convention mapping:
@@ -439,17 +438,9 @@ void XYZPanGLView::renderOpenGL()
         groundShader_->setUniform("groundRipple", scene.groundRipple);
         groundShader_->setUniform("groundFog", scene.groundFog);
         groundShader_->setUniform("iTimeVtx", static_cast<float>(std::fmod(now, 1000.0)));
-        if (scene.groundType == kGroundPailiaq && groundPailiaqTex_) {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, groundPailiaqTex_);
-            groundShader_->setUniform("groundTexture", 0);
-        }
         glBindVertexArray(vaoGround_);
         glDrawElements(GL_TRIANGLES, groundIndexCount_, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
-        if (scene.groundType == kGroundPailiaq) {
-            glBindTexture(GL_TEXTURE_2D, 0);
-        }
         glDisable(GL_POLYGON_OFFSET_FILL);
     }
 
@@ -472,8 +463,8 @@ void XYZPanGLView::renderOpenGL()
     }
 
     // Fade listener head to transparent as camera zooms in close.
-    // Fully opaque at dist >= 0.5, fully transparent at dist <= 0.15.
-    const float headAlpha = std::clamp((camera_.dist - 0.05f) / (0.5f - 0.05f), 0.0f, 1.0f);
+    // Fully opaque at dist >= 0.5, fully transparent at dist = 0.
+    const float headAlpha = std::clamp(camera_.dist / 0.5f, 0.0f, 1.0f);
 
     // Head-follows-camera: when toggle is ON, map camera orbit angles
     // to listener yaw/pitch params regardless of zoom level.
@@ -523,34 +514,26 @@ void XYZPanGLView::renderOpenGL()
         }
     }
 
-    // Draw listener node at origin — themed color, avatar-parameterized geometry
-    if (headAlpha > 0.0f) {
-        // Transparent body types: write depth via a color-masked pre-pass so the
-        // observer head correctly occludes objects behind it, then draw the visible
-        // transparent geometry on top without depth writes.
-        const bool transparentBody = headAlpha < 1.0f
-                                   || avatar.bodyType == kBodyGrid
+    // Draw listener avatar — when fully opaque, draw here (before source nodes)
+    // so depth occlusion works normally. When fading (zoom-in), defer to after
+    // source nodes so the semi-transparent avatar blends on top of them.
+    auto drawAvatar = [&]() {
+        const bool transparentBody = avatar.bodyType == kBodyGrid
                                    || avatar.bodyType == kBodyGhost
                                    || avatar.bodyType == kBodyGlass
                                    || avatar.bodyType == kBodyNone;
 
         const float hs = avatar.headSize;
 
-        // Resolve effective colors: avatar override (non-zero) takes priority over theme.
-        // headColor applies to head and ears; noseColor applies to nose.
         const glm::vec3 headCol  = avatar.headColor  ? toVec3(avatar.headColor)  : theme.glListenerHead;
         const glm::vec3 earCol   = avatar.headColor  ? toVec3(avatar.headColor)  : theme.glEar;
         const glm::vec3 noseCol  = avatar.noseColor  ? toVec3(avatar.noseColor)  : theme.glNose;
 
-        // Listener head transform: translate to walker position, then rotate
         glm::mat4 headRot = glm::translate(glm::mat4(1.0f), listenerPos);
         headRot = glm::rotate(headRot, snap.listenerYaw,  glm::vec3(0.0f, 1.0f, 0.0f));
         headRot = glm::rotate(headRot, snap.listenerPitch, glm::vec3(1.0f, 0.0f, 0.0f));
         headRot = glm::rotate(headRot, snap.listenerRoll,  glm::vec3(0.0f, 0.0f, -1.0f));
 
-        // Head sphere — rotated by headRot so elongation follows face orientation,
-        // Y-scaled by headElongation, uniformly scaled by headSize.
-        // Body type selects rendering style via drawAvatarSphere.
         {
             constexpr float kBaseHeadRadius = 0.045f;
             glm::mat4 headModel = headRot;
@@ -558,22 +541,38 @@ void XYZPanGLView::renderOpenGL()
                                                          kBaseHeadRadius * hs * avatar.headElongation,
                                                          kBaseHeadRadius * hs));
 
-            // Depth pre-pass for transparent bodies: write depth only (no color)
-            // so the head silhouette occludes objects behind it.
-            if (transparentBody && avatar.bodyType != kBodyNone) {
+            if (transparentBody) {
+                if (avatar.bodyType != kBodyNone) {
+                    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+                    glDepthMask(GL_TRUE);
+                    drawSphereWithModel(headModel, headCol, 1.0f);
+                    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+                    glDepthFunc(GL_LEQUAL);
+                }
+                glDepthMask(GL_FALSE);
+                drawAvatarSphere(headModel, headCol, headAlpha, avatar.bodyType);
+            } else if (headAlpha < 1.0f) {
+                // Zoom-fading: draw the head sphere with a depth pre-pass
+                // so cosmetic parts (eyes, ears, etc.) depth-sort against
+                // the head correctly, while the head itself blends over
+                // already-rendered scene objects.
                 glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
                 glDepthMask(GL_TRUE);
                 drawSphereWithModel(headModel, headCol, 1.0f);
                 glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-            }
-
-            if (transparentBody)
+                glDepthFunc(GL_LEQUAL);
                 glDepthMask(GL_FALSE);
-
-            drawAvatarSphere(headModel, headCol, headAlpha, avatar.bodyType);
+                drawAvatarSphere(headModel, headCol, headAlpha, avatar.bodyType);
+                // Re-enable depth writes for cosmetic parts (nose, ears, eyes, hats)
+                // so they occlude each other correctly.
+                glDepthMask(GL_TRUE);
+                glDepthFunc(GL_LESS);
+            } else {
+                drawAvatarSphere(headModel, headCol, headAlpha, avatar.bodyType);
+            }
         }
 
-        // Nose — dispatched by nose type
+        // Nose
         if (avatar.noseType != kNoseNone) {
             switch (static_cast<NoseType>(avatar.noseType)) {
                 case kNoseButton:  drawNoseButton(headRot, avatar, noseCol, hs, headAlpha);  break;
@@ -584,7 +583,7 @@ void XYZPanGLView::renderOpenGL()
             }
         }
 
-        // Ears — dispatched by ear type
+        // Ears
         switch (static_cast<EarType>(avatar.earType)) {
             case kEarPointy:  drawEarsPointy(headRot, avatar, earCol, hs, headAlpha); break;
             case kEarRound:   drawEarsRound(headRot, avatar, earCol, hs, headAlpha);  break;
@@ -592,7 +591,7 @@ void XYZPanGLView::renderOpenGL()
             default:          drawEarsDefault(headRot, avatar, earCol, hs, headAlpha); break;
         }
 
-        // Eyes — dispatched by eye type
+        // Eyes
         if (avatar.eyeType != kEyeNone) {
             if (avatar.eyeType != kEyeGoogly) {
                 googlyLeft_ = {};
@@ -611,7 +610,7 @@ void XYZPanGLView::renderOpenGL()
             googlyRight_ = {};
         }
 
-        // Hats — dispatched by hat type
+        // Hats
         if (avatar.hatType != kHatNone) {
             const glm::vec3 hatCol = avatar.hatColor ? toVec3(avatar.hatColor) : theme.glHat;
             switch (static_cast<HatType>(avatar.hatType)) {
@@ -625,13 +624,12 @@ void XYZPanGLView::renderOpenGL()
             }
         }
 
-        // Direction arrow — flat 2D arrow pointing forward from the face
+        // Direction arrow
         if (scene.showArrow) {
-            constexpr float kGap   = 0.065f;  // gap from head center
-            constexpr float kLen   = 0.08f;   // total arrow length
-            constexpr float kWidth = 0.02f;   // half-width scale
+            constexpr float kGap   = 0.065f;
+            constexpr float kLen   = 0.08f;
+            constexpr float kWidth = 0.02f;
 
-            // Arrow mesh points along +Y. Rotate so +Y maps to -Z (forward).
             glm::mat4 ma = headRot;
             ma = glm::translate(ma, glm::vec3(0.0f, 0.0f, -kGap * hs));
             ma = glm::rotate(ma, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -639,8 +637,16 @@ void XYZPanGLView::renderOpenGL()
             drawArrow2D(ma, noseCol, 0.9f * headAlpha);
         }
 
-        if (transparentBody)
+        if (transparentBody || headAlpha < 1.0f) {
             glDepthMask(GL_TRUE);
+            glDepthFunc(GL_LESS);
+        }
+    };
+
+    // When fully opaque, draw avatar now so it writes depth and occludes normally.
+    // When fading, skip — we'll draw it after source nodes below.
+    if (headAlpha >= 1.0f) {
+        drawAvatar();
     }
 
     // Audible sphere visibility: always-on toggle OR sphere knob hover/drag
@@ -858,6 +864,20 @@ void XYZPanGLView::renderOpenGL()
         }
     }
 
+    // Deferred avatar draw: when fading, draw the avatar AFTER source nodes
+    // so its semi-transparency blends on top of them (partial occlusion).
+    if (headAlpha > 0.0f && headAlpha < 1.0f) {
+        // Re-establish sphere shader state for avatar drawing
+        sphereShader_->use();
+        sphereShader_->setUniformMat4("projection", glm::value_ptr(projMatrix_), 1, GL_FALSE);
+        sphereShader_->setUniformMat4("view",       glm::value_ptr(viewMatrix_), 1, GL_FALSE);
+        const glm::vec3 lightDir = glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
+        sphereShader_->setUniform("lightDir", lightDir.x, lightDir.y, lightDir.z);
+        sphereShader_->setUniform("blendMode", 0);
+        glBindVertexArray(vaoSphere_);
+        drawAvatar();
+    }
+
     // End sphere/cone shader batch
     glBindVertexArray(0);
 
@@ -886,7 +906,7 @@ void XYZPanGLView::renderOpenGL()
         // Fade out as camera zooms in (matches head fade range)
         if (walkerActive) {
             static const glm::vec3 kListenerTrailColor(0.30f, 0.66f, 0.66f); // aqua
-            const float trailZoomAlpha = std::clamp((camera_.dist - 0.05f) / (0.5f - 0.05f), 0.0f, 1.0f);
+            const float trailZoomAlpha = std::clamp(camera_.dist / 0.5f, 0.0f, 1.0f);
             drawTrail(trailListener_, vaoTrailListener_, vboTrailListener_,
                       kListenerTrailColor, 0.5f * trailZoomAlpha, now);
         }
@@ -1018,7 +1038,6 @@ void XYZPanGLView::openGLContextClosing()
     if (vaoGround_) { glDeleteVertexArrays(1, &vaoGround_); vaoGround_ = 0; }
     if (vboGround_) { glDeleteBuffers(1, &vboGround_); vboGround_ = 0; }
     if (iboGround_) { glDeleteBuffers(1, &iboGround_); iboGround_ = 0; }
-    if (groundPailiaqTex_) { glDeleteTextures(1, &groundPailiaqTex_); groundPailiaqTex_ = 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -1470,7 +1489,7 @@ void XYZPanGLView::mouseWheelMove(const juce::MouseEvent& /*e*/,
                                     const juce::MouseWheelDetails& wheel)
 {
     constexpr float kZoomSpeed = 0.5f;
-    constexpr float kMinDist   = 0.002f;
+    constexpr float kMinDist   = 0.0f;
     constexpr float kMaxDist   = 10.0f;
 
     camera_.dist = std::clamp(camera_.dist - wheel.deltaY * kZoomSpeed,
@@ -1581,26 +1600,6 @@ void XYZPanGLView::compileShaders()
         jassertfalse;
     }
 
-    // Pailiaq ground texture
-    {
-        auto img = juce::ImageFileFormat::loadFrom(AssetData::pailiaq_png,
-                                                   AssetData::pailiaq_pngSize);
-        if (img.isValid()) {
-            img = img.convertedToFormat(juce::Image::ARGB);
-            const int tw = img.getWidth();
-            const int th = img.getHeight();
-            juce::Image::BitmapData bmp(img, juce::Image::BitmapData::readOnly);
-            glGenTextures(1, &groundPailiaqTex_);
-            glBindTexture(GL_TEXTURE_2D, groundPailiaqTex_);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tw, th, 0,
-                         GL_BGRA, GL_UNSIGNED_BYTE, bmp.data);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glBindTexture(GL_TEXTURE_2D, 0);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

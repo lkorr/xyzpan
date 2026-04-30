@@ -9,6 +9,11 @@ void LFOWaveformDisplay::setOutputSource(std::atomic<float>* src)
     outputSource_ = src;
 }
 
+void LFOWaveformDisplay::setTotalDepthSource(std::function<float()> src)
+{
+    totalDepthSource_ = std::move(src);
+}
+
 void LFOWaveformDisplay::visibilityChanged()
 {
     if (isVisible())
@@ -26,6 +31,8 @@ void LFOWaveformDisplay::timerCallback()
         historyWritePos_ = (historyWritePos_ + 1) % kHistorySize;
         if (historyCount_ < kHistorySize) ++historyCount_;
     }
+    if (totalDepthSource_)
+        cachedTotalDepth_ = totalDepthSource_();
     repaint();
 }
 
@@ -59,6 +66,44 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
 
     if (drawW < 4.0f || drawH < 4.0f) return;
 
+    // Scale waveform so it always fits; reference lines show where ±1 is
+    const float totalDepth = juce::jmax(1.0f, cachedTotalDepth_);
+    const float ampScale = drawH * 0.42f / totalDepth;
+
+    // Dotted ±1 reference lines — always drawn, naturally at edges when depth=1
+    // and slide inward as depth increases. Clipped by component bounds.
+    {
+        const float refY = ampScale; // pixel distance from midY to ±1 boundary
+        const float fadeIn = 1.0f - std::exp(-8.0f * (totalDepth - 1.0f));
+        const float maxAlpha = isEnabled() ? 0.45f : 0.2f;
+        const float lineAlpha = maxAlpha * fadeIn;
+        g.setColour(juce::Colour(theme.lfoAccent).withAlpha(lineAlpha));
+
+        const float dashLengths[] = { 3.0f, 4.0f };
+        const float leftX = bounds.getX() + pad;
+        const float rightX = bounds.getX() + pad + drawW;
+
+        // +1 reference line (dashed)
+        {
+            juce::Path topRef;
+            topRef.startNewSubPath(leftX, midY - refY);
+            topRef.lineTo(rightX, midY - refY);
+            juce::Path dashedTop;
+            juce::PathStrokeType(0.75f).createDashedStroke(dashedTop, topRef, dashLengths, 2);
+            g.fillPath(dashedTop);
+        }
+
+        // -1 reference line (dashed)
+        {
+            juce::Path botRef;
+            botRef.startNewSubPath(leftX, midY + refY);
+            botRef.lineTo(rightX, midY + refY);
+            juce::Path dashedBot;
+            juce::PathStrokeType(0.75f).createDashedStroke(dashedBot, botRef, dashLengths, 2);
+            g.fillPath(dashedBot);
+        }
+    }
+
     // Iterate history oldest→newest, map to pixels (rightmost = newest)
     juce::Path path;
     bool first = true;
@@ -72,7 +117,7 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
         // Map i to x position: oldest at left edge, newest at right edge
         float frac = static_cast<float>(i) / static_cast<float>(juce::jmax(1, historyCount_ - 1));
         float px = bounds.getX() + pad + frac * drawW;
-        float py = midY - val * drawH * 0.42f;
+        float py = midY - val * ampScale;
         lastPy = py;
 
         if (first) {

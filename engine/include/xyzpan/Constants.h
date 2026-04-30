@@ -73,8 +73,8 @@ constexpr float kDefaultSmoothMs_Gain   = 5.0f;   // ILD gain smoother
 // sqrt(3) is the maximum Euclidean distance when XYZ are all at ±1 (corner of the unit cube).
 constexpr float kSqrt3 = 1.7320508f;
 
-// Sphere of Influence default radius — matches kSqrt3 so default behavior is unchanged.
-constexpr float kSphereRadiusDefault = 3.5f;
+// Sphere of Influence default radius.
+constexpr float kSphereRadiusDefault = 5.0f;
 
 // ============================================================================
 // Phase 3: Depth (comb filter bank)

@@ -13,8 +13,13 @@ glm::mat4 Camera::getViewMatrix(const glm::vec3& target) const
     glm::vec3 forward = glm::vec3(rot * glm::vec4(0, 0, -1, 0));
     glm::vec3 up      = glm::vec3(rot * glm::vec4(0, 1,  0, 0));
 
-    // Eye position: orbit at `dist` behind the target along -forward
-    const glm::vec3 eye = target - forward * dist;
+    // Eye position: orbit at `dist` behind the target along -forward.
+    // When fully zoomed in, nudge the eye slightly above the equator so
+    // the view isn't perfectly centered on the head (avoids symmetry artifacts).
+    constexpr float kPeekOffset = 0.006f;  // world-space max offset
+    constexpr float kPeekRange  = 0.3f;    // dist below which offset kicks in
+    const float peekAmount = kPeekOffset * std::max(0.0f, 1.0f - dist / kPeekRange);
+    const glm::vec3 eye = target - forward * dist + up * peekAmount;
 
     // Build view matrix manually (inverse of camera transform)
     glm::vec3 right = glm::normalize(glm::cross(forward, up));

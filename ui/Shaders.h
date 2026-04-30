@@ -637,7 +637,6 @@ uniform float iTime;
 uniform vec3  fogColor;
 uniform float groundHills;
 uniform float groundFog;
-uniform sampler2D groundTexture;
 
 out vec4 outColor;
 
@@ -845,13 +844,6 @@ void main()
         col = mix(col, vec3(0.12, 0.20, 0.30), grid * 0.5);
         col = mix(col, vec3(0.20, 0.35, 0.45), major * 0.7);
         col = mix(col, vec3(0.35, 0.55, 0.65), axis * 0.8);
-    }
-
-    else if (groundType == 11) {
-        // --- Pailiaq ---
-        // Single image spanning the entire ground plane (±150 world units).
-        vec2 texUV = uv / 300.0 + 0.5;
-        col = texture(groundTexture, texUV).rgb;
     }
 
     // Hill shading — simple diffuse from a fixed light direction

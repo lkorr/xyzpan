@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <atomic>
+#include <functional>
 
 // ---------------------------------------------------------------------------
 // LFOWaveformDisplay — live oscilloscope trace of actual LFO output history.
@@ -15,6 +16,7 @@ public:
     ~LFOWaveformDisplay() override = default;
 
     void setOutputSource(std::atomic<float>* src);
+    void setTotalDepthSource(std::function<float()> src);
 
     void paint(juce::Graphics& g) override;
     void visibilityChanged() override;
@@ -24,7 +26,9 @@ public:
 
 private:
     std::atomic<float>* outputSource_ = nullptr;
+    std::function<float()> totalDepthSource_;
     float lastSampledValue_ = 0.0f;
+    float cachedTotalDepth_ = 1.0f;
 
     static constexpr int kFps = 30;
     static constexpr int kHistorySize = 64;   // ~2.1s at 30fps

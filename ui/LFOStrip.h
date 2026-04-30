@@ -27,6 +27,7 @@ public:
 
     void resized() override;
     void setOutputSource(std::atomic<float>* src);
+    void setDepthMulSource(std::atomic<float>* src);
 
 private:
     void init(const juce::String& rateID, const juce::String& depthID,

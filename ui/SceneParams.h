@@ -27,10 +27,9 @@ enum GroundType : int {
     kGroundContourMap = 7,
     kGroundVoronoi    = 8,
     kGroundTerraces       = 9,
-    kGroundCartesianGrid  = 10,
-    kGroundPailiaq        = 11
+    kGroundCartesianGrid  = 10
 };
-inline constexpr int kNumGroundTypes = 12;
+inline constexpr int kNumGroundTypes = 11;
 
 // Source node visual shape (selectable in Customize tab).
 enum SourceShape : int {

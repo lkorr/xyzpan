@@ -68,8 +68,8 @@ void PresetManager::ensureFactoryPresetsOnDisk()
     auto& embedded = getEmbeddedPresets();
     for (auto& ep : embedded) {
         auto file = dir.getChildFile(juce::String(ep.displayName) + ".xml");
-        if (!file.existsAsFile())
-            file.replaceWithData(ep.data, static_cast<size_t>(ep.size));
+        // Always overwrite factory presets so updates propagate
+        file.replaceWithData(ep.data, static_cast<size_t>(ep.size));
     }
 }
 

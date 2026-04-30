@@ -27,6 +27,12 @@ namespace {
 static const char* kHelpGuideText =
 R"(XYZPAN GUIDE
 
+Thank you for purchasing this plugin.
+
+If you run into any bugs, crashes, etc, please report them to me at pailiaqmusic@gmail.com, or you can message me on discord for tech support, under the username 'pailiaq'.
+
+- pailiaq / Lucas Orr
+
 
 --- MAIN OPTIONS ---
 
@@ -71,17 +77,10 @@ LFO Depth - Master depth multiplier for all 3 LFOs. Scales X/Y/Z depths proporti
 Reset - Reset all XYZ LFO phases to zero
 
 
---- 3D VIEW ---
-
-Drag empty space - Orbit camera around listener
-Drag source node - Move source position (updates X/Y/Z knobs)
-Mouse wheel - Zoom in/out
-
-
 --- LISTENER ---
 
-Walker knobs position the listener in 3D space:
-Walker X/Y/Z - Listener position (same axes as source)
+Knobs position the listener in 3D space:
+X/Y/Z - Listener position
 
 Head orientation controls how the listener's head is rotated:
 Yaw - Horizontal head rotation (look left/right)
@@ -95,6 +94,8 @@ WASD Control - Enable keyboard movement:
   Movement follows head direction.
 
 Head Follows Camera - Camera rotation automatically drives Yaw/Pitch/Roll. Disabled when linked as non-pilot.
+
+Position and orientation changes from WASD Control and Head Follows Camera can be recorded as automation.
 
 
 --- STEREO ORBIT ---
@@ -114,7 +115,6 @@ Three orbit LFO strips (XY, XZ, YZ planes):
   Controls identical to position LFOs (shape, depth, rate/sync, phase, smooth)
 
 Orbit Speed - Master speed multiplier for all 3 orbit LFOs. Same quantized sync behavior as LFO Speed.
-Orbit Depth - Master depth multiplier for all 3 orbit LFOs. Scales XY/XZ/YZ depths proportionally (0 = off, 1 = normal, 2 = double).
 Reset - Reset all orbit LFO phases to zero
 
 
@@ -132,7 +132,7 @@ Reverb is fed gain boosted first reflections in order to assist with localizatio
 
 --- CUSTOM REVERB (AUX SEND) ---
 
-XYZPan also allows you to directly output a pre-reverberated signal with distance based pre-delay and early reflections. Using your DAW's auxiliary send features, you can split out a signal intended for your own custom reverb separately from the VST.
+XYZPan also allows you to directly output a pre-reverberated signal with distance based pre-delay and early reflections. Using your DAW's auxiliary send features, you can split out a signal intended for your own custom reverb separately from the VST. Distance and reverb cues are added to the aux send to better create depth and localization illusions, even when using your own reverb.
 
 To set this up: enable the second output bus ("Aux Send") in your DAW's plugin routing. In most DAWs, this appears as an additional stereo output pair from the plugin. Route this output to a bus/aux track with your own reverb. The Aux Send carries the dry signal processed through XYZPan's distance model and early reflections but without the built-in plate reverb, giving you full control over the reverb character while preserving spatial cues.
 
@@ -208,17 +208,22 @@ public:
 
         auto lines = juce::StringArray::fromLines(text_);
         auto bodyFont = juce::Font(juce::FontOptions(bodySize));
+        auto smallFont = juce::Font(juce::FontOptions(11.0f));
         auto headFont = juce::Font(juce::FontOptions(headSize, juce::Font::bold));
         auto titleFont = juce::Font(juce::FontOptions(titleSize, juce::Font::bold));
 
+        bool inIntro = false; // true between title and first --- section
+
         for (auto& line : lines) {
             if (line.startsWith("XYZPAN GUIDE")) {
+                inIntro = true;
                 g.setFont(titleFont);
                 g.setColour(gold);
                 g.drawText(line, (int)area.getX(), (int)y, (int)maxW, 32,
                            juce::Justification::centred);
                 y += 38.0f;
             } else if (line.startsWith("---") && line.endsWith("---")) {
+                inIntro = false;
                 y += 10.0f;
                 g.setColour(dimGold);
                 g.drawLine((float)area.getX(), y, (float)area.getX() + maxW, y, 0.5f);
@@ -232,11 +237,30 @@ public:
             } else if (line.isEmpty()) {
                 y += 10.0f;
             } else {
-                g.setFont(bodyFont);
-                g.setColour(white);
                 auto textLayout = juce::AttributedString();
-                textLayout.append(line, bodyFont, white);
+                // Parse {{...}} for inline small text
+                auto remaining = line;
+                while (remaining.contains("{{")) {
+                    int start = remaining.indexOf("{{");
+                    int end = remaining.indexOf("}}");
+                    if (end <= start) break;
+                    // Text before {{
+                    if (start > 0)
+                        textLayout.append(remaining.substring(0, start), bodyFont, white);
+                    // Small text inside {{ }}
+                    textLayout.append(remaining.substring(start + 2, end), smallFont, white.withAlpha(0.45f));
+                    remaining = remaining.substring(end + 2);
+                }
+                if (remaining.isNotEmpty()) {
+                    if (inIntro)
+                        textLayout.append(remaining, smallFont, white.withAlpha(0.7f));
+                    else
+                        textLayout.append(remaining, bodyFont, white);
+                }
+
                 textLayout.setWordWrap(juce::AttributedString::WordWrap::byWord);
+                if (inIntro)
+                    textLayout.setJustification(juce::Justification::centred);
                 juce::TextLayout layout;
                 layout.createLayout(textLayout, maxW);
                 float lh = layout.getHeight();
@@ -257,17 +281,22 @@ private:
         float y = 0;
         const float maxW = juce::jmax(400.0f, (float)getWidth() - 24.0f);
         auto bodyFont = juce::Font(juce::FontOptions(16.0f));
+        auto smallFont = juce::Font(juce::FontOptions(11.0f));
+        bool inIntro = false;
 
         for (auto& line : lines) {
             if (line.startsWith("XYZPAN GUIDE")) {
+                inIntro = true;
                 y += 38.0f;
             } else if (line.startsWith("---") && line.endsWith("---")) {
+                inIntro = false;
                 y += 48.0f;
             } else if (line.isEmpty()) {
                 y += 10.0f;
             } else {
+                auto clean = line.replace("{{", "").replace("}}", "");
                 juce::AttributedString as;
-                as.append(line, bodyFont, juce::Colours::white);
+                as.append(clean, inIntro ? smallFont : bodyFont, juce::Colours::white);
                 as.setWordWrap(juce::AttributedString::WordWrap::byWord);
                 juce::TextLayout layout;
                 layout.createLayout(as, maxW);
@@ -442,6 +471,9 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     xLFO_.setOutputSource(&p.lfoOutputX);
     yLFO_.setOutputSource(&p.lfoOutputY);
     zLFO_.setOutputSource(&p.lfoOutputZ);
+    xLFO_.setDepthMulSource(p.apvts.getRawParameterValue(ParamID::LFO_DEPTH_MUL));
+    yLFO_.setDepthMulSource(p.apvts.getRawParameterValue(ParamID::LFO_DEPTH_MUL));
+    zLFO_.setDepthMulSource(p.apvts.getRawParameterValue(ParamID::LFO_DEPTH_MUL));
 
     // ----- XYZ LFO Speed slider (below LFO strips) -----
     lfoSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -962,7 +994,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     groundCombo_.addItem("Voronoi",      9);
     groundCombo_.addItem("Terraces",        10);
     groundCombo_.addItem("Cartesian Grid", 11);
-    groundCombo_.addItem("Pailiaq",        12);
     groundCombo_.setSelectedId(userPrefs_->sceneParams().groundType + 1, juce::dontSendNotification);
     groundCombo_.onChange = [this] {
         int idx = groundCombo_.getSelectedId() - 1;
@@ -3920,6 +3951,9 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
     xLFO_.setOutputSource(&targetProc->lfoOutputX);
     yLFO_.setOutputSource(&targetProc->lfoOutputY);
     zLFO_.setOutputSource(&targetProc->lfoOutputZ);
+    xLFO_.setDepthMulSource(target.getRawParameterValue(ParamID::LFO_DEPTH_MUL));
+    yLFO_.setDepthMulSource(target.getRawParameterValue(ParamID::LFO_DEPTH_MUL));
+    zLFO_.setDepthMulSource(target.getRawParameterValue(ParamID::LFO_DEPTH_MUL));
     orbitXYLFO_.setOutputSource(&targetProc->lfoOutputOrbitXY);
     orbitXZLFO_.setOutputSource(&targetProc->lfoOutputOrbitXZ);
     orbitYZLFO_.setOutputSource(&targetProc->lfoOutputOrbitYZ);
