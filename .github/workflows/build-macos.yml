@@ -20,19 +20,21 @@ jobs:
           restore-keys: cpm-macos-
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCPM_SOURCE_CACHE=~/.cache/CPM -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCPM_SOURCE_CACHE=~/.cache/CPM -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Verify universal binary
+      - name: Inspect AU bundle structure
         run: |
-          echo "AU architectures:"
+          echo "=== Bundle contents ==="
+          find build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component -type f
+          echo "=== Info.plist ==="
+          cat build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component/Contents/Info.plist
+          echo "=== Binary architectures ==="
           lipo -archs build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component/Contents/MacOS/XYZPan
-          echo "VST3 architectures:"
-          lipo -archs build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3/Contents/MacOS/XYZPan
-          echo "Standalone architectures:"
-          lipo -archs build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app/Contents/MacOS/XYZPan
+          echo "=== File type ==="
+          file build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component/Contents/MacOS/XYZPan
 
       - name: Ad-hoc codesign
         run: |
@@ -46,6 +48,9 @@ jobs:
       - name: Validate AU with auval
         run: |
           sudo cp -r build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component /Library/Audio/Plug-Ins/Components/
+          sudo killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          auval -a | grep -i xyz || echo "WARNING: Plugin not found in auval -a listing"
           auval -v aufx Xzpn Paaq
           sudo rm -rf /Library/Audio/Plug-Ins/Components/XYZPan.component
 
