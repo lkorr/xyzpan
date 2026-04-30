@@ -20,16 +20,34 @@ jobs:
           restore-keys: cpm-macos-
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCPM_SOURCE_CACHE=~/.cache/CPM
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCPM_SOURCE_CACHE=~/.cache/CPM -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Verify universal binary
+        run: |
+          echo "AU architectures:"
+          lipo -archs build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component/Contents/MacOS/XYZPan
+          echo "VST3 architectures:"
+          lipo -archs build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3/Contents/MacOS/XYZPan
+          echo "Standalone architectures:"
+          lipo -archs build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app/Contents/MacOS/XYZPan
+
       - name: Ad-hoc codesign
         run: |
-          codesign --force --deep --sign - build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3
-          codesign --force --deep --sign - build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component
-          codesign --force --deep --sign - build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app
+          # Sign inner binaries first, then outer bundles (Apple best practice)
+          codesign --force --sign - build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3/Contents/MacOS/XYZPan
+          codesign --force --sign - build/plugin/XYZPan_artefacts/Release/VST3/XYZPan.vst3
+          codesign --force --sign - build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component/Contents/MacOS/XYZPan
+          codesign --force --sign - build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component
+          codesign --force --sign - build/plugin/XYZPan_artefacts/Release/Standalone/XYZPan.app
+
+      - name: Validate AU with auval
+        run: |
+          sudo cp -r build/plugin/XYZPan_artefacts/Release/AU/XYZPan.component /Library/Audio/Plug-Ins/Components/
+          auval -v aufx Xzpn Paaq
+          sudo rm -rf /Library/Audio/Plug-Ins/Components/XYZPan.component
 
       - name: Package artifacts
         run: |

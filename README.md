@@ -26,13 +26,18 @@ C:\Program Files\Common Files\VST3\
 ```
 Rescan plugins in your DAW.
 
-### macOS (unsigned build)
+### macOS — AU (Logic Pro)
 
-1. Copy `XYZPan.vst3` to `/Library/Audio/Plug-ins/VST3/`
-2. Open your DAW. macOS will block the plugin.
-3. Go to **System Settings > Privacy & Security**
-4. Click **Allow Anyway** next to the blocked plugin message
-5. Rescan plugins in your DAW
+1. Copy `XYZPan.component` to `/Library/Audio/Plug-Ins/Components/`
+2. In Terminal, run: `sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/Components/XYZPan.component`
+3. Restart your Mac
+4. In Logic: click **Audio FX** slot → **Audio Units** → **pailiaq** → **XYZPan**
+
+### macOS — VST3
+
+1. Copy `XYZPan.vst3` to `/Library/Audio/Plug-Ins/VST3/`
+2. In Terminal, run: `sudo xattr -r -d com.apple.quarantine /Library/Audio/Plug-Ins/VST3/XYZPan.vst3`
+3. Rescan plugins in your DAW
 
 ## System Requirements
 
