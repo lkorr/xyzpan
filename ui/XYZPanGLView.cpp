@@ -851,12 +851,17 @@ void XYZPanGLView::renderOpenGL()
             const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
             const auto& sp = foreignSmoothedPos_[ri];
             const glm::vec3 fPos(sp.x, sp.z, -sp.y);
-            drawSourceShape(fPos, 0.048f, color, 0.6f, fs.sourceShape, now, scene.clusterCount);
-            if (fs.stereoWidth > 0.0f) {
+            const bool fStereo = fs.stereoWidth > 0.0f;
+            const float fMainRadius  = fStereo ? 0.0375f : 0.048f;
+            const float fMainOpacity = fStereo ? 0.1f    : 0.6f;
+            if (fStereo) glDepthMask(GL_FALSE);
+            drawSourceShape(fPos, fMainRadius, color, fMainOpacity, fs.sourceShape, now, scene.clusterCount);
+            if (fStereo) {
+                glDepthMask(GL_TRUE);
                 const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
                 const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);
-                drawSourceShape(fL, 0.028f, color * 0.8f, 0.45f, fs.sourceShape, now, scene.clusterCount);
-                drawSourceShape(fR, 0.028f, color * 0.8f, 0.45f, fs.sourceShape, now, scene.clusterCount);
+                drawSourceShape(fL, 0.045f, color * 0.8f, 0.6f, fs.sourceShape, now, scene.clusterCount);
+                drawSourceShape(fR, 0.045f, color * 0.8f, 0.6f, fs.sourceShape, now, scene.clusterCount);
             }
         }
     }

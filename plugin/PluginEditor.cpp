@@ -849,31 +849,34 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     rebuildPresetCombo();
     presetCombo_.onChange = [this]() {
         int idx = presetCombo_.getSelectedId() - 1; // Convert back to 0-based
-        if (idx >= 0 && idx < proc_.presetManager.getNumPresets()) {
-            proc_.presetManager.loadPreset(idx);
-            proc_.getUndoManager().clearUndoHistory();
+        auto& target = activeProc();
+        if (idx >= 0 && idx < target.presetManager.getNumPresets()) {
+            target.presetManager.loadPreset(idx);
+            target.getUndoManager().clearUndoHistory();
         }
     };
 
     addAndMakeVisible(presetPrevBtn_);
     presetPrevBtn_.onClick = [this]() {
-        int n = proc_.presetManager.getNumPresets();
+        auto& target = activeProc();
+        int n = target.presetManager.getNumPresets();
         if (n == 0) return;
-        int cur = proc_.presetManager.getCurrentIndex();
+        int cur = target.presetManager.getCurrentIndex();
         int next = (cur <= 0) ? n - 1 : cur - 1;
-        proc_.presetManager.loadPreset(next);
-        proc_.getUndoManager().clearUndoHistory();
+        target.presetManager.loadPreset(next);
+        target.getUndoManager().clearUndoHistory();
         presetCombo_.setSelectedId(next + 1, juce::dontSendNotification);
     };
 
     addAndMakeVisible(presetNextBtn_);
     presetNextBtn_.onClick = [this]() {
-        int n = proc_.presetManager.getNumPresets();
+        auto& target = activeProc();
+        int n = target.presetManager.getNumPresets();
         if (n == 0) return;
-        int cur = proc_.presetManager.getCurrentIndex();
+        int cur = target.presetManager.getCurrentIndex();
         int next = (cur + 1) % n;
-        proc_.presetManager.loadPreset(next);
-        proc_.getUndoManager().clearUndoHistory();
+        target.presetManager.loadPreset(next);
+        target.getUndoManager().clearUndoHistory();
         presetCombo_.setSelectedId(next + 1, juce::dontSendNotification);
     };
 
@@ -891,7 +894,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
                 if (file == juce::File{})
                     return;
                 auto name = file.getFileNameWithoutExtension();
-                if (proc_.presetManager.saveUserPreset(name))
+                if (activeProc().presetManager.saveUserPreset(name))
                     rebuildPresetCombo();
                 else
                     juce::AlertWindow::showMessageBoxAsync(
@@ -912,10 +915,11 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
                 if (file == juce::File{} || !file.existsAsFile())
                     return;
                 auto xml = juce::parseXML(file);
-                if (xml != nullptr && xml->hasTagName(proc_.apvts.state.getType())) {
-                    proc_.apvts.replaceState(juce::ValueTree::fromXml(*xml));
-                    proc_.getUndoManager().clearUndoHistory();
-                    proc_.presetManager.setCurrentIndex(-1);
+                auto& target = activeProc();
+                if (xml != nullptr && xml->hasTagName(target.apvts.state.getType())) {
+                    target.apvts.replaceState(juce::ValueTree::fromXml(*xml));
+                    target.getUndoManager().clearUndoHistory();
+                    target.presetManager.setCurrentIndex(-1);
                 }
                 presetCombo_.setSelectedId(0, juce::dontSendNotification);
             });
@@ -2292,9 +2296,9 @@ void XYZPanEditor::resized()
         presetLoadBtn_.setBounds(loadBtnArea.reduced(2));
     }
 
-    // Output meter strip -spans left column height only (right edge of window)
+    // Output meter strip -spans full height including bottom row (right edge of window)
     auto meterArea = b.removeFromRight(kMeterW);
-    meterArea.setHeight(b.getHeight());  // same height as GL area
+    meterArea.setHeight(b.getHeight() + kBottomH);  // extend through bottom row
     outputMeter_.setBounds(meterArea);
 
     // Remainder = GL view area (full height above bottom row, no preset bar)
@@ -3896,6 +3900,7 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
         detachAndRebindTo(proc_.apvts, &proc_);
         glView_.setFocusedForeignSource(-1);
         sourceShapeCombo_.setSelectedId(proc_.getSourceShapeParam() + 1, juce::dontSendNotification);
+        rebuildPresetCombo();
         forceListRebuild_ = true;
         repaint();
         return;
@@ -3937,6 +3942,7 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
     detachAndRebindTo(remoteProc->apvts, remoteProc);
     glView_.setFocusedForeignSource(linkedIndex);
     sourceShapeCombo_.setSelectedId(remoteProc->getSourceShapeParam() + 1, juce::dontSendNotification);
+    rebuildPresetCombo();
     forceListRebuild_ = true;
     repaint();
 }
@@ -4034,7 +4040,8 @@ void XYZPanEditor::rebuildPresetCombo()
 {
     presetCombo_.clear(juce::dontSendNotification);
 
-    auto& presets = proc_.presetManager.getPresets();
+    auto& pm = activeProc().presetManager;
+    auto& presets = pm.getPresets();
     bool addedSeparator = false;
 
     for (int i = 0; i < static_cast<int>(presets.size()); ++i) {
@@ -4045,7 +4052,7 @@ void XYZPanEditor::rebuildPresetCombo()
         presetCombo_.addItem(presets[static_cast<size_t>(i)].name, i + 1);
     }
 
-    int cur = proc_.presetManager.getCurrentIndex();
+    int cur = pm.getCurrentIndex();
     if (cur >= 0 && cur < static_cast<int>(presets.size()))
         presetCombo_.setSelectedId(cur + 1, juce::dontSendNotification);
 }

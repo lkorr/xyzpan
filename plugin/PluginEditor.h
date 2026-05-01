@@ -211,6 +211,7 @@ private:
     void updateListenerControlsEnabled();
 
     // Remote instance focus — control another linked instance's parameters
+    XYZPanProcessor& activeProc() { return remoteFocusProc_ ? *remoteFocusProc_ : proc_; }
     XYZPanProcessor* remoteFocusProc_ = nullptr;  // null = controlling self
     int remoteFocusIndex_ = -1;                    // -1 = self
     int lastKnownLinkedCount_ = 0;
