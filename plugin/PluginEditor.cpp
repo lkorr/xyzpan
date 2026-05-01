@@ -2667,8 +2667,7 @@ void XYZPanEditor::resized()
             wasdSpeedKnob_.setBounds(lx + togglePad + speedLabelW, speedSliderY,
                                      toggleW - speedLabelW, sliderH);
 
-            // Non-pilot hint label below speed slider
-            nonPilotHintLabel_.setBounds(lx, speedSliderY + sliderH + 2, lw, 16);
+            // nonPilotHintLabel_ removed from layout
 
             // Link / Pilot toggles moved to GL view linking panel -no setBounds here
         }
@@ -3124,7 +3123,7 @@ void XYZPanEditor::updateListenerControlsEnabled() {
     headFollowsToggle_.setEnabled(canControl);
 
     // Show hint when linked as non-pilot
-    nonPilotHintLabel_.setVisible(linked && !isPilot);
+    nonPilotHintLabel_.setVisible(false);
 
     // Force head-follows OFF when linked-non-pilot to prevent broken camera movement
     if (linked && !isPilot && headFollowsToggle_.getToggleState())

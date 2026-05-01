@@ -1097,9 +1097,6 @@ void XYZPanGLView::paint(juce::Graphics& g)
             listHeight += (isFocused ? focusedRowH : rowH) + 2;
         }
         panelH += listHeight;
-        // Pilot status text
-        if (!isPilot && pilotStatusText_.isNotEmpty())
-            panelH += statusRowH + 2;
         panelH += panelPad; // bottom padding
     }
 
@@ -1237,13 +1234,7 @@ void XYZPanGLView::paint(juce::Graphics& g)
         }
 
 
-        // Pilot status text (when linked-non-pilot)
-        if (!isPilot && pilotStatusText_.isNotEmpty()) {
-            g.setFont(juce::Font(juce::FontOptions(10.0f)));
-            g.setColour(juce::Colours::grey);
-            g.drawText(pilotStatusText_, listX, curY, listW, statusRowH,
-                       juce::Justification::centredLeft, false);
-        }
+        // Pilot status text removed
     }
 }
 
