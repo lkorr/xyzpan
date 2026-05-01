@@ -409,6 +409,7 @@ private:
     juce::TextButton resetWavesBtn_{"Reset"};
     juce::TextButton resetAvatarBtn_{"Reset"};
 
+    void pushSceneParamsToGL(xyzpan::SceneParams sp);
     void resetEnvironment();
     void resetWaves();
     void resetAvatarAll();

@@ -851,10 +851,7 @@ void XYZPanGLView::renderOpenGL()
             const int ri = std::clamp(i, 0, static_cast<int>(kMaxLinkedSources) - 1);
             const auto& sp = foreignSmoothedPos_[ri];
             const glm::vec3 fPos(sp.x, sp.z, -sp.y);
-            drawSourceShape(fPos, 0.035f, color, 0.6f, fs.sourceShape, now, scene.clusterCount);
-            // Highlight ring around focused foreign source
-            if (fs.colorIndex == focusIdx)
-                drawSphere(fPos, 0.050f, color, 0.25f);
+            drawSourceShape(fPos, 0.048f, color, 0.6f, fs.sourceShape, now, scene.clusterCount);
             if (fs.stereoWidth > 0.0f) {
                 const glm::vec3 fL(sp.lx, sp.lz, -sp.ly);
                 const glm::vec3 fR(sp.rx, sp.rz, -sp.ry);

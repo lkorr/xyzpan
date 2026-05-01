@@ -236,6 +236,7 @@ namespace ParamID {
     constexpr const char* WALKER_Z       = "walker_z";
     constexpr const char* WASD_CONTROL   = "walker_enabled";  // reused ID for DAW compat
     constexpr const char* WASD_SPEED     = "wasd_speed";
+    constexpr const char* SOURCE_SHAPE   = "source_shape";
 
     // Sound wave visualization (dev panel)
     constexpr const char* WAVE_INTENSITY = "wave_intensity";

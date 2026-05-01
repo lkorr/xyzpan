@@ -248,6 +248,10 @@ XYZPanProcessor::XYZPanProcessor()
     showAudibleSphereParam_ = apvts.getRawParameterValue(ParamID::SHOW_AUDIBLE_SPHERE);
     jassert(showAudibleSphereParam_ != nullptr);
 
+    // Source shape (per-instance, queried by linked instances)
+    sourceShapeParam_ = apvts.getRawParameterValue(ParamID::SOURCE_SHAPE);
+    jassert(sourceShapeParam_ != nullptr);
+
     // Walker — movable listener position (always active)
     walkerXParam     = apvts.getRawParameterValue(ParamID::WALKER_X);
     walkerYParam     = apvts.getRawParameterValue(ParamID::WALKER_Y);

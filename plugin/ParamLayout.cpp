@@ -1,6 +1,7 @@
 #include "ParamLayout.h"
 #include "ParamIDs.h"
 #include "xyzpan/Constants.h"
+#include "SceneParams.h"
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     using APF = juce::AudioParameterFloat;
@@ -661,6 +662,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         juce::AudioParameterBoolAttributes().withAutomatable(false)));
     layout.add(std::make_unique<APF>(PID{ParamID::WASD_SPEED, 1}, "WASD Speed",
         NR(xyzpan::kWASDSpeedMin, xyzpan::kWASDSpeedMax, 0.01f, xyzpan::kWASDSpeedSkew), xyzpan::kWASDSpeedDefault));
+
+    // Source shape (per-instance, saved with DAW project)
+    layout.add(std::make_unique<APF>(PID{ParamID::SOURCE_SHAPE, 1}, "Source Shape",
+        NR(0.0f, static_cast<float>(xyzpan::kNumSourceShapes - 1), 1.0f),
+        static_cast<float>(xyzpan::kShapeSphere)));
 
     // -------------------------------------------------------------------------
     // Binaural toggle (user-facing)

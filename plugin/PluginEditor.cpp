@@ -945,7 +945,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     lookAndFeel_.applyTheme(userPrefs_->activeTheme());
     glView_.setColorTheme(userPrefs_->activeTheme());
     glView_.setAvatarParams(userPrefs_->avatarParams());
-    glView_.setSceneParams(userPrefs_->sceneParams());
+    pushSceneParamsToGL(userPrefs_->sceneParams());
 
     // ----- Customize tab: theme combo -----
     themeLabel_.setText("Theme", juce::dontSendNotification);
@@ -988,7 +988,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
             auto sp = userPrefs_->sceneParams();
             sp.skyType = idx;
             userPrefs_->setSceneParams(sp);
-            glView_.setSceneParams(sp);
+            pushSceneParamsToGL(sp);
         }
     };
     customizeContent_.addAndMakeVisible(skyCombo_);
@@ -1017,7 +1017,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
             auto sp = userPrefs_->sceneParams();
             sp.groundType = idx;
             userPrefs_->setSceneParams(sp);
-            glView_.setSceneParams(sp);
+            pushSceneParamsToGL(sp);
         }
     };
     customizeContent_.addAndMakeVisible(groundCombo_);
@@ -1032,7 +1032,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.groundHeight = static_cast<float>(groundHeightSlider_.getValue());
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     groundHeightLabel_.setText("Depth", juce::dontSendNotification);
     groundHeightLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -1049,7 +1049,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.groundHills = static_cast<float>(groundHillsSlider_.getValue());
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     groundHillsLabel_.setText("Hills", juce::dontSendNotification);
     groundHillsLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -1066,7 +1066,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.groundRipple = static_cast<float>(groundRippleSlider_.getValue());
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     groundRippleLabel_.setText("Ripple", juce::dontSendNotification);
     groundRippleLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -1084,7 +1084,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.groundFog = static_cast<float>(groundFogSlider_.getValue());
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     groundFogLabel_.setText("Fog", juce::dontSendNotification);
     groundFogLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -1106,7 +1106,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.showLabels = showLabelsToggle_.getToggleState();
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     customizeContent_.addAndMakeVisible(showLabelsToggle_);
     setupCbLabel(showLabelsLabel_, "Labels");
@@ -1118,7 +1118,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.showArrow = showArrowToggle_.getToggleState();
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     setupCbLabel(showArrowLabel_, "Arrow");
     customizeContent_.addAndMakeVisible(showArrowToggle_);
@@ -1138,23 +1138,24 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     sourceShapeCombo_.addItem("Cluster: Cubes",      8);
     sourceShapeCombo_.addItem("Cluster: Octahedrons",9);
     sourceShapeCombo_.addItem("Cluster: Rings",     10);
-    sourceShapeCombo_.setSelectedId(userPrefs_->sceneParams().sourceShape + 1, juce::dontSendNotification);
+    sourceShapeCombo_.setSelectedId(proc_.getSourceShapeParam() + 1, juce::dontSendNotification);
     sourceShapeCombo_.onChange = [this] {
         if (sourceShapeCombo_.getSelectedId() > 0) {
-            auto sp = userPrefs_->sceneParams();
-            sp.sourceShape = sourceShapeCombo_.getSelectedId() - 1;
-            userPrefs_->setSceneParams(sp);
-            glView_.setSceneParams(sp);
-            proc_.setSourceShape(sp.sourceShape);
-            const bool isCluster = sp.sourceShape >= xyzpan::kShapeClusterSpheres;
+            const int shape = sourceShapeCombo_.getSelectedId() - 1;
+            // Write to the focused instance's APVTS parameter
+            auto& targetAPVTS = remoteFocusProc_ ? remoteFocusProc_->apvts : proc_.apvts;
+            if (auto* p = targetAPVTS.getParameter(ParamID::SOURCE_SHAPE))
+                p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(shape)));
+            // Only update own-instance GL rendering when not remote-focused
+            if (!remoteFocusProc_)
+                pushSceneParamsToGL(userPrefs_->sceneParams());
+            const bool isCluster = shape >= xyzpan::kShapeClusterSpheres;
             clusterCountSlider_.setVisible(isCluster);
             clusterCountLabel_.setVisible(isCluster);
             resized();
         }
     };
     customizeContent_.addAndMakeVisible(sourceShapeCombo_);
-    // Set initial processor source shape for cross-instance rendering
-    proc_.setSourceShape(userPrefs_->sceneParams().sourceShape);
 
     // ----- Customize tab: cluster count slider (visible only for cluster shapes) -----
     clusterCountLabel_.setText("Cluster Size", juce::dontSendNotification);
@@ -1169,7 +1170,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         auto sp = userPrefs_->sceneParams();
         sp.clusterCount = static_cast<int>(clusterCountSlider_.getValue());
         userPrefs_->setSceneParams(sp);
-        glView_.setSceneParams(sp);
+        pushSceneParamsToGL(sp);
     };
     customizeContent_.addAndMakeVisible(clusterCountSlider_);
     // Initial visibility based on current shape
@@ -2896,8 +2897,7 @@ void XYZPanEditor::applyPreferencesToUI()
 
     applyCurrentTheme();
 
-    glView_.setSceneParams(sp);
-    proc_.setSourceShape(sp.sourceShape);
+    pushSceneParamsToGL(sp);
 
     themeCombo_.setSelectedId(userPrefs_->themeIndex() + 1, juce::dontSendNotification);
 
@@ -2910,9 +2910,11 @@ void XYZPanEditor::applyPreferencesToUI()
     showLabelsToggle_.setToggleState(sp.showLabels, juce::dontSendNotification);
     showArrowToggle_.setToggleState(sp.showArrow, juce::dontSendNotification);
 
-    sourceShapeCombo_.setSelectedId(sp.sourceShape + 1, juce::dontSendNotification);
+    // Source shape is per-instance (APVTS), not synced from preferences
+    const int ownShape = proc_.getSourceShapeParam();
+    sourceShapeCombo_.setSelectedId(ownShape + 1, juce::dontSendNotification);
     clusterCountSlider_.setValue(sp.clusterCount, juce::dontSendNotification);
-    const bool isCluster = sp.sourceShape >= xyzpan::kShapeClusterSpheres;
+    const bool isCluster = ownShape >= xyzpan::kShapeClusterSpheres;
     clusterCountSlider_.setVisible(isCluster);
     clusterCountLabel_.setVisible(isCluster);
 
@@ -3306,6 +3308,13 @@ void XYZPanEditor::timerCallback()
         glView_.setOwnInstanceName(proc_.getInstanceNameValue());
         glView_.setOwnIsPilot(proc_.getListenerHub().isPilot(&proc_));
         glView_.setLinkedNonPilot(proc_.isLinkedNonPilot());
+        // Sync source shape combo with APVTS (may change from remote focus)
+        const auto& targetProc = remoteFocusProc_ ? *remoteFocusProc_ : proc_;
+        const int curShape = targetProc.getSourceShapeParam();
+        if (sourceShapeCombo_.getSelectedId() != curShape + 1)
+            sourceShapeCombo_.setSelectedId(curShape + 1, juce::dontSendNotification);
+        // Keep own-instance GL view shape in sync
+        pushSceneParamsToGL(userPrefs_->sceneParams());
     }
 
     // Enable speed slider + label only when WASD control is active
@@ -3744,6 +3753,12 @@ static void setApvtsParam(juce::AudioProcessorValueTreeState& apvts, const char*
     }
 }
 
+void XYZPanEditor::pushSceneParamsToGL(xyzpan::SceneParams sp)
+{
+    sp.sourceShape = proc_.getSourceShapeParam();
+    glView_.setSceneParams(sp);
+}
+
 void XYZPanEditor::resetEnvironment()
 {
     const xyzpan::SceneParams def{};
@@ -3755,7 +3770,7 @@ void XYZPanEditor::resetEnvironment()
     sp.groundRipple = def.groundRipple;
     sp.groundFog    = def.groundFog;
     userPrefs_->setSceneParams(sp);
-    glView_.setSceneParams(sp);
+    pushSceneParamsToGL(sp);
 
     skyCombo_.setSelectedId(sp.skyType + 1, juce::dontSendNotification);
     groundCombo_.setSelectedId(sp.groundType + 1, juce::dontSendNotification);
@@ -3880,6 +3895,7 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
         remoteFocusProc_ = nullptr;
         detachAndRebindTo(proc_.apvts, &proc_);
         glView_.setFocusedForeignSource(-1);
+        sourceShapeCombo_.setSelectedId(proc_.getSourceShapeParam() + 1, juce::dontSendNotification);
         forceListRebuild_ = true;
         repaint();
         return;
@@ -3920,6 +3936,7 @@ void XYZPanEditor::setRemoteFocus(int linkedIndex)
     remoteFocusProc_ = remoteProc;
     detachAndRebindTo(remoteProc->apvts, remoteProc);
     glView_.setFocusedForeignSource(linkedIndex);
+    sourceShapeCombo_.setSelectedId(remoteProc->getSourceShapeParam() + 1, juce::dontSendNotification);
     forceListRebuild_ = true;
     repaint();
 }

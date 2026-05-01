@@ -49,7 +49,7 @@ public:
     void updateTrackProperties(const TrackProperties& properties) override;
     void setInstanceName(const juce::String& name);
     juce::String getInstanceNameValue() const { return instanceName_; }
-    void setSourceShape(int shape) { sourceShape_.store(shape, std::memory_order_relaxed); }
+    int getSourceShapeParam() const { return sourceShapeParam_ ? static_cast<int>(sourceShapeParam_->load(std::memory_order_relaxed)) : 0; }
 
     // Pilot queries — for editor UI to check whether listener controls should be enabled
     bool isLinkedPilot() const;
@@ -247,8 +247,8 @@ private:
     juce::String trackName_;           // last DAW-reported track name
     bool nameManuallySet_ = false;
 
-    // Source shape for cross-instance rendering (set by editor from SceneParams)
-    std::atomic<int> sourceShape_{0};
+    // Source shape (per-instance APVTS parameter)
+    std::atomic<float>* sourceShapeParam_ = nullptr;
 
     // Audible sphere visibility (queried by linked instances via getShowSphere)
     std::atomic<float>* showAudibleSphereParam_ = nullptr;
@@ -269,7 +269,7 @@ private:
     xyzpan::SourceExportBuffer* getSourceExportBuffer() override { return &sourceExport; }
     juce::AudioProcessor* getProcessor() override { return this; }
     juce::String getInstanceName() const override { return instanceName_; }
-    int getSourceShape() const override { return sourceShape_.load(std::memory_order_relaxed); }
+    int getSourceShape() const override { return sourceShapeParam_ ? static_cast<int>(sourceShapeParam_->load(std::memory_order_relaxed)) : 0; }
     bool getShowSphere() const override { return showAudibleSphereParam_ && showAudibleSphereParam_->load(std::memory_order_relaxed) >= 0.5f; }
 
     // juce::Timer override — collects foreign source positions for GL view
