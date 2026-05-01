@@ -111,13 +111,14 @@ void XYZPanEngine::prepare(double inSampleRate, int inMaxBlockSize, const Engine
     lfoX_.prepare(inSampleRate);
     lfoY_.prepare(inSampleRate);
     lfoZ_.prepare(inSampleRate);
-    lfoDepthXSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    lfoDepthYSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
-    lfoDepthZSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    constexpr float kLfoDepthSmoothMs = 20.0f;  // longer than gain (5ms) to prevent clicks on knob drag
+    lfoDepthXSmooth_.prepare(kLfoDepthSmoothMs, sr);
+    lfoDepthYSmooth_.prepare(kLfoDepthSmoothMs, sr);
+    lfoDepthZSmooth_.prepare(kLfoDepthSmoothMs, sr);
     lfoDepthXSmooth_.reset(0.0f);
     lfoDepthYSmooth_.reset(0.0f);
     lfoDepthZSmooth_.reset(0.0f);
-    lfoDepthMulSmooth_.prepare(kDefaultSmoothMs_Gain, sr);
+    lfoDepthMulSmooth_.prepare(kLfoDepthSmoothMs, sr);
     lfoDepthMulSmooth_.reset(1.0f);
     blkPosXSmooth_.prepare(150.0f, sr);
     blkPosYSmooth_.prepare(150.0f, sr);
@@ -1056,10 +1057,12 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
 
 
     // Pre-converge block-constant smoothers analytically (O(1) instead of O(numSamples))
-    lfoDepthXSmooth_.converge(currentParams.lfoXDepth, numSamples);
-    lfoDepthYSmooth_.converge(currentParams.lfoYDepth, numSamples);
-    lfoDepthZSmooth_.converge(currentParams.lfoZDepth, numSamples);
-    lfoDepthMulSmooth_.converge(currentParams.lfoDepthMul, numSamples);
+    // LFO depth smoothers run per-sample (not pre-converged) to avoid
+    // block-boundary staircase jumps when the depth knob is dragged.
+    const float lfoDepthXTarget = currentParams.lfoXDepth;
+    const float lfoDepthYTarget = currentParams.lfoYDepth;
+    const float lfoDepthZTarget = currentParams.lfoZDepth;
+    const float lfoDepthMulTarget = currentParams.lfoDepthMul;
     orbitDepthXYSmooth_.converge(currentParams.stereoOrbitXYDepth, numSamples);
     orbitDepthXZSmooth_.converge(currentParams.stereoOrbitXZDepth, numSamples);
     orbitDepthYZSmooth_.converge(currentParams.stereoOrbitYZDepth, numSamples);
@@ -1147,10 +1150,10 @@ void XYZPanEngine::process(const float* const* inputs, int numInputChannels,
         // ----------------------------------------------------------------
         // Position LFOs + per-sample base interpolation
         // ----------------------------------------------------------------
-        const float depthMul = lfoDepthMulSmooth_.current();
-        const float depthX = lfoDepthXSmooth_.current() * depthMul;
-        const float depthY = lfoDepthYSmooth_.current() * depthMul;
-        const float depthZ = lfoDepthZSmooth_.current() * depthMul;
+        const float depthMul = lfoDepthMulSmooth_.process(lfoDepthMulTarget);
+        const float depthX = lfoDepthXSmooth_.process(lfoDepthXTarget) * depthMul;
+        const float depthY = lfoDepthYSmooth_.process(lfoDepthYTarget) * depthMul;
+        const float depthZ = lfoDepthZSmooth_.process(lfoDepthZTarget) * depthMul;
 
         // Per-sample interpolated base position (prev→current across block)
         const float posT = static_cast<float>(i + 1) * posInterpInc;
