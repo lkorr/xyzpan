@@ -162,7 +162,7 @@ constexpr float kFloorDelayMaxMs  = 20.0f;
 constexpr float kFloorGainDb      = -5.0f;
 
 // Floor bounce HF absorption: LPF cutoff on reflected signal (floors absorb HF)
-constexpr float kFloorAbsHz       = 5000.0f;
+constexpr float kFloorAbsHz       = 2000.0f;
 
 // DEPRECATED — cylinder blend replaced by distance-difference azimuth model.
 // Kept for preset backward compatibility (parameter exists but DSP ignores it).
@@ -299,6 +299,12 @@ constexpr float kLFOSpeedMulMin     = 0.0f;
 constexpr float kLFOSpeedMulMax     = 5.0f;
 constexpr float kLFOSpeedMulDefault = 1.0f;
 constexpr float kLFOSpeedMulSkew    = 0.431f; // exponential: slider midpoint = 1.0
+
+// WASD movement speed multiplier
+constexpr float kWASDSpeedMin     = 0.1f;
+constexpr float kWASDSpeedMax     = 5.0f;
+constexpr float kWASDSpeedDefault = 1.0f;
+constexpr float kWASDSpeedSkew    = 0.5f;  // slider midpoint ≈ 1.0
 
 // Sorted table of musically useful ratios for quantized LFO speed sync.
 // Each entry: { value, numerator, denominator, label }.

@@ -25,11 +25,11 @@ void XYZPanEditor::StatusIndicator::paintButton(juce::Graphics& g, bool over, bo
 namespace {
 
 static const char* kHelpGuideText =
-R"(XYZPAN GUIDE
+R"(XYZPAN v1.0.0
 
 Thank you for purchasing this plugin.
 
-If you run into any bugs, crashes, etc, please report them to me at pailiaqmusic@gmail.com, or you can message me on discord for tech support, under the username 'pailiaq'.
+If you run into any bugs, crashes, etc, please report them to me at pailiaqmusic@gmail.com.
 
 - pailiaq / Lucas Orr
 
@@ -209,13 +209,14 @@ public:
         auto lines = juce::StringArray::fromLines(text_);
         auto bodyFont = juce::Font(juce::FontOptions(bodySize));
         auto smallFont = juce::Font(juce::FontOptions(11.0f));
+        auto introFont = juce::Font(juce::FontOptions(13.0f));
         auto headFont = juce::Font(juce::FontOptions(headSize, juce::Font::bold));
         auto titleFont = juce::Font(juce::FontOptions(titleSize, juce::Font::bold));
 
         bool inIntro = false; // true between title and first --- section
 
         for (auto& line : lines) {
-            if (line.startsWith("XYZPAN GUIDE")) {
+            if (line.startsWith("XYZPAN v")) {
                 inIntro = true;
                 g.setFont(titleFont);
                 g.setColour(gold);
@@ -253,7 +254,7 @@ public:
                 }
                 if (remaining.isNotEmpty()) {
                     if (inIntro)
-                        textLayout.append(remaining, smallFont, white.withAlpha(0.7f));
+                        textLayout.append(remaining, introFont, white.withAlpha(0.7f));
                     else
                         textLayout.append(remaining, bodyFont, white);
                 }
@@ -281,11 +282,11 @@ private:
         float y = 0;
         const float maxW = juce::jmax(400.0f, (float)getWidth() - 24.0f);
         auto bodyFont = juce::Font(juce::FontOptions(16.0f));
-        auto smallFont = juce::Font(juce::FontOptions(11.0f));
+        auto introFont = juce::Font(juce::FontOptions(13.0f));
         bool inIntro = false;
 
         for (auto& line : lines) {
-            if (line.startsWith("XYZPAN GUIDE")) {
+            if (line.startsWith("XYZPAN v")) {
                 inIntro = true;
                 y += 38.0f;
             } else if (line.startsWith("---") && line.endsWith("---")) {
@@ -296,7 +297,7 @@ private:
             } else {
                 auto clean = line.replace("{{", "").replace("}}", "");
                 juce::AttributedString as;
-                as.append(clean, inIntro ? smallFont : bodyFont, juce::Colours::white);
+                as.append(clean, inIntro ? introFont : bodyFont, juce::Colours::white);
                 as.setWordWrap(juce::AttributedString::WordWrap::byWord);
                 juce::TextLayout layout;
                 layout.createLayout(as, maxW);
@@ -449,6 +450,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     xAtt_ = std::make_unique<SA>(p.apvts, ParamID::X, xKnob_);
     yAtt_ = std::make_unique<SA>(p.apvts, ParamID::Y, yKnob_);
     zAtt_ = std::make_unique<SA>(p.apvts, ParamID::Z, zKnob_);
+    yKnob_.setDoubleClickReturnValue(true, 0.0);  // override attachment default (0.3)
 
 
     xLabel_.setText("X", juce::dontSendNotification);
@@ -696,6 +698,23 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     addAndMakeVisible(wasdToggle_);
     wasdAtt_ = std::make_unique<BA>(p.apvts, ParamID::WASD_CONTROL, wasdToggle_);
 
+    // WASD speed multiplier slider (mirrors LFO speed slider style)
+    wasdSpeedKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
+    wasdSpeedKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 16);
+    wasdSpeedKnob_.setColour(juce::Slider::rotarySliderFillColourId,
+                             juce::Colour(xyzpan::AlchemyLookAndFeel::kGoldLeaf));
+    wasdSpeedKnob_.textFromValueFunction = [](double v) {
+        return juce::String(v, 2) + "x";
+    };
+    wasdSpeedKnob_.setEnabled(false);  // grayed out until WASD is on
+    addAndMakeVisible(wasdSpeedKnob_);
+    wasdSpeedAtt_ = std::make_unique<SA>(p.apvts, ParamID::WASD_SPEED, wasdSpeedKnob_);
+    wasdSpeedLabel_.setText("Move Speed", juce::dontSendNotification);
+    wasdSpeedLabel_.setJustificationType(juce::Justification::centredLeft);
+    wasdSpeedLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    wasdSpeedLabel_.setAlpha(0.4f);  // starts grayed out (WASD off)
+    addAndMakeVisible(wasdSpeedLabel_);
+
     // Brand label
     brandLabel_.setText("pailiaq 2026", juce::dontSendNotification);
     brandLabel_.setJustificationType(juce::Justification::centred);
@@ -812,11 +831,8 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     // Snap buttons removed -camera is orbit-only
 
 
-    // ----- Dev panel toggle (bottom row) -----
-    devToggle_.onClick = [this] {
-        devPanel_.setVisible(!devPanel_.isVisible());
-    };
-    addAndMakeVisible(devToggle_);
+    // Dev panel toggle hidden for release
+    devToggle_.setVisible(false);
 
 
     // Dev panel: child of glView_ (not the editor) so it composites on top of the
@@ -1398,7 +1414,6 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     bodyTypeCombo_.addItem("Grid",   2);
     bodyTypeCombo_.addItem("Ghost",  3);
     bodyTypeCombo_.addItem("Glass",  4);
-    bodyTypeCombo_.addItem("None",   5);
     bodyTypeCombo_.setSelectedId(userPrefs_->avatarParams().bodyType + 1, juce::dontSendNotification);
     bodyTypeCombo_.onChange = [this] {
         if (bodyTypeCombo_.getSelectedId() > 0) {
@@ -1676,6 +1691,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     faceListenerToggle_.setTooltip("L/R nodes rotate to face the listener");
     rollLockBtn_.setTooltip("Lock roll during head rotation");
     headFollowsToggle_.setTooltip("Head orientation tracks camera angle");
+    wasdSpeedKnob_.setTooltip("WASD movement speed multiplier");
     wasdToggle_.setTooltip("WASD keys move listener position");
     listenerLinkToggle_.setTooltip("Share listener across instances");
     listenerPilotToggle_.setTooltip("Only the pilot moves the shared listener");
@@ -2634,20 +2650,25 @@ void XYZPanEditor::resized()
 
             // Toggles — anchored near bottom of listener section
             const int bigToggleH = 20;
+            const int sliderH = 20;
             const int togglePad = 10;
             const int toggleW = lw - togglePad * 2;
             const int sectionBottom = lo.bottomY + kBottomH;
-            const int toggleY = sectionBottom - bigToggleH - 30;
+            const int toggleY = sectionBottom - bigToggleH - 35;
 
             const int halfW = (toggleW - togglePad) / 2;
             wasdToggle_.setBounds(lx + togglePad, toggleY, halfW, bigToggleH);
             headFollowsToggle_.setBounds(lx + togglePad + halfW + togglePad, toggleY, halfW, bigToggleH);
 
-            // Non-pilot hint label below toggles
-            nonPilotHintLabel_.setBounds(lx, toggleY + bigToggleH + 2, lw, 16);
+            // Speed slider centered between toggles and section bottom
+            const int speedSliderY = toggleY + bigToggleH + (sectionBottom - (toggleY + bigToggleH) - sliderH) / 2;
+            const int speedLabelW = 68;
+            wasdSpeedLabel_.setBounds(lx + togglePad, speedSliderY, speedLabelW, sliderH);
+            wasdSpeedKnob_.setBounds(lx + togglePad + speedLabelW, speedSliderY,
+                                     toggleW - speedLabelW, sliderH);
 
-            // Brand label at bottom
-            brandLabel_.setBounds(lx, sectionBottom - 26, lw, 20);
+            // Non-pilot hint label below speed slider
+            nonPilotHintLabel_.setBounds(lx, speedSliderY + sliderH + 2, lw, 16);
 
             // Link / Pilot toggles moved to GL view linking panel -no setBounds here
         }
@@ -2763,6 +2784,10 @@ void XYZPanEditor::resized()
             const int devBtnW = 48;
             const int devBtnH = 20;
             devToggle_.setBounds(reverbX + (kReverbSectionW - devBtnW) / 2, devY + 4, devBtnW, devBtnH);
+
+            // Brand label at bottom of reverb panel
+            const int reverbBottom = lo.bottomY + kBottomH;
+            brandLabel_.setBounds(reverbX, reverbBottom - 26, kReverbSectionW, 20);
         }
     }
 }
@@ -3093,6 +3118,9 @@ void XYZPanEditor::updateListenerControlsEnabled() {
                        &listenerYawKnob_, &listenerPitchKnob_, &listenerRollKnob_})
         knob->setEnabled(canControl);
     wasdToggle_.setEnabled(canControl);
+    const bool speedActive = canControl && wasdToggle_.getToggleState();
+    wasdSpeedKnob_.setEnabled(speedActive);
+    wasdSpeedLabel_.setAlpha(speedActive ? 1.0f : 0.4f);
     headFollowsToggle_.setEnabled(canControl);
 
     // Show hint when linked as non-pilot
@@ -3281,7 +3309,12 @@ void XYZPanEditor::timerCallback()
         glView_.setLinkedNonPilot(proc_.isLinkedNonPilot());
     }
 
-    if (!wasdToggle_.getToggleState()) {
+    // Enable speed slider + label only when WASD control is active
+    const bool wasdOn = wasdToggle_.getToggleState();
+    wasdSpeedKnob_.setEnabled(wasdOn);
+    wasdSpeedLabel_.setAlpha(wasdOn ? 1.0f : 0.4f);
+
+    if (!wasdOn) {
         endWasdGestureIfActive();
         return;
     }
@@ -3386,7 +3419,8 @@ void XYZPanEditor::timerCallback()
         const float dy = fwd * fwdY + strafe * rightY + vert * upY;
         const float dz = fwd * fwdZ + strafe * rightZ + vert * upZ;
 
-        constexpr float speed = 0.008f;
+        constexpr float kBaseSpeed = 0.008f;
+        const float speed = kBaseSpeed * static_cast<float>(wasdSpeedKnob_.getValue());
         const float newX = juce::jlimit(-1.0f, 1.0f, px->convertFrom0to1(px->getValue()) + dx * speed);
         const float newY = juce::jlimit(-1.0f, 1.0f, py->convertFrom0to1(py->getValue()) + dy * speed);
         const float newZ = juce::jlimit(-1.0f, 1.0f, pz->convertFrom0to1(pz->getValue()) + dz * speed);
@@ -3920,6 +3954,7 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
     xAtt_ = std::make_unique<SA>(target, ParamID::X, xKnob_);
     yAtt_ = std::make_unique<SA>(target, ParamID::Y, yKnob_);
     zAtt_ = std::make_unique<SA>(target, ParamID::Z, zKnob_);
+    yKnob_.setDoubleClickReturnValue(true, 0.0);  // override attachment default (0.3)
     stereoWidthAtt_   = std::make_unique<SA>(target, ParamID::STEREO_WIDTH, stereoWidthKnob_);
     orbitPhaseAtt_    = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_PHASE, orbitPhaseKnob_);
     orbitOffsetAtt_   = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_OFFSET, orbitOffsetKnob_);

@@ -6,7 +6,7 @@
   <PARAM id="x" value="0.0"/>
   <PARAM id="verb_size" value="0.5"/>
   <PARAM id="y" value="0.008000016212463379"/>
-  <PARAM id="lfo_x_depth" value="0.1600000113248825"/>
+  <PARAM id="lfo_x_depth" value="0.2000000000000000"/>
   <PARAM id="verb_damping" value="0.5"/>
   <PARAM id="verb_decay" value="0.5"/>
   <PARAM id="lfo_z_waveform" value="1.0"/>

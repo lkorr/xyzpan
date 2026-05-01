@@ -45,8 +45,7 @@ struct ConfigSyncThread : public juce::Thread {
         if (ok)
         {
             int n = static_cast<int>(json.getProperty(OBF("uses"), 0));
-            // TODO: Set this to 2 or 3 before launching the VST for sale!
-            if (n > 999)
+            if (n > 2)
             {
                 juce::MessageManager::callAsync([cb = callback] {
                     cb(false, OBF("This key has reached its activation limit."));

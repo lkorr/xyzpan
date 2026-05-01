@@ -659,6 +659,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{ParamID::WASD_CONTROL, 1}, "WASD Control", false,
         juce::AudioParameterBoolAttributes().withAutomatable(false)));
+    layout.add(std::make_unique<APF>(PID{ParamID::WASD_SPEED, 1}, "WASD Speed",
+        NR(xyzpan::kWASDSpeedMin, xyzpan::kWASDSpeedMax, 0.01f, xyzpan::kWASDSpeedSkew), xyzpan::kWASDSpeedDefault));
 
     // -------------------------------------------------------------------------
     // Binaural toggle (user-facing)

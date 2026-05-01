@@ -256,6 +256,11 @@ private:
     std::unique_ptr<BA> wasdAtt_;
     bool wasdGestureActive_ = false;
 
+    // WASD speed multiplier slider (enabled only when WASD control is on)
+    juce::Slider wasdSpeedKnob_;
+    juce::Label  wasdSpeedLabel_;
+    std::unique_ptr<SA> wasdSpeedAtt_;
+
     // Brand label
     juce::Label brandLabel_;
     xyzpan::ListenerQuatAccumulator listenerAccum_;

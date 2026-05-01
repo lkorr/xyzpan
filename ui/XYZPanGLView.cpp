@@ -1092,13 +1092,9 @@ void XYZPanGLView::paint(juce::Graphics& g)
         const int focusIdx = focusedForeignIndex_.load(std::memory_order_relaxed);
         int listRows = 1; // Self
         int listHeight = (focusIdx < 0 ? focusedRowH : rowH) + 2;
-        if (fp.count > 0) {
-            for (int i = 0; i < fp.count; ++i) {
-                bool isFocused = (fp.sources[i].colorIndex == focusIdx);
-                listHeight += (isFocused ? focusedRowH : rowH) + 2;
-            }
-        } else {
-            listHeight += (rowH + 2) * 2; // placeholder rows
+        for (int i = 0; i < fp.count; ++i) {
+            bool isFocused = (fp.sources[i].colorIndex == focusIdx);
+            listHeight += (isFocused ? focusedRowH : rowH) + 2;
         }
         panelH += listHeight;
         // Pilot status text
