@@ -25,7 +25,7 @@ void XYZPanEditor::StatusIndicator::paintButton(juce::Graphics& g, bool over, bo
 namespace {
 
 static const char* kHelpGuideText =
-R"(XYZPAN v1.0.0
+R"(XYZPAN v)" XYZPAN_VERSION R"(
 
 Thank you for purchasing this plugin.
 
@@ -186,6 +186,22 @@ Alt+R - Randomize controls under mouse cursor
 Alt+Click Binaural/ER/Sphere - Toggle for all linked instances
 WASD + Q/E + Space/Ctrl - Move listener (when WASD enabled))";
 
+static const char* kChangelogText =
+R"(XYZPAN CHANGELOG
+
+
+--- v1.0.1 ---
+
+- Fixed: Some DAWs (notably FL Studio) could not recognize the plugin as an audio effect due to missing VST3 subcategory declaration.
+- Changed: Phase knobs now display in degrees (0-360) instead of normalized values.
+- Changed: LFO multiplier panel layout - tighter speed slider, smaller reset button, added Phase label.
+- Added: Master phase offset knob in the LFO multiplier panel, offsets all XYZ LFO phases simultaneously.
+
+
+--- v1.0.0 ---
+
+- Initial release.)";
+
 class HelpGuideContent : public juce::Component {
 public:
     HelpGuideContent() {}
@@ -325,6 +341,22 @@ public:
         closeBtn_.onClick = [this] { if (onClose) onClose(); };
         addAndMakeVisible(closeBtn_);
 
+        auto gold = juce::Colour(0xFFD9BE6E);
+        auto setupTab = [&](juce::TextButton& btn, const juce::String& label) {
+            btn.setButtonText(label);
+            btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            btn.setColour(juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.5f));
+            btn.setColour(juce::TextButton::textColourOnId, gold);
+            btn.setClickingTogglesState(true);
+            btn.setRadioGroupId(1001);
+            addAndMakeVisible(btn);
+        };
+        setupTab(guideTab_, "Guide");
+        setupTab(changelogTab_, "Changelog");
+        guideTab_.setToggleState(true, juce::dontSendNotification);
+
+        guideTab_.onClick = [this] { showGuide(); };
+        changelogTab_.onClick = [this] { showChangelog(); };
     }
 
     void paint(juce::Graphics& g) override {
@@ -339,7 +371,14 @@ public:
     void resized() override {
         auto inner = getLocalBounds().reduced(75, 15);
         closeBtn_.setBounds(inner.getRight() - 30, inner.getY() + 4, 26, 22);
-        auto content = inner.reduced(4).withTrimmedTop(28);
+
+        int tabW = 80, tabH = 22;
+        int tabY = inner.getY() + 6;
+        int tabX = inner.getX() + 12;
+        guideTab_.setBounds(tabX, tabY, tabW, tabH);
+        changelogTab_.setBounds(tabX + tabW + 4, tabY, tabW, tabH);
+
+        auto content = inner.reduced(4).withTrimmedTop(32);
         viewport_.setBounds(content);
         int cw = juce::jmax(100, content.getWidth() - viewport_.getScrollBarThickness() - 4);
         content_.setSize(cw, juce::jmax(content.getHeight(), content_.getContentHeight()));
@@ -360,6 +399,20 @@ private:
     juce::Viewport viewport_;
     HelpGuideContent content_;
     juce::TextButton closeBtn_;
+    juce::TextButton guideTab_;
+    juce::TextButton changelogTab_;
+
+    void showGuide() {
+        content_.setText(kHelpGuideText);
+        viewport_.setViewPosition(0, 0);
+        resized();
+    }
+
+    void showChangelog() {
+        content_.setText(kChangelogText);
+        viewport_.setViewPosition(0, 0);
+        resized();
+    }
 };
 
 } // anonymous namespace
@@ -479,7 +532,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
 
     // ----- XYZ LFO Speed slider (below LFO strips) -----
     lfoSpeedMulKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
-    lfoSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 82, 16);
+    lfoSpeedMulKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 46, 16);
     lfoSpeedMulKnob_.setColour(juce::Slider::rotarySliderFillColourId,
                                juce::Colour(xyzpan::AlchemyLookAndFeel::kBrightGold));
     lfoSpeedMulKnob_.textFromValueFunction = [](double v) {
@@ -488,7 +541,7 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     };
     addAndMakeVisible(lfoSpeedMulKnob_);
     lfoSpeedMulAtt_ = std::make_unique<SA>(p.apvts, ParamID::LFO_SPEED_MUL, lfoSpeedMulKnob_);
-    lfoSpeedMulLabel_.setText("LFO Speed", juce::dontSendNotification);
+    lfoSpeedMulLabel_.setText("Speed", juce::dontSendNotification);
     lfoSpeedMulLabel_.setJustificationType(juce::Justification::centredLeft);
     lfoSpeedMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(lfoSpeedMulLabel_);
@@ -508,6 +561,22 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
     lfoDepthMulLabel_.setJustificationType(juce::Justification::centredRight);
     lfoDepthMulLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(lfoDepthMulLabel_);
+
+    // ----- XYZ LFO Master Phase offset knob -----
+    lfoMasterPhaseKnob_.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    lfoMasterPhaseKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 14);
+    lfoMasterPhaseKnob_.textFromValueFunction = [](double v) {
+        return juce::String(juce::roundToInt(v * 360.0)) + juce::String::charToString(0x00B0);
+    };
+    lfoMasterPhaseKnob_.valueFromTextFunction = [](const juce::String& t) {
+        return t.retainCharacters("0123456789.-").getDoubleValue() / 360.0;
+    };
+    addAndMakeVisible(lfoMasterPhaseKnob_);
+    lfoMasterPhaseAtt_ = std::make_unique<SA>(p.apvts, ParamID::LFO_MASTER_PHASE, lfoMasterPhaseKnob_);
+    lfoMasterPhaseLabel_.setText("Phase", juce::dontSendNotification);
+    lfoMasterPhaseLabel_.setJustificationType(juce::Justification::centredRight);
+    lfoMasterPhaseLabel_.setFont(juce::Font(juce::FontOptions(11.0f)));
+    addAndMakeVisible(lfoMasterPhaseLabel_);
 
     // ----- Reset XYZ LFO Phases button -----
     resetXYZPhasesBtn_.onClick = [this] {
@@ -540,6 +609,19 @@ XYZPanEditor::XYZPanEditor(XYZPanProcessor& p)
         knob->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 14);
         addAndMakeVisible(knob);
     }
+    // Phase knobs display as degrees
+    orbitPhaseKnob_.textFromValueFunction = [](double v) {
+        return juce::String(juce::roundToInt(v * 360.0)) + juce::String::charToString(0x00B0);
+    };
+    orbitPhaseKnob_.valueFromTextFunction = [](const juce::String& t) {
+        return t.retainCharacters("0123456789.-").getDoubleValue() / 360.0;
+    };
+    orbitOffsetKnob_.textFromValueFunction = [](double v) {
+        return juce::String(juce::roundToInt(v * 360.0)) + juce::String::charToString(0x00B0);
+    };
+    orbitOffsetKnob_.valueFromTextFunction = [](const juce::String& t) {
+        return t.retainCharacters("0123456789.-").getDoubleValue() / 360.0;
+    };
     orbitPhaseLabel_.setText("Phase", juce::dontSendNotification);
     orbitPhaseLabel_.setJustificationType(juce::Justification::centredRight);
     orbitPhaseLabel_.setFont(juce::Font(juce::FontOptions(10.0f)));
@@ -2410,34 +2492,43 @@ void XYZPanEditor::resized()
         layoutPosCol(zKnob_, zLabel_, zLFO_,
                      posColW * 2,  kLeftColW - posColW * 2, sourceTop, posSectionBottom);
 
-        // LFO Depth knob (rotary, left) + Speed slider (right) — single row
+        // LFO Speed slider (left) + Depth knob (right) — single row
         {
             const int rowY = posSectionBottom;
             const int rowH = lfoMasterRowsH;         // 32px
 
-            // "Depth" label + rotary knob + value text on the left
             const int depthKnobSz  = 32;
-            const int depthTextW   = 42;  // TextBoxRight width (set in constructor)
+            const int depthTextW   = 42;
             const int depthLabelW  = 34;
-            const int depthKnobX   = kPadding + depthLabelW;
-            const int depthKnobY   = rowY + (rowH - depthKnobSz) / 2;
-            lfoDepthMulLabel_.setBounds(kPadding, rowY + (rowH - 14) / 2, depthLabelW, 14);
-            lfoDepthMulKnob_.setBounds(depthKnobX, depthKnobY, depthKnobSz + depthTextW, depthKnobSz);
-            const int depthCellW = depthLabelW + depthKnobSz + depthTextW;
+            const int depthCellW   = depthLabelW + depthKnobSz + depthTextW;
+            const int resetBtnW    = 22;
+            const int resetBtnGap  = 4;
+            const int phaseLabelW  = 38;
+            const int phaseKnobSz  = 32;
+            const int phaseTextW   = 42;
+            const int phaseCellW   = phaseLabelW + phaseKnobSz + phaseTextW;
+            const int sliderH      = 22;
+            const int sliderY      = rowY + (rowH - sliderH) / 2;
+            const int rightEnd     = kLeftColW - kPadding;
 
-            // Speed slider + label + reset button — right of depth knob
-            const int speedLeft   = kPadding + depthCellW + 2;
-            const int resetBtnW   = 44;
-            const int resetBtnGap = 4;
-            const int speedLabelW = 70;
-            const int sliderH     = 22;
-            const int sliderY     = rowY + (rowH - sliderH) / 2;
+            // Layout from right: [R] [Phase label + knob + text] [Depth label + knob + text] [slider]
+            resetXYZPhasesBtn_.setBounds(rightEnd - resetBtnW, sliderY, resetBtnW, sliderH);
+            const int phaseKnobX = rightEnd - resetBtnW - resetBtnGap - phaseCellW;
+            const int phaseKnobY = rowY + (rowH - phaseKnobSz) / 2;
+            lfoMasterPhaseLabel_.setBounds(phaseKnobX, rowY + (rowH - 14) / 2, phaseLabelW, 14);
+            lfoMasterPhaseKnob_.setBounds(phaseKnobX + phaseLabelW, phaseKnobY, phaseKnobSz + phaseTextW, phaseKnobSz);
 
-            lfoSpeedMulLabel_.setBounds(speedLeft, sliderY, speedLabelW, sliderH);
-            const int sliderX = speedLeft + speedLabelW;
-            const int sliderW = kLeftColW - sliderX - kPadding - resetBtnW - resetBtnGap;
+            const int depthLeft = phaseKnobX - depthCellW - 4;
+            const int depthKnobY = rowY + (rowH - depthKnobSz) / 2;
+            lfoDepthMulLabel_.setBounds(depthLeft, rowY + (rowH - 14) / 2, depthLabelW, 14);
+            lfoDepthMulKnob_.setBounds(depthLeft + depthLabelW, depthKnobY, depthKnobSz + depthTextW, depthKnobSz);
+
+            // Speed label + slider fills left side up to depth cell
+            const int speedLabelW = 44;
+            lfoSpeedMulLabel_.setBounds(kPadding, sliderY, speedLabelW, sliderH);
+            const int sliderX = kPadding + speedLabelW;
+            const int sliderW = depthLeft - sliderX - 4;
             lfoSpeedMulKnob_.setBounds(sliderX, sliderY, sliderW, sliderH);
-            resetXYZPhasesBtn_.setBounds(kLeftColW - kPadding - resetBtnW, sliderY, resetBtnW, sliderH);
         }
     } else {
         // --- CUSTOMIZE TAB -scrollable viewport fills entire left column content ---
@@ -3010,6 +3101,8 @@ void XYZPanEditor::setActiveLeftTab(LeftTab tab)
     lfoSpeedMulLabel_.setVisible(source);
     lfoDepthMulKnob_.setVisible(source);
     lfoDepthMulLabel_.setVisible(source);
+    lfoMasterPhaseKnob_.setVisible(source);
+    lfoMasterPhaseLabel_.setVisible(source);
     resetXYZPhasesBtn_.setVisible(source);
 
     // Options controls (part of source tab)
@@ -3984,6 +4077,7 @@ void XYZPanEditor::detachAndRebindTo(juce::AudioProcessorValueTreeState& target,
     orbitDepthMulAtt_ = std::make_unique<SA>(target, ParamID::STEREO_ORBIT_DEPTH_MUL, orbitDepthMulKnob_);
     lfoSpeedMulAtt_   = std::make_unique<SA>(target, ParamID::LFO_SPEED_MUL, lfoSpeedMulKnob_);
     lfoDepthMulAtt_   = std::make_unique<SA>(target, ParamID::LFO_DEPTH_MUL, lfoDepthMulKnob_);
+    lfoMasterPhaseAtt_ = std::make_unique<SA>(target, ParamID::LFO_MASTER_PHASE, lfoMasterPhaseKnob_);
     sphereRadiusAtt_  = std::make_unique<SA>(target, ParamID::SPHERE_RADIUS, sphereRadiusKnob_);
     verbSizeAtt_      = std::make_unique<SA>(target, ParamID::VERB_SIZE, verbSize_);
     verbDecayAtt_     = std::make_unique<SA>(target, ParamID::VERB_DECAY, verbDecay_);

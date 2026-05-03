@@ -35,20 +35,24 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Extract version
+        id: version
+        run: echo "ver=$(grep 'project(XYZPan VERSION' CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\)).*/\1/')" >> "$GITHUB_OUTPUT"
+
       - name: Package artifacts
         run: |
           cd build/plugin/XYZPan_artefacts/Release
-          zip -r XYZPan-Linux-VST3.zip VST3/XYZPan.vst3
-          zip -r XYZPan-Linux-Standalone.zip Standalone/XYZPan
+          zip -r XYZPan-${{ steps.version.outputs.ver }}-Linux-VST3.zip VST3/XYZPan.vst3
+          zip -r XYZPan-${{ steps.version.outputs.ver }}-Linux-Standalone.zip Standalone/XYZPan
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: XYZPan-Linux-VST3
-          path: build/plugin/XYZPan_artefacts/Release/XYZPan-Linux-VST3.zip
+          name: XYZPan-${{ steps.version.outputs.ver }}-Linux-VST3
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-${{ steps.version.outputs.ver }}-Linux-VST3.zip
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
-          name: XYZPan-Linux-Standalone
-          path: build/plugin/XYZPan_artefacts/Release/XYZPan-Linux-Standalone.zip
+          name: XYZPan-${{ steps.version.outputs.ver }}-Linux-Standalone
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-${{ steps.version.outputs.ver }}-Linux-Standalone.zip

@@ -94,6 +94,15 @@ void LFOStrip::init(const juce::String& rateID, const juce::String& depthID,
     depthAtt_   = std::make_unique<SA>(apvts, depthID,   depthKnob_);
     phaseAtt_   = std::make_unique<SA>(apvts, phaseID,   phaseKnob_);
     smoothAtt_  = std::make_unique<SA>(apvts, smoothID,  smoothKnob_);
+
+    // Phase knob displays as degrees (0-360) instead of normalized 0-1
+    // Must be set AFTER SliderAttachment creation (which resets text functions)
+    phaseKnob_.textFromValueFunction = [](double v) {
+        return juce::String(juce::roundToInt(v * 360.0)) + juce::String::charToString(0x00B0);
+    };
+    phaseKnob_.valueFromTextFunction = [](const juce::String& t) {
+        return t.retainCharacters("0123456789.-").getDoubleValue() / 360.0;
+    };
     beatDivAtt_ = std::make_unique<SA>(apvts, beatDivID, beatDivKnob_);
     syncAtt_    = std::make_unique<BA>(apvts, syncID,    syncBtn_);
 

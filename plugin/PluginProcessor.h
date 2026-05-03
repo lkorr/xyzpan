@@ -185,6 +185,7 @@ private:
     std::atomic<float>* lfoZBeatDivParam  = nullptr;
     std::atomic<float>* lfoSpeedMulParam  = nullptr;
     std::atomic<float>* lfoDepthMulParam  = nullptr;
+    std::atomic<float>* lfoMasterPhaseParam = nullptr;
 
     // Stereo source node splitting
     std::atomic<float>* stereoWidthParam        = nullptr;

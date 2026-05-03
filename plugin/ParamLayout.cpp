@@ -335,6 +335,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     layout.add(std::make_unique<APF>(PID{ParamID::LFO_DEPTH_MUL, 1}, "LFO Depth Mul",
         NR(0.0f, 2.0f, 0.001f, 1.0f), 1.0f));
 
+    // XYZ LFO master phase offset (added to all per-axis phases)
+    layout.add(std::make_unique<APF>(PID{ParamID::LFO_MASTER_PHASE, 1}, "LFO Master Phase",
+        NR(0.0f, 1.0f, 0.001f), 0.0f));
+
     // -------------------------------------------------------------------------
     // Stereo source node splitting
     // -------------------------------------------------------------------------

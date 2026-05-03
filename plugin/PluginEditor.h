@@ -167,8 +167,13 @@ private:
     juce::Label  lfoDepthMulLabel_;
     std::unique_ptr<SA> lfoDepthMulAtt_;
 
+    // XYZ LFO master phase offset (rotary, left of Reset button)
+    juce::Slider lfoMasterPhaseKnob_;
+    juce::Label  lfoMasterPhaseLabel_;
+    std::unique_ptr<SA> lfoMasterPhaseAtt_;
+
     // Reset All LFO Phases button (position section, next to LFO Speed)
-    juce::TextButton resetXYZPhasesBtn_{"Reset"};
+    juce::TextButton resetXYZPhasesBtn_{"R"};
 
     // Stereo orbit controls
     juce::Slider stereoWidthKnob_, orbitPhaseKnob_, orbitOffsetKnob_, orbitSpeedMulKnob_, orbitDepthMulKnob_;

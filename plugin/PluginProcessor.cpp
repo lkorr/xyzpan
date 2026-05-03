@@ -152,6 +152,8 @@ XYZPanProcessor::XYZPanProcessor()
     jassert(lfoSpeedMulParam != nullptr);
     lfoDepthMulParam = apvts.getRawParameterValue(ParamID::LFO_DEPTH_MUL);
     jassert(lfoDepthMulParam != nullptr);
+    lfoMasterPhaseParam = apvts.getRawParameterValue(ParamID::LFO_MASTER_PHASE);
+    jassert(lfoMasterPhaseParam != nullptr);
 
     // Stereo source node splitting
     stereoWidthParam        = apvts.getRawParameterValue(ParamID::STEREO_WIDTH);
@@ -631,17 +633,18 @@ void XYZPanProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     params.verbDiffusion   = verbDiffusionParam->load();
 
     // Phase 5: LFO (LFO-01 through LFO-05)
+    const float masterPhase = lfoMasterPhaseParam->load();
     params.lfoXRate      = lfoXRateParam->load();
     params.lfoXDepth     = lfoXDepthParam->load();
-    params.lfoXPhase     = lfoXPhaseParam->load();
+    params.lfoXPhase     = std::fmod(lfoXPhaseParam->load() + masterPhase, 1.0f);
     params.lfoXWaveform  = static_cast<int>(std::round(lfoXWaveformParam->load()));
     params.lfoYRate      = lfoYRateParam->load();
     params.lfoYDepth     = lfoYDepthParam->load();
-    params.lfoYPhase     = lfoYPhaseParam->load();
+    params.lfoYPhase     = std::fmod(lfoYPhaseParam->load() + masterPhase, 1.0f);
     params.lfoYWaveform  = static_cast<int>(std::round(lfoYWaveformParam->load()));
     params.lfoZRate      = lfoZRateParam->load();
     params.lfoZDepth     = lfoZDepthParam->load();
-    params.lfoZPhase     = lfoZPhaseParam->load();
+    params.lfoZPhase     = std::fmod(lfoZPhaseParam->load() + masterPhase, 1.0f);
     params.lfoZWaveform  = static_cast<int>(std::round(lfoZWaveformParam->load()));
     params.lfoXSmooth    = lfoXSmoothParam->load();
     params.lfoYSmooth    = lfoYSmoothParam->load();

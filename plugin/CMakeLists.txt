@@ -10,6 +10,7 @@ juce_add_plugin(XYZPan
     PLUGIN_CODE Xzpn
     FORMATS ${XYZPAN_FORMATS}
     PRODUCT_NAME "XYZPan"
+    VST3_CATEGORIES "Fx Spatial"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -51,6 +52,7 @@ target_include_directories(XYZPan
 )
 
 target_compile_definitions(XYZPan PUBLIC ${XYZPAN_JUCE_DEFS})
+target_compile_definitions(XYZPan PRIVATE XYZPAN_VERSION="${PROJECT_VERSION}")
 
 # Prevent D2D/OpenGL conflict on Windows NVIDIA (Phase 6)
 if(WIN32)

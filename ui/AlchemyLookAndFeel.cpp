@@ -260,6 +260,35 @@ void AlchemyLookAndFeel::drawLinearSlider(
 }
 
 // ---------------------------------------------------------------------------
+juce::Slider::SliderLayout AlchemyLookAndFeel::getSliderLayout(juce::Slider& slider)
+{
+    auto bounds = slider.getLocalBounds();
+    juce::Slider::SliderLayout layout;
+
+    auto style = slider.getSliderStyle();
+    auto tbPos = slider.getTextBoxPosition();
+
+    if (style == juce::Slider::LinearHorizontal && tbPos == juce::Slider::TextBoxRight)
+    {
+        int tbW = slider.getTextBoxWidth();
+        int tbH = slider.getTextBoxHeight();
+        // Text box flush right, no gap
+        layout.textBoxBounds = juce::Rectangle<int>(bounds.getWidth() - tbW, (bounds.getHeight() - tbH) / 2, tbW, tbH);
+        // Slider track fills everything left of text box; inset left by thumb radius
+        // so the thumb circle isn't clipped at minimum position
+        const int thumbInset = 6;
+        layout.sliderBounds = bounds.withWidth(bounds.getWidth() - tbW - 2)
+                                    .withTrimmedLeft(thumbInset);
+    }
+    else
+    {
+        layout = LookAndFeel_V4::getSliderLayout(slider);
+    }
+
+    return layout;
+}
+
+// ---------------------------------------------------------------------------
 void AlchemyLookAndFeel::drawButtonBackground(
     juce::Graphics& g,
     juce::Button& button,

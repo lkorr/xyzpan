@@ -54,27 +54,31 @@ jobs:
           auval -v aufx Xzpn Paaq
           sudo rm -rf /Library/Audio/Plug-Ins/Components/XYZPan.component
 
+      - name: Extract version
+        id: version
+        run: echo "ver=$(grep 'project(XYZPan VERSION' CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\)).*/\1/')" >> "$GITHUB_OUTPUT"
+
       - name: Package artifacts
         run: |
           cd build/plugin/XYZPan_artefacts/Release
-          zip -r XYZPan-macOS-VST3.zip VST3/XYZPan.vst3
-          zip -r XYZPan-macOS-AU.zip AU/XYZPan.component
-          zip -r XYZPan-macOS-Standalone.zip Standalone/XYZPan.app
+          zip -r XYZPan-${{ steps.version.outputs.ver }}-macOS-VST3.zip VST3/XYZPan.vst3
+          zip -r XYZPan-${{ steps.version.outputs.ver }}-macOS-AU.zip AU/XYZPan.component
+          zip -r XYZPan-${{ steps.version.outputs.ver }}-macOS-Standalone.zip Standalone/XYZPan.app
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: XYZPan-macOS-VST3
-          path: build/plugin/XYZPan_artefacts/Release/XYZPan-macOS-VST3.zip
+          name: XYZPan-${{ steps.version.outputs.ver }}-macOS-VST3
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-${{ steps.version.outputs.ver }}-macOS-VST3.zip
 
       - name: Upload AU
         uses: actions/upload-artifact@v4
         with:
-          name: XYZPan-macOS-AU
-          path: build/plugin/XYZPan_artefacts/Release/XYZPan-macOS-AU.zip
+          name: XYZPan-${{ steps.version.outputs.ver }}-macOS-AU
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-${{ steps.version.outputs.ver }}-macOS-AU.zip
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
-          name: XYZPan-macOS-Standalone
-          path: build/plugin/XYZPan_artefacts/Release/XYZPan-macOS-Standalone.zip
+          name: XYZPan-${{ steps.version.outputs.ver }}-macOS-Standalone
+          path: build/plugin/XYZPan_artefacts/Release/XYZPan-${{ steps.version.outputs.ver }}-macOS-Standalone.zip

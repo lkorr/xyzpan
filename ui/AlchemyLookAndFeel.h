@@ -46,6 +46,8 @@ public:
                           const juce::Slider::SliderStyle style,
                           juce::Slider& slider) override;
 
+    juce::Slider::SliderLayout getSliderLayout(juce::Slider& slider) override;
+
     void drawLabel(juce::Graphics& g, juce::Label& label) override;
 
     void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,

@@ -87,6 +87,8 @@ namespace ParamID {
     constexpr const char* LFO_SPEED_MUL   = "lfo_speed_mul";
     // XYZ LFO depth multiplier (shared across all XYZ LFOs)
     constexpr const char* LFO_DEPTH_MUL   = "lfo_depth_mul";
+    // XYZ LFO master phase offset (added to all per-axis phases)
+    constexpr const char* LFO_MASTER_PHASE = "lfo_master_phase";
     // Beat division per axis (float multiplier: 0.25=1/4, 0.5=1/2, 1.0=quarter, 2.0=half, 4.0=whole)
     constexpr const char* LFO_X_BEAT_DIV  = "lfo_x_beat_div";
     constexpr const char* LFO_Y_BEAT_DIV  = "lfo_y_beat_div";
@@ -286,7 +288,7 @@ inline const std::unordered_set<std::string>& getExposedParamIDs()
         // LFO Z
         LFO_Z_RATE, LFO_Z_DEPTH, LFO_Z_PHASE, LFO_Z_WAVEFORM,
         LFO_Z_SMOOTH, LFO_Z_TEMPO_SYNC, LFO_Z_BEAT_DIV,
-        LFO_SPEED_MUL, LFO_DEPTH_MUL,
+        LFO_SPEED_MUL, LFO_DEPTH_MUL, LFO_MASTER_PHASE,
         // Stereo
         STEREO_WIDTH, STEREO_FACE_LISTENER, STEREO_ORBIT_PHASE, STEREO_ORBIT_OFFSET,
         // Stereo orbit LFOs — XY
